@@ -31,24 +31,24 @@ public enum WorkoutPaceTolerance {
 /// All values are easily tweakable.
 public struct PaceProgressionConfig {
     /// How much to blend toward conservativeTarget at plan START (1.0 = fully conservative, 0.0 = use base zone multiplier)
-    let initialAdjustment: Double
+    public let initialAdjustment: Double
     /// How much to blend toward conservativeTarget at plan END (1.0 = fully conservative, 0.0 = use base zone multiplier)
-    let finalAdjustment: Double
+    public let finalAdjustment: Double
     /// Floor multiplier - intervals never go faster than this × race pace
-    let minMultiplier: Double
+    public let minMultiplier: Double
     /// Conservative ceiling for fast zones when fully adjusted.
     /// Values > 1.0 mean intervals start SLOWER than race pace (e.g., 1.10 = 10% slower).
     /// At full adjustment, both Zone 4 and Zone 5 blend toward this value.
-    let conservativeTarget: Double
+    public let conservativeTarget: Double
     /// When true, Z3/Z4/Z5 always return their base multiplier (true target
     /// pace) — easing-in is disabled for quality zones. Z1/Z2 still ease in
     /// per initialAdjustment/finalAdjustment. Used by competitive build-band
     /// plans where the runner needs sub-3 / sub-1:30 race-pace exposure
     /// from day 1 even though their easy paces are still ramping in.
     /// Default false (back-compat for existing presets).
-    let qualityZonesAlwaysAtTarget: Bool
+    public let qualityZonesAlwaysAtTarget: Bool
 
-    init(initialAdjustment: Double, finalAdjustment: Double,
+    public init(initialAdjustment: Double, finalAdjustment: Double,
          minMultiplier: Double, conservativeTarget: Double,
          qualityZonesAlwaysAtTarget: Bool = false) {
         self.initialAdjustment = initialAdjustment
@@ -60,21 +60,21 @@ public struct PaceProgressionConfig {
 
     // MARK: - Presets per runner level
 
-    static let beginner = PaceProgressionConfig(
+    public static let beginner = PaceProgressionConfig(
         initialAdjustment: 1.0,     // Start fully conservative
         finalAdjustment: 0.5,       // End still somewhat conservative
         minMultiplier: 0.92,        // Never faster than 92% of race pace (~4:36 for 5:00 pace)
         conservativeTarget: 1.12    // Start intervals at ~112% race pace (5:36 for 5:00 target)
     )
 
-    static let intermediate = PaceProgressionConfig(
+    public static let intermediate = PaceProgressionConfig(
         initialAdjustment: 0.8,     // Start mostly conservative
         finalAdjustment: 0.2,       // End near standard intensity
         minMultiplier: 0.88,        // Never faster than 88% of race pace (~4:24 for 5:00 pace)
         conservativeTarget: 1.10    // Start intervals at ~105% race pace (5:15 for 5:00 target)
     )
 
-    static let advanced = PaceProgressionConfig(
+    public static let advanced = PaceProgressionConfig(
         initialAdjustment: 0.5,     // Start moderate
         finalAdjustment: 0.0,       // End at full standard multipliers
         minMultiplier: 0.85,        // Can reach standard Zone 5 (0.85x)
@@ -84,7 +84,7 @@ public struct PaceProgressionConfig {
     /// Sub-3 marathon / sub-1:30 half plans. Runner has proven the fitness
     /// via a recent race result (gate requires VDOT ≥ 58). All zones flat
     /// at goal target paces from day 1.
-    static let competitive = PaceProgressionConfig(
+    public static let competitive = PaceProgressionConfig(
         initialAdjustment: 0.0,
         finalAdjustment: 0.0,
         minMultiplier: 0.84,
@@ -99,7 +99,7 @@ public struct PaceProgressionConfig {
     /// blend from VDOT-derived current easy pace at W1 toward goal easy
     /// pace at race week, mirroring `.advanced`'s initial=0.5/final=0.0
     /// envelope.
-    static let competitiveBuildBand = PaceProgressionConfig(
+    public static let competitiveBuildBand = PaceProgressionConfig(
         initialAdjustment: 0.5,
         finalAdjustment: 0.0,
         minMultiplier: 0.84,
@@ -109,21 +109,21 @@ public struct PaceProgressionConfig {
 
     // MARK: - Maintenance presets (very slow progression, stays conservative)
 
-    static let maintenanceBeginner = PaceProgressionConfig(
+    public static let maintenanceBeginner = PaceProgressionConfig(
         initialAdjustment: 1.0,     // Start fully conservative
         finalAdjustment: 0.8,       // Stay very conservative even at end
         minMultiplier: 0.95,        // Never faster than 95% race pace
         conservativeTarget: 1.15    // Start intervals well above race pace
     )
 
-    static let maintenanceIntermediate = PaceProgressionConfig(
+    public static let maintenanceIntermediate = PaceProgressionConfig(
         initialAdjustment: 0.9,     // Start very conservative
         finalAdjustment: 0.6,       // Stay mostly conservative
         minMultiplier: 0.92,        // Never faster than 92% race pace
         conservativeTarget: 1.12    // Start intervals above race pace
     )
 
-    static let maintenanceAdvanced = PaceProgressionConfig(
+    public static let maintenanceAdvanced = PaceProgressionConfig(
         initialAdjustment: 0.7,     // Start conservative
         finalAdjustment: 0.4,       // Moderate by end
         minMultiplier: 0.88,        // Never faster than 88% race pace
@@ -147,7 +147,7 @@ public struct PaceZoneConverter {
     /// - Zone 3 (70-80% max HR): Marathon pace - 1.0x race pace
     /// - Zone 4 (80-90% max HR): Tempo - 0.93x race pace (faster)
     /// - Zone 5 (90-100% max HR): Intervals - 0.85x race pace (much faster)
-    static func baseMultiplier(for zone: Int) -> Double {
+    public static func baseMultiplier(for zone: Int) -> Double {
         switch zone {
         case 1: return 1.25    // Easy recovery
         case 2: return 1.15    // Conversational
@@ -168,7 +168,7 @@ public struct PaceZoneConverter {
     ///   - progressionFactor: Position in plan (0.0 = start, 1.0 = end)
     ///   - config: Progression config for the runner's level
     /// - Returns: Adjusted multiplier
-    static func progressiveMultiplier(
+    public static func progressiveMultiplier(
         for zone: Int,
         racePace: Int,
         conversationalPace: Int?,
@@ -233,7 +233,7 @@ public struct PaceZoneConverter {
     // MARK: - Interval Conversion
 
     /// Converts an HR-based interval to pace-based with progression
-    static func convertIntervalToPace(
+    public static func convertIntervalToPace(
         interval: WorkoutInterval,
         racePace: Int,
         conversationalPace: Int? = nil,
@@ -278,7 +278,7 @@ public struct PaceZoneConverter {
     // MARK: - Workout Conversion
 
     /// Converts an HR-based workout to pace-based with progression
-    static func convertHRWorkoutToPace(
+    public static func convertHRWorkoutToPace(
         workout: Workout,
         racePace: Int,
         conversationalPace: Int? = nil,
@@ -316,7 +316,7 @@ public struct PaceZoneConverter {
     }
 
     /// Batch convert all workouts (no progression - for backward compatibility)
-    static func convertWorkoutsArrayToPace(workouts: [Workout], racePace: Int, conversationalPace: Int? = nil) -> [Workout] {
+    public static func convertWorkoutsArrayToPace(workouts: [Workout], racePace: Int, conversationalPace: Int? = nil) -> [Workout] {
         return workouts.map { convertHRWorkoutToPace(workout: $0, racePace: racePace, conversationalPace: conversationalPace) }
     }
 
@@ -334,7 +334,7 @@ public struct PaceZoneConverter {
     ///   - startDate: Plan start date
     ///   - endDate: Plan end date (race date)
     /// - Returns: Events with pace-based workouts, progressively adjusted
-    static func applyPaceProgression(
+    public static func applyPaceProgression(
         to events: [WorkoutEvent],
         racePace: Int,
         conversationalPace: Int?,
@@ -370,19 +370,19 @@ public struct PaceZoneConverter {
     // MARK: - Helper Functions
 
     /// Calculate target pace range with tolerance
-    static func paceRange(basePace: Int, relative: Double, tolerance: Double = 0.10) -> (min: Int, max: Int) {
+    public static func paceRange(basePace: Int, relative: Double, tolerance: Double = 0.10) -> (min: Int, max: Int) {
         let targetPace = Int(Double(basePace) * relative)
         let delta = Int(Double(targetPace) * tolerance)
         return (min: targetPace - delta, max: targetPace + delta)
     }
 
     /// Round pace to nearest 5 seconds
-    static func roundToFiveSeconds(_ seconds: Int) -> Int {
+    public static func roundToFiveSeconds(_ seconds: Int) -> Int {
         return ((seconds + 2) / 5) * 5
     }
 
     /// Format pace as string in user's preferred units
-    static func formatPace(_ paceSecondsPerKm: Int) -> String {
+    public static func formatPace(_ paceSecondsPerKm: Int) -> String {
         return PaceConversion.formatPaceInUserUnits(paceSecondsPerKm)
     }
 }

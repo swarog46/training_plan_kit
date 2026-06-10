@@ -13,7 +13,7 @@ import Foundation
 public struct SeededRandomNumberGenerator: RandomNumberGenerator {
     private var state: UInt64
 
-    init(seed: UInt64) {
+    public init(seed: UInt64) {
         self.state = seed
     }
 
@@ -116,10 +116,10 @@ public func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDu
 // MARK: - Weekly Targets (mirrors calculate_weekly_targets)
 
 public struct WeeklyTargets {
-    let load: Double
-    let duration: Double
-    let isDeloading: Bool
-    let phaseProgression: Double
+    public let load: Double
+    public let duration: Double
+    public let isDeloading: Bool
+    public let phaseProgression: Double
 }
 
 public func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: TrainingPhase,

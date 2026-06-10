@@ -439,17 +439,17 @@ public func determineSpeedWorkoutTypeDistribution(
 
 // Struct to hold the run counts
 public struct RunCounts {
-    var easyRunsCount: Int
-    var intervalRunsCount: Int
-    var ultraIntervalRunsCount: Int
-    var qualityRunsCount: Int
-    var progressionRunsCount: Int
-    var recoveryRunsCount: Int
-    var longRunsCount: Int
-    var fartlekRunsCount: Int
+    public var easyRunsCount: Int
+    public var intervalRunsCount: Int
+    public var ultraIntervalRunsCount: Int
+    public var qualityRunsCount: Int
+    public var progressionRunsCount: Int
+    public var recoveryRunsCount: Int
+    public var longRunsCount: Int
+    public var fartlekRunsCount: Int
     
     // Initialize with default values
-    init(easyRunsCount: Int = 0,
+    public init(easyRunsCount: Int = 0,
          intervalRunsCount: Int = 0,
          qualityRunsCount: Int = 0,
          progressionRuns: Int = 0,
@@ -510,13 +510,13 @@ public struct RunCounts {
 
 // Helper to get total workout count
 extension RunCounts {
-    func totalWorkoutCount() -> Int {
+    public func totalWorkoutCount() -> Int {
         return easyRunsCount + intervalRunsCount + qualityRunsCount +
         progressionRunsCount + recoveryRunsCount + longRunsCount + fartlekRunsCount + ultraIntervalRunsCount
     }
     
     // Helper to get only quality workout count (excluding easy, recovery, long)
-    func totalQualityCount() -> Int {
+    public func totalQualityCount() -> Int {
         return intervalRunsCount + qualityRunsCount + progressionRunsCount + fartlekRunsCount + ultraIntervalRunsCount
     }
     
