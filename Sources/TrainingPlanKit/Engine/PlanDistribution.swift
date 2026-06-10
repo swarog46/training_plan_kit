@@ -24,7 +24,7 @@ public func determineWorkoutCategory(workout: Workout) -> WorkoutCategory {
 }
 
 // Helper function to determine workout distribution based on phase and available days
-public func determineEnduranceWorkoutTypeDistribution(
+func determineEnduranceWorkoutTypeDistribution(
     daysCount: Int,
     phase: TrainingPhase,
     weekInPhase: Int,
@@ -280,7 +280,7 @@ public func determineEnduranceWorkoutTypeDistribution(
 }
 
 // Helper function to determine workout distribution based on phase and available days
-public func determineSpeedWorkoutTypeDistribution(
+func determineSpeedWorkoutTypeDistribution(
     daysCount: Int,
     phase: TrainingPhase,
     weekInPhase: Int,

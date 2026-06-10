@@ -122,7 +122,7 @@ public struct WeeklyTargets {
     public let phaseProgression: Double
 }
 
-public func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: TrainingPhase,
+func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: TrainingPhase,
                               phaseDurations: [String: Int], config: PlanConfiguration) -> WeeklyTargets {
     // Calculate phase progression percentage
     let phaseDuration = phaseDurations[phase.rawValue.lowercased()] ?? 1
@@ -350,7 +350,7 @@ public func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: T
 
 // MARK: - Workout Selection (mirrors select_workout_by_target)
 
-public func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDuration: Int,
+func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDuration: Int,
                              usedIds: inout [String: Int], previousWorkout: Workout? = nil,
                              isDeloading: Bool = false, phaseJustStarted: Bool = false,
                              isMaintenance: Bool = false,
@@ -475,7 +475,7 @@ public func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, tar
 
 // MARK: - Filter by Subtype
 
-public func filterWorkoutsBySubtypeV3(workouts: [Workout], subtypes: [WorkoutSubtype]) -> [Workout] {
+func filterWorkoutsBySubtypeV3(workouts: [Workout], subtypes: [WorkoutSubtype]) -> [Workout] {
     return workouts.filter { subtypes.contains($0.subtype) }
 }
 
