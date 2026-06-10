@@ -25,7 +25,7 @@ public struct SeededRandomNumberGenerator: RandomNumberGenerator {
 
 // MARK: - Phase Duration Calculation (mirrors calculate_phase_durations)
 
-func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
+public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
     // Taper is fixed — longer plans get more training, not more taper
     let taper = config.minTaperPhaseWeeks
     let trainingWeeks = totalWeeks - taper
@@ -92,7 +92,7 @@ func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [Str
 
 // MARK: - Phase Determination (mirrors determine_phase)
 
-func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDur: Int, taperDur: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
+public func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDur: Int, taperDur: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
     // Week ordering: BASE -> SPEED -> PEAK -> TAPER -> RACE (last week)
     // The final week of the plan is race week — distinct from taper because
     // it cuts volume to ~50% of peak (Pfitz / Daniels) rather than the
@@ -122,7 +122,7 @@ public struct WeeklyTargets {
     let phaseProgression: Double
 }
 
-func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: TrainingPhase,
+public func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: TrainingPhase,
                               phaseDurations: [String: Int], config: PlanConfiguration) -> WeeklyTargets {
     // Calculate phase progression percentage
     let phaseDuration = phaseDurations[phase.rawValue.lowercased()] ?? 1
@@ -350,7 +350,7 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
 
 // MARK: - Workout Selection (mirrors select_workout_by_target)
 
-func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDuration: Int,
+public func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDuration: Int,
                              usedIds: inout [String: Int], previousWorkout: Workout? = nil,
                              isDeloading: Bool = false, phaseJustStarted: Bool = false,
                              isMaintenance: Bool = false,
@@ -475,7 +475,7 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
 
 // MARK: - Filter by Subtype
 
-func filterWorkoutsBySubtypeV3(workouts: [Workout], subtypes: [WorkoutSubtype]) -> [Workout] {
+public func filterWorkoutsBySubtypeV3(workouts: [Workout], subtypes: [WorkoutSubtype]) -> [Workout] {
     return workouts.filter { subtypes.contains($0.subtype) }
 }
 
@@ -2030,7 +2030,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
 
 // MARK: - Integration with existing createMarathonPlan
 
-func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
+public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
     let calendar = Calendar.current
     let normalizedStartDate = calendar.startOfDay(for: startDate)
     let normalizedRaceDate = calendar.startOfDay(for: raceDate)

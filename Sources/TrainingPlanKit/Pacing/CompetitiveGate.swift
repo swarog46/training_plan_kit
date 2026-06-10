@@ -69,7 +69,7 @@ private let buildBandMaxGap: Double = 4.0
 ///     methodology / inputs.
 ///   - distanceMeters: The competitive plan's race distance (42195 or 21097).
 /// - Returns: The gate state to surface in the UI.
-func competitiveGateState(vdot: VDOT?, distanceMeters: Int) -> CompetitiveGateState {
+public func competitiveGateState(vdot: VDOT?, distanceMeters: Int) -> CompetitiveGateState {
     guard let vdot = vdot else { return .clear }
     let goalTime: Int = (distanceMeters == 42195) ? 10800 : 5400
     guard let requiredVDOT = VDOT.from(distanceMeters: distanceMeters, timeSeconds: goalTime) else {

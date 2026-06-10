@@ -7,7 +7,7 @@
 
 import Foundation
 
-func determineWorkoutCategory(workout: Workout) -> WorkoutCategory {
+public func determineWorkoutCategory(workout: Workout) -> WorkoutCategory {
     switch workout.subtype {
     case .long, .steadyLong:
         return .longRun
@@ -24,7 +24,7 @@ func determineWorkoutCategory(workout: Workout) -> WorkoutCategory {
 }
 
 // Helper function to determine workout distribution based on phase and available days
-func determineEnduranceWorkoutTypeDistribution(
+public func determineEnduranceWorkoutTypeDistribution(
     daysCount: Int,
     phase: TrainingPhase,
     weekInPhase: Int,
@@ -280,7 +280,7 @@ func determineEnduranceWorkoutTypeDistribution(
 }
 
 // Helper function to determine workout distribution based on phase and available days
-func determineSpeedWorkoutTypeDistribution(
+public func determineSpeedWorkoutTypeDistribution(
     daysCount: Int,
     phase: TrainingPhase,
     weekInPhase: Int,

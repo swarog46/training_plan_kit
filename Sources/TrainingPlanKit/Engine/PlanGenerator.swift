@@ -8,7 +8,7 @@
 import Foundation
 
 // The rewritten createMarathonPlan function
-func createMarathonPlan(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
+public func createMarathonPlan(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
     // Normalize dates to start of day to ensure proper comparison
     let calendar = Calendar.current
     let normalizedStartDate = calendar.startOfDay(for: startDate)
@@ -153,7 +153,7 @@ func createMarathonPlan(startDate: Date, raceDate: Date, from workouts: [Workout
     return events.sorted { $0.date < $1.date }
 }
 
-func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
+public func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
     // Create a race day workout with free run configuration
     // The workout can be started on the watch just like a regular free run
     return Workout(
@@ -185,7 +185,7 @@ func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
     )
 }
 
-func getDateForWeekday(weekStartDate: Date, weekdayIndex: Int) -> Date? {
+public func getDateForWeekday(weekStartDate: Date, weekdayIndex: Int) -> Date? {
     let calendar = Calendar.current
     
     // Get the start of the week based on locale
@@ -228,7 +228,7 @@ func getDateForWeekday(weekStartDate: Date, weekdayIndex: Int) -> Date? {
     }
 }
 
-func calculateBaseLoad(for level: RunnerLevel, distance: Int64) -> Double {
+public func calculateBaseLoad(for level: RunnerLevel, distance: Int64) -> Double {
     switch distance {
     case 0..<10000: // 5K to 10K — competitive not offered, falls through to advanced.
         switch level {
@@ -273,7 +273,7 @@ func calculateBaseLoad(for level: RunnerLevel, distance: Int64) -> Double {
     }
 }
 
-func selectTrainingDays(count: Int, preferred: [Int]) -> [Int] {
+public func selectTrainingDays(count: Int, preferred: [Int]) -> [Int] {
     // If we have enough preferred days, use them
     if preferred.count >= count {
         return Array(preferred.prefix(count))
@@ -304,7 +304,7 @@ func selectTrainingDays(count: Int, preferred: [Int]) -> [Int] {
 }
 
 // Updated helper function to determine the current phase and week within that phase
-func determinePhase(weekIndex: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
+public func determinePhase(weekIndex: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
     var accumulatedWeeks = 0
     
     let totalPlanDuration = baseDuration + speedDuration + peakDuration + taperDuration
@@ -337,7 +337,7 @@ func determinePhase(weekIndex: Int, baseDuration: Int, speedDuration: Int, peakD
 }
 
 // Helper function to add phase duration diagnostics for debugging
-func logPhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) {
+public func logPhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) {
     print("Total training weeks: \(totalWeeks)")
     print("Base phase: \(baseDuration) weeks (\(Double(baseDuration) / Double(totalWeeks) * 100)%)")
     print("Speed phase: \(speedDuration) weeks (\(Double(speedDuration) / Double(totalWeeks) * 100)%)")
@@ -346,12 +346,12 @@ func logPhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, p
 }
 
 // Helper function to validate the phase durations add up to total weeks
-func validatePhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) -> Bool {
+public func validatePhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) -> Bool {
     return baseDuration + speedDuration + peakDuration + taperDuration == totalWeeks
 }
 
 // Adjust training day count based on phase and runner level
-func determineTrainingDaysCount(phase: TrainingPhase, weekInPhase: Int, config: PlanConfiguration) -> Int {
+public func determineTrainingDaysCount(phase: TrainingPhase, weekInPhase: Int, config: PlanConfiguration) -> Int {
     // Base number of training days based on runner level
     let baseTrainingDays = config.trainingDays.count
     
@@ -378,7 +378,7 @@ func determineTrainingDaysCount(phase: TrainingPhase, weekInPhase: Int, config: 
 }
 
 // Calculate weekly targets based on phase and progression
-func calculateWeeklyTargets(
+public func calculateWeeklyTargets(
     phase: TrainingPhase,
     weekInPhase: Int,
     weekInPlan: Int,
@@ -512,7 +512,7 @@ func calculateWeeklyTargets(
 }
 
 // Helper function for workout selection with adaptive targets
-func selectWorkoutByTarget(workoutType: WorkoutType, weekIndex: Int, workouts: [Workout], targetLoad: Double, targetDuration: Int, usedWorkoutIds: inout Set<String>, previousWeeksWorkouts: inout [Int: [(workout: Workout, dayOfWeek: Int)]], targets: (totalLoad: Double, totalDuration: Int, longRunDuration: Int, isDeloading: Bool), ultraIntervals: Bool = false, onlyProgressiveLong: Bool = false) -> Workout {
+public func selectWorkoutByTarget(workoutType: WorkoutType, weekIndex: Int, workouts: [Workout], targetLoad: Double, targetDuration: Int, usedWorkoutIds: inout Set<String>, previousWeeksWorkouts: inout [Int: [(workout: Workout, dayOfWeek: Int)]], targets: (totalLoad: Double, totalDuration: Int, longRunDuration: Int, isDeloading: Bool), ultraIntervals: Bool = false, onlyProgressiveLong: Bool = false) -> Workout {
     guard !workouts.isEmpty else {
         fatalError("No workouts available to select from")
     }
@@ -659,7 +659,7 @@ func selectWorkoutByTarget(workoutType: WorkoutType, weekIndex: Int, workouts: [
 }
 
 // Helper function for week plan creation with improved variety
-func createWeekPlan(
+public func createWeekPlan(
     weekIndex: Int,
     phase: TrainingPhase,
     weekInPhase: Int,
