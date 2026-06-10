@@ -22,13 +22,11 @@ OUTPUT="scripts/plan_debug/plan_debug"
 echo "Compiling plan_debug..."
 swiftc \
   -framework Foundation \
-  -framework SwiftUI \
   -O \
   -o "$OUTPUT" \
   Sources/TrainingPlanKit/Models/*.swift \
   Sources/TrainingPlanKit/Engine/*.swift \
   Sources/TrainingPlanKit/Pacing/*.swift \
-  Sources/TrainingPlanKit/Support/*.swift \
   scripts/plan_debug/main.swift
 
 echo "Built: $OUTPUT"

@@ -5,7 +5,6 @@
 //  Created by Dan Sh on 21/10/2025.
 //
 
-import SwiftUI
 
 // MARK: - Plan Type (Training methodology)
 
@@ -173,115 +172,6 @@ public struct TrainingPlanDefinition: Identifiable, Hashable {
         case .recovery:                 return "plan.category.recovery.description"
         case .maintenance:              return "plan.category.maintenance.description"
         case .vo2max:                   return "8-week aerobic-power block focused on VO2 max intervals, tempo support, and a weekly long run. Improves running economy and lactate threshold without targeting a specific race."
-        }
-    }
-
-    public var color: Color {
-        switch category {
-        case .fiveK:                    return Theme.indigo
-        case .tenK:                     return Theme.mint
-        case .halfMarathon:             return Theme.orange
-        case .marathon:                 return Theme.pink
-        case .halfMarathonCompetitive:  return Color(hex: "C2185B")  // deep magenta-red
-        case .marathonCompetitive:      return Color(hex: "B71C1C")  // intense crimson
-        case .recovery:                 return Theme.cyan
-        case .maintenance:              return Theme.purple
-        case .vo2max:                   return Theme.green
-        }
-    }
-
-    public var borderGradient: LinearGradient {
-        switch category {
-        case .fiveK:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "5856D6"), location: 0.0),
-                    .init(color: Color(hex: "BFBEEE"), location: 0.53),
-                    .init(color: Color(hex: "120EF1"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .tenK:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "00C7BE"), location: 0.0),
-                    .init(color: Color(hex: "76F5EF"), location: 0.22),
-                    .init(color: Color(hex: "03ADA6"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .halfMarathon:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "FF9500"), location: 0.0),
-                    .init(color: Color(hex: "FBDFB8"), location: 0.22),
-                    .init(color: Color(hex: "EC8D09"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .marathon:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "FF2D55"), location: 0.0),
-                    .init(color: Color(hex: "FFABBB"), location: 0.22),
-                    .init(color: Color(hex: "E60B35"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .recovery:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "30B0C7"), location: 0.0),
-                    .init(color: Color(hex: "A8E6EF"), location: 0.53),
-                    .init(color: Color(hex: "1A8A9E"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .halfMarathonCompetitive:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "E91E63"), location: 0.0),
-                    .init(color: Color(hex: "F8BBD0"), location: 0.22),
-                    .init(color: Color(hex: "AD1457"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .marathonCompetitive:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "D32F2F"), location: 0.0),
-                    .init(color: Color(hex: "EF9A9A"), location: 0.22),
-                    .init(color: Color(hex: "880E0E"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .maintenance:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "B02FC2"), location: 0.0),
-                    .init(color: Color(hex: "D9A0E2"), location: 0.53),
-                    .init(color: Color(hex: "8A1F9E"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .vo2max:
-            return LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(hex: "34C759"), location: 0.0),
-                    .init(color: Color(hex: "A8E6BB"), location: 0.53),
-                    .init(color: Color(hex: "1F9E40"), location: 1.0)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
         }
     }
 
@@ -512,18 +402,6 @@ public enum RaceDistance: String, CaseIterable, Identifiable {
 
     public var description: String {
         trainingPlan?.description ?? ""
-    }
-
-    public var color: Color {
-        trainingPlan?.color ?? Theme.indigo
-    }
-
-    public var borderGradient: LinearGradient {
-        trainingPlan?.borderGradient ?? LinearGradient(
-            colors: [Theme.indigo],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 
     // New properties from TrainingPlanDefinition

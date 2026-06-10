@@ -5,7 +5,6 @@
 //  Created by Dan Sh on 16/01/2025.
 //
 
-import SwiftUI
 import Foundation
 
 public struct WorkoutInterval: Identifiable, Codable, Equatable {
@@ -79,28 +78,26 @@ public struct WorkoutInterval: Identifiable, Codable, Equatable {
 
 public struct WorkoutType: Identifiable, Codable, Equatable, Hashable {
     public var name: String
-    public var color: Color
-    
+
     public var id: String { self.name }
 
-    // Convert Color to Codable-compatible representation
     enum CodingKeys: String, CodingKey {
-        case id, name, color
+        case name
     }
 
     // Default cases
-    public static let easyRun = WorkoutType(name: "Easy Run", color: .green)
-    public static let longRun = WorkoutType(name: "Long Run", color: .cyan)
-    public static let progressionRun = WorkoutType(name: "Progression Run", color: .indigo)
-    public static let intervalRun = WorkoutType(name: "Intervals", color: .orange)
-    public static let speedRun = WorkoutType(name: "Speed Run", color: .red)
-    public static let thresholdRun = WorkoutType(name: "Threshold", color: .red)
-    public static let fartlekRun = WorkoutType(name: "Fartlek Run", color: .pink)
-    public static let recoveryRun = WorkoutType(name: "Recovery Run", color: .green)
-    public static let freeRun = WorkoutType(name: "Free Run", color: .yellow)
-    public static let race = WorkoutType(name: "Race", color: .yellow)
-    public static let cycling = WorkoutType(name: "Cycling", color: .yellow)
-    public static let yoga = WorkoutType(name: "Yoga", color: .cyan)
+    public static let easyRun = WorkoutType(name: "Easy Run")
+    public static let longRun = WorkoutType(name: "Long Run")
+    public static let progressionRun = WorkoutType(name: "Progression Run")
+    public static let intervalRun = WorkoutType(name: "Intervals")
+    public static let speedRun = WorkoutType(name: "Speed Run")
+    public static let thresholdRun = WorkoutType(name: "Threshold")
+    public static let fartlekRun = WorkoutType(name: "Fartlek Run")
+    public static let recoveryRun = WorkoutType(name: "Recovery Run")
+    public static let freeRun = WorkoutType(name: "Free Run")
+    public static let race = WorkoutType(name: "Race")
+    public static let cycling = WorkoutType(name: "Cycling")
+    public static let yoga = WorkoutType(name: "Yoga")
 
     // Static array for default types
     public static var allCases: [WorkoutType] {
@@ -109,59 +106,24 @@ public struct WorkoutType: Identifiable, Codable, Equatable, Hashable {
         ]
     }
     
-    // Initializer with dynamic color mapping
-    public init(name: String, color: Color? = nil) {
+    public init(name: String) {
         self.name = name
-        // Assign predefined color if name matches; fallback to given color or gray
-        if let color = color {
-            self.color = color
-        } else {
-            self.color = WorkoutType.allCases.first { $0.name.lowercased() == name.lowercased() }?.color ?? color ?? .gray
-        }
-    }
-
-    // Fetch color dynamically by name (used externally if needed)
-    public static func color(for name: String) -> Color {
-        return allCases.first { $0.name.lowercased() == name.lowercased() }?.color ?? .gray
     }
     
-    // Custom Decoding to Handle String or Full Object
+    // Serializes as its name; decodes a bare string ("Long Run") or a { name } object.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-
         if let name = try? container.decode(String.self) {
-            // Decode from string (e.g., "Run")
-            if let matchingType = WorkoutType.allCases.first(where: { $0.name == name }) {
-                self = matchingType
-            } else {
-                throw DecodingError.dataCorruptedError(
-                    in: container,
-                    debugDescription: "Unknown WorkoutType name: \(name)"
-                )
-            }
+            self.name = name
         } else {
-            // Decode full object
-            let keyedContainer = try decoder.container(keyedBy: CodingKeys.self)
-            name = try keyedContainer.decode(String.self, forKey: .name)
-            let colorComponents = try keyedContainer.decode([CGFloat].self, forKey: .color)
-            color = Color(
-                red: Double(colorComponents[0]),
-                green: Double(colorComponents[1]),
-                blue: Double(colorComponents[2])
-            )
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            self.name = try keyed.decode(String.self, forKey: .name)
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        #if canImport(UIKit)
-        let colorComponents = color.components()
-        try container.encode([colorComponents.red, colorComponents.green, colorComponents.blue], forKey: .color)
-        #else
-        // CLI/macOS: serializing the rendered Color isn't meaningful here.
-        try container.encode([Double]([0, 0, 0]), forKey: .color)
-        #endif
+        var container = encoder.singleValueContainer()
+        try container.encode(name)
     }
     
     public func shortName() -> String {
@@ -214,17 +176,6 @@ public struct WorkoutType: Identifiable, Codable, Equatable, Hashable {
         }
     }
 }
-
-#if canImport(UIKit)
-extension Color {
-    public func components() -> (red: Double, green: Double, blue: Double) {
-        guard let components = UIColor(self).cgColor.components else {
-            return (0, 0, 0) // Default to black if components are unavailable
-        }
-        return (red: Double(components[0]), green: Double(components[1]), blue: Double(components[2]))
-    }
-}
-#endif
 
 public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
     case intervals

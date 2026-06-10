@@ -3,7 +3,7 @@
 //  Plan debugger CLI
 //
 //  Generates a plan for every (distance × level × duration) combination
-//  and prints week-by-week summaries. Pure Swift / Foundation / SwiftUI —
+//  and prints week-by-week summaries. Pure Swift / Foundation —
 //  no Xcode, no simulator, no XCTest.
 //
 //  Run via: ./scripts/plan_debug/build.sh && ./scripts/plan_debug/plan_debug

@@ -5,7 +5,6 @@
 //  UI-facing running level enum with display names and descriptions.
 //
 
-import SwiftUI
 
 // Reference to the race distance enum defined in PlansView.swift
 public enum RunningLevel: String, CaseIterable, Identifiable {
