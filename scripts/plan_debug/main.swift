@@ -536,33 +536,9 @@ if mode == "gate" {
     }
 }
 
-// recommend: for each (level, distance) combo, print the UI-advised
-// trainings-per-week (RunningLevel.recommendedTrainingsPerWeek) alongside
-// the actual config trainingDays.count. The regression test asserts the
-// two match for every combination — drift here means the plan-setup UI
-// would lie to users about their plan structure. Format:
-//   LEVEL DIST UI=N CONFIG=N
-if mode == "recommend" {
-    let combos: [(String, RunningLevel, PlanConfiguration)] = [
-        ("Beg 5K",  .beginner,     .beginner5Default),
-        ("Int 5K",  .intermediate, .intermediate5Default),
-        ("Adv 5K",  .advanced,     .advanced5Default),
-        ("Beg 10K", .beginner,     .beginner10Default),
-        ("Int 10K", .intermediate, .intermediate10Default),
-        ("Adv 10K", .advanced,     .advanced10Default),
-        ("Beg 21K", .beginner,     .beginner21Default),
-        ("Int 21K", .intermediate, .intermediate21Default),
-        ("Adv 21K", .advanced,     .advanced21Default),
-        ("Beg 42K", .beginner,     .beginner42Default),
-        ("Int 42K", .intermediate, .intermediate42Default),
-        ("Adv 42K", .advanced,     .advanced42Default),
-    ]
-    for (label, level, config) in combos {
-        let ui = level.recommendedTrainingsPerWeek(for: Int(config.distance))
-        let actual = config.trainingDays.count
-        print("\(label) UI=\(ui) CONFIG=\(actual)")
-    }
-}
+// (The "recommend" mode lived here — it compared the app's UI-advised
+// trainings-per-week against the engine config. That's a UI-layer concern
+// tied to RunningLevel, which is app-only, so it's not part of this package.)
 
 // Exercise the realistic-outcome projection across a matrix of starting
 // VDOTs × runner levels × plan lengths. Output is parsed by the Python

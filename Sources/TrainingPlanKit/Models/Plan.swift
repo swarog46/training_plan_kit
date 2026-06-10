@@ -230,15 +230,6 @@ public enum DifficultyLevel: Int16, Codable, CaseIterable {
     public var flameCount: Int {
         return Int(self.rawValue)
     }
-
-    public var displayName: String {
-        switch self {
-        case .beginner:     return "difficulty.beginner"
-        case .intermediate: return "difficulty.intermediate"
-        case .advanced:     return "difficulty.advanced"
-        case .competitive:  return "difficulty.competitive"
-        }
-    }
 }
 
 public struct Plan: Identifiable, Codable, Hashable {

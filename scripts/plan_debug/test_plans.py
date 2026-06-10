@@ -1671,38 +1671,9 @@ for label, long_fil, short_fil, rp, ep in GROWS_WITH_LENGTH:
         f"long={long_peak:.1f} km, short={short_peak:.1f} km — short shouldn't significantly out-volume long"
     )
 
-section("UI 'trainings per week' advice matches actual plan config (no lying to users)")
-
-# RunningLevel.recommendedTrainingsPerWeek is shown in the plan-setup UI
-# as "X trainings per week". For each (level, distance) combo, that
-# number MUST equal the PlanConfiguration.trainingDays.count for that
-# tier — otherwise the UI lies to the user about their plan structure.
-# This drifted historically (Adv 42K UI showed 6 but config was 5;
-# Int 10K UI showed 3 but config was 5). plan_debug's "recommend" mode
-# pulls both numbers from real Swift; Python just asserts equality.
-
-def parse_recommend():
-    r = subprocess.run([PLAN_DEBUG, "recommend"], capture_output=True, text=True)
-    out = {}
-    for line in r.stdout.splitlines():
-        m = re.match(r'^(\w+\s+\d+\w?) UI=(\d+) CONFIG=(\d+)$', line)
-        if not m: continue
-        label = m.group(1)
-        out[label] = (int(m.group(2)), int(m.group(3)))
-    return out
-
-recs = parse_recommend()
-check(
-    "recommend mode parses all 12 (level, distance) combos",
-    len(recs) == 12,
-    f"got {len(recs)} entries: {sorted(recs.keys())}"
-)
-for label, (ui, config) in sorted(recs.items()):
-    check(
-        f"{label}: UI advice ({ui}) == config trainingDays ({config})",
-        ui == config,
-        f"UI says {ui} days/wk but plan generates {config} — user-facing lie"
-    )
+# (The "UI trainings-per-week matches config" check moved to the app test
+# suite — it asserts against RunningLevel, which is a UI type and not part
+# of this engine package.)
 
 section("Beg/Int/Adv 5K and 10K: tier-appropriate frequency + LR caps + volume")
 
