@@ -21,7 +21,7 @@ import Foundation
 // what a wrist-worn pace display can resolve in real time regardless of
 // absolute pace.
 public enum WorkoutPaceTolerance {
-    static let seconds: Double = 15.0
+    public static let seconds: Double = 15.0
 }
 
 // MARK: - Pace Progression Configuration
