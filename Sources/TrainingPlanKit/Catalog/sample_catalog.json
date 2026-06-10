@@ -1,0 +1,5872 @@
+[
+ {
+  "id": 8964,
+  "title": "Easy Run",
+  "type": "Easy Run",
+  "subtype": "easy",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 1800,
+  "work_rest_ratio": 1,
+  "work_duration": 1500,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1500,
+  "distance": 0,
+  "key": "ethw25.0z2"
+ },
+ {
+  "id": 3236,
+  "title": "Easy Run",
+  "type": "Easy Run",
+  "subtype": "easy",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 2700,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 3238,
+  "work_rest_ratio": 1,
+  "work_duration": 2700,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2700,
+  "distance": 0,
+  "key": "ethw45.0z2"
+ },
+ {
+  "id": 6440,
+  "title": "Easy Run",
+  "type": "Easy Run",
+  "subtype": "easy",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 4800,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 5705,
+  "work_rest_ratio": 1,
+  "work_duration": 4800,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 4800,
+  "distance": 0,
+  "key": "ethw80.0z2"
+ },
+ {
+  "id": 1587,
+  "title": "Fast Finish (5min @ 5K)",
+  "type": "Long Run",
+  "subtype": "fastFinish",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 1800,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   }
+  ],
+  "training_load": 2835,
+  "work_rest_ratio": 1,
+  "work_duration": 2100,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2100,
+  "distance": 0,
+  "key": "lthw30.0z2w5.0z5"
+ },
+ {
+  "id": 6475,
+  "title": "Fast Finish (5min @ 5K)",
+  "type": "Long Run",
+  "subtype": "fastFinish",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 3600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   }
+  ],
+  "training_load": 8085,
+  "work_rest_ratio": 1,
+  "work_duration": 3900,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3900,
+  "distance": 0,
+  "key": "lthw60.0z2w5.0z5"
+ },
+ {
+  "id": 2592,
+  "title": "Fast Finish (30min @ MP)",
+  "type": "Long Run",
+  "subtype": "fastFinish",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 4200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1800,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   }
+  ],
+  "training_load": 8311,
+  "work_rest_ratio": 1,
+  "work_duration": 6000,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 6000,
+  "distance": 0,
+  "key": "lthw70.0z2w30.0z3"
+ },
+ {
+  "id": 6914,
+  "title": "5K Pace (4 × 300s)",
+  "type": "Intervals",
+  "subtype": "fivekPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 12114,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2880,
+  "distance": 0,
+  "key": "ithw10.0z1w5.0z5r2.0z1w5.0z5r2.0z1w5.0z5r2.0z1w5.0z5r2.0z1c10.0z1"
+ },
+ {
+  "id": 6380,
+  "title": "5K Pace (5 × 240s)",
+  "type": "Intervals",
+  "subtype": "fivekPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 240,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 240,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 240,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 240,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 240,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 12708,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3300,
+  "distance": 0,
+  "key": "ithw10.0z1w4.0z5r3.0z1w4.0z5r3.0z1w4.0z5r3.0z1w4.0z5r3.0z1w4.0z5r3.0z1c10.0z1"
+ },
+ {
+  "id": 2084,
+  "title": "5K Pace (8 × 150s)",
+  "type": "Intervals",
+  "subtype": "fivekPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 14,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 16,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 17,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 13821,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3840,
+  "distance": 0,
+  "key": "ithw10.0z1w2.5z5r3.0z1w2.5z5r3.0z1w2.5z5r3.0z1w2.5z5r3.0z1w2.5z5r3.0z1w2.5z5r3.0z1w2.5z5r3.0z1w2.5z5r3.0z1c10.0z1"
+ },
+ {
+  "id": 1419,
+  "title": "Hill Repeats (8 x 60s)",
+  "type": "Intervals",
+  "subtype": "hillRepeats",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 14,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 16,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 17,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 6505,
+  "work_rest_ratio": 3.0,
+  "work_duration": 480,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2400,
+  "distance": 0,
+  "key": "ithw10.0z1w1.0z5r1.5z1w1.0z5r1.5z1w1.0z5r1.5z1w1.0z5r1.5z1w1.0z5r1.5z1w1.0z5r1.5z1w1.0z5r1.5z1w1.0z5r1.5z1c10.0z1"
+ },
+ {
+  "id": 8563,
+  "title": "Hill Repeats (10 x 75s)",
+  "type": "Intervals",
+  "subtype": "hillRepeats",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 14,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 16,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 17,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 18,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 19,
+    "type": "Work",
+    "duration": 75,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 20,
+    "type": "Recovery",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 21,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 9421,
+  "work_rest_ratio": 3.0,
+  "work_duration": 750,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3000,
+  "distance": 0,
+  "key": "ithw10.0z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1w1.25z5r1.75z1c10.0z1"
+ },
+ {
+  "id": 1618,
+  "title": "Hill Repeats (12 x 90s)",
+  "type": "Intervals",
+  "subtype": "hillRepeats",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 14,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 16,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 17,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 18,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 19,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 20,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 21,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 22,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 23,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 24,
+    "type": "Recovery",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 25,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 13040,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1080,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3720,
+  "distance": 0,
+  "key": "ithw10.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1w1.5z5r2.0z1c10.0z1"
+ },
+ {
+  "id": 9473,
+  "title": "Intervals (4 segments)",
+  "type": "Intervals",
+  "subtype": "intervals",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 7779,
+  "work_rest_ratio": 4.0,
+  "work_duration": 720,
+  "rest_duration": 180,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1500,
+  "distance": 0,
+  "key": "ithw5.0z1w3.0z5r1.0z1w3.0z5r1.0z1w3.0z5r1.0z1w3.0z5c5.0z1"
+ },
+ {
+  "id": 4408,
+  "title": "Intervals (6 segments)",
+  "type": "Intervals",
+  "subtype": "intervals",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 9207,
+  "work_rest_ratio": 3.0,
+  "work_duration": 900,
+  "rest_duration": 300,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1800,
+  "distance": 0,
+  "key": "ithw5.0z1w2.5z5r1.0z1w2.5z5r1.0z1w2.5z5r1.0z1w2.5z5r1.0z1w2.5z5r1.0z1w2.5z5c5.0z1"
+ },
+ {
+  "id": 3569,
+  "title": "Intervals (8 segments)",
+  "type": "Intervals",
+  "subtype": "intervals",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 14,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 16,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 9371,
+  "work_rest_ratio": 1.5238095238095237,
+  "work_duration": 960,
+  "rest_duration": 630,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2190,
+  "distance": 0,
+  "key": "ithw5.0z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5c5.0z1"
+ },
+ {
+  "id": 9134,
+  "title": "Ladder Intervals (4 segments)",
+  "type": "Intervals",
+  "subtype": "ladderIntervals",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 3865,
+  "work_rest_ratio": 2.3333333333333335,
+  "work_duration": 420,
+  "rest_duration": 180,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1200,
+  "distance": 0,
+  "key": "ithw5.0z1w1.0z4r1.0z1w1.5z4r1.0z1w2.0z4r1.0z1w2.5z4c5.0z1"
+ },
+ {
+  "id": 8148,
+  "title": "Ladder Intervals (10 segments)",
+  "type": "Intervals",
+  "subtype": "ladderIntervals",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 45,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 30,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 30,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 135,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Rest",
+    "duration": 30,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Rest",
+    "duration": 30,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 10,
+    "type": "Rest",
+    "duration": 30,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 270,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 12,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 8961,
+  "work_rest_ratio": 4.0,
+  "work_duration": 945,
+  "rest_duration": 150,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1695,
+  "distance": 0,
+  "key": "ithw5.0z1w0.75z4r0.5z1w1.5z4r0.5z1w2.25z4r0.5z1w3.0z4r0.5z1w3.75z4r0.5z1w4.5z4c5.0z1"
+ },
+ {
+  "id": 4082,
+  "title": "Ladder Intervals (12 segments)",
+  "type": "Intervals",
+  "subtype": "ladderIntervals",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 105,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 135,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 8,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 10,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 165,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 12,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 14,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 195,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 16,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 17,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 18,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 19,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 20,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 21,
+    "type": "Work",
+    "duration": 240,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 22,
+    "type": "Rest",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 23,
+    "type": "Work",
+    "duration": 255,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 24,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 20620,
+  "work_rest_ratio": 2.090909090909091,
+  "work_duration": 2070,
+  "rest_duration": 990,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3660,
+  "distance": 0,
+  "key": "ithw5.0z1w1.5z5r1.5z1w1.75z5r1.5z1w2.0z5r1.5z1w2.25z5r1.5z1w2.5z5r1.5z1w2.75z5r1.5z1w3.0z5r1.5z1w3.25z5r1.5z1w3.5z5r1.5z1w3.75z5r1.5z1w4.0z5r1.5z1w4.25z5c5.0z1"
+ },
+ {
+  "id": 8979,
+  "title": "Marathon Pace (20min)",
+  "type": "Threshold",
+  "subtype": "marathonPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 3182,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2100,
+  "distance": 0,
+  "key": "tthw10.0z1w20.0z3c5.0z1"
+ },
+ {
+  "id": 8748,
+  "title": "Marathon Pace (2 x 40/50min)",
+  "type": "Threshold",
+  "subtype": "marathonPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 2400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 3000,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 4,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 12118,
+  "work_rest_ratio": 3.0,
+  "work_duration": 5700,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 6600,
+  "distance": 0,
+  "key": "tthw10.0z1w40.0z3w5.0z2w50.0z3c5.0z1"
+ },
+ {
+  "id": 5432,
+  "title": "Marathon Pace (2 x 60/50min)",
+  "type": "Threshold",
+  "subtype": "marathonPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 3600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 3000,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 4,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 14933,
+  "work_rest_ratio": 3.0,
+  "work_duration": 7200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 8100,
+  "distance": 0,
+  "key": "tthw10.0z1w60.0z3w10.0z2w50.0z3c5.0z1"
+ },
+ {
+  "id": 8105,
+  "title": "Medium-Long Run",
+  "type": "Easy Run",
+  "subtype": "mediumLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 5100,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 6063,
+  "work_rest_ratio": 1,
+  "work_duration": 5100,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 5100,
+  "distance": 0,
+  "key": "ethw85.0z2"
+ },
+ {
+  "id": 5083,
+  "title": "Medium-Long Run",
+  "type": "Easy Run",
+  "subtype": "mediumLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 5700,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 6772,
+  "work_rest_ratio": 1,
+  "work_duration": 5700,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 5700,
+  "distance": 0,
+  "key": "ethw95.0z2"
+ },
+ {
+  "id": 5692,
+  "title": "Medium-Long Run",
+  "type": "Easy Run",
+  "subtype": "mediumLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 6600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 7822,
+  "work_rest_ratio": 1,
+  "work_duration": 6600,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 6600,
+  "distance": 0,
+  "key": "ethw110.0z2"
+ },
+ {
+  "id": 4804,
+  "title": "Mile Repeats (3 x 1mi)",
+  "type": "Threshold",
+  "subtype": "mileRepeats",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 4604,
+  "work_rest_ratio": 3.0,
+  "work_duration": 900,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2370,
+  "distance": 0,
+  "key": "tthw10.0z1w5.0z4r1.5z1w5.0z4r1.5z1w5.0z4r1.5z1c10.0z1"
+ },
+ {
+  "id": 7183,
+  "title": "Mile Repeats (4 x 1mi)",
+  "type": "Threshold",
+  "subtype": "mileRepeats",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 7254,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1440,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3360,
+  "distance": 0,
+  "key": "tthw10.0z1w6.0z4r3.0z1w6.0z4r3.0z1w6.0z4r3.0z1w6.0z4r3.0z1c10.0z1"
+ },
+ {
+  "id": 2778,
+  "title": "Mile Repeats (6 x 1mi)",
+  "type": "Threshold",
+  "subtype": "mileRepeats",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 10805,
+  "work_rest_ratio": 3.0,
+  "work_duration": 2160,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 4440,
+  "distance": 0,
+  "key": "tthw10.0z1w6.0z4r3.0z1w6.0z4r3.0z1w6.0z4r3.0z1w6.0z4r3.0z1w6.0z4r3.0z1w6.0z4r3.0z1c10.0z1"
+ },
+ {
+  "id": 9705,
+  "title": "Progression Run",
+  "type": "Progression Run",
+  "subtype": "progression",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 3,
+    "type": "Cooldown",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 4335,
+  "work_rest_ratio": 1,
+  "work_duration": 1560,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1920,
+  "distance": 0,
+  "key": "pthw3.0z1w20.0z3w6.0z4c3.0z1"
+ },
+ {
+  "id": 9633,
+  "title": "Progression Run",
+  "type": "Progression Run",
+  "subtype": "progression",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 2100,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 360,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 3,
+    "type": "Cooldown",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 6280,
+  "work_rest_ratio": 1,
+  "work_duration": 2460,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2820,
+  "distance": 0,
+  "key": "pthw3.0z1w35.0z3w6.0z4c3.0z1"
+ },
+ {
+  "id": 3548,
+  "title": "Progression (3x20)",
+  "type": "Progression Run",
+  "subtype": "progression",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Cooldown",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 8930,
+  "work_rest_ratio": 1,
+  "work_duration": 3600,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3960,
+  "distance": 0,
+  "key": "pthw3.0z1w20.0z2w20.0z3w20.0z4c3.0z1"
+ },
+ {
+  "id": 5355,
+  "title": "Progressive Long Run",
+  "type": "Long Run",
+  "subtype": "progressiveLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 2700,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   }
+  ],
+  "training_load": 4963,
+  "work_rest_ratio": 1,
+  "work_duration": 3600,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3600,
+  "distance": 0,
+  "key": "lthw45.0z2w15.0z3"
+ },
+ {
+  "id": 1412,
+  "title": "Progressive Long Run",
+  "type": "Long Run",
+  "subtype": "progressiveLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 3600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 2400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   }
+  ],
+  "training_load": 8311,
+  "work_rest_ratio": 1,
+  "work_duration": 6000,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 6000,
+  "distance": 0,
+  "key": "lthw60.0z2w40.0z3"
+ },
+ {
+  "id": 6394,
+  "title": "Progressive Long Run",
+  "type": "Long Run",
+  "subtype": "progressiveLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 6300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 2400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   }
+  ],
+  "training_load": 11921,
+  "work_rest_ratio": 1,
+  "work_duration": 8700,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 8700,
+  "distance": 0,
+  "key": "lthw105.0z2w40.0z3"
+ },
+ {
+  "id": 8636,
+  "title": "Race Rehearsal (10min @ 10KP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsal10K",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 2100,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 4763,
+  "work_rest_ratio": 1,
+  "work_duration": 3000,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3000,
+  "distance": 0,
+  "key": "lthw35.0z2w10.0z4w5.0z2"
+ },
+ {
+  "id": 7079,
+  "title": "Race Rehearsal (20min @ 10KP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsal10K",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 2400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 6590,
+  "work_rest_ratio": 1,
+  "work_duration": 3900,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3900,
+  "distance": 0,
+  "key": "lthw40.0z2w20.0z4w5.0z2"
+ },
+ {
+  "id": 3313,
+  "title": "Race Rehearsal (20min @ 10KP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsal10K",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 2700,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 7920,
+  "work_rest_ratio": 1,
+  "work_duration": 4800,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 4800,
+  "distance": 0,
+  "key": "lthw45.0z2w20.0z4w15.0z2"
+ },
+ {
+  "id": 1164,
+  "title": "Race Rehearsal (15min @ HMP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsalHM",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 3000,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 7245,
+  "work_rest_ratio": 1,
+  "work_duration": 4500,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 4500,
+  "distance": 0,
+  "key": "lthw50.0z2w15.0z4w10.0z2"
+ },
+ {
+  "id": 2275,
+  "title": "Race Rehearsal (25min @ HMP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsalHM",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 3600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 10317,
+  "work_rest_ratio": 1,
+  "work_duration": 6300,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 6300,
+  "distance": 0,
+  "key": "lthw60.0z2w25.0z4w20.0z2"
+ },
+ {
+  "id": 1223,
+  "title": "Race Rehearsal (30min @ HMP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsalHM",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 4800,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1800,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 12656,
+  "work_rest_ratio": 1,
+  "work_duration": 7800,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 7800,
+  "distance": 0,
+  "key": "lthw80.0z2w30.0z4w20.0z2"
+ },
+ {
+  "id": 7034,
+  "title": "Race Rehearsal (20min @ MP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsalM",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 4549,
+  "work_rest_ratio": 1,
+  "work_duration": 3600,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3600,
+  "distance": 0,
+  "key": "lthw25.0z2w20.0z3w15.0z2"
+ },
+ {
+  "id": 5051,
+  "title": "Race Rehearsal (45min @ MP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsalM",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 4,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 7895,
+  "work_rest_ratio": 1,
+  "work_duration": 6000,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 6000,
+  "distance": 0,
+  "key": "lthw25.0z2w20.0z3w15.0z2w25.0z3w15.0z2"
+ },
+ {
+  "id": 6464,
+  "title": "Race Rehearsal (90min @ MP)",
+  "type": "Long Run",
+  "subtype": "raceRehearsalM",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 4800,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 5400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 3
+    }
+   },
+   {
+    "id": 2,
+    "type": "Work",
+    "duration": 1200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 14126,
+  "work_rest_ratio": 1,
+  "work_duration": 11400,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 11400,
+  "distance": 0,
+  "key": "lthw80.0z2w90.0z3w20.0z2"
+ },
+ {
+  "id": 1522,
+  "title": "Long Run",
+  "type": "Long Run",
+  "subtype": "steadyLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 3600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 3722,
+  "work_rest_ratio": 1,
+  "work_duration": 3600,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3600,
+  "distance": 0,
+  "key": "lthw60.0z2"
+ },
+ {
+  "id": 7372,
+  "title": "Long Run",
+  "type": "Long Run",
+  "subtype": "steadyLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 8400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 8645,
+  "work_rest_ratio": 1,
+  "work_duration": 8400,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 8400,
+  "distance": 0,
+  "key": "lthw140.0z2"
+ },
+ {
+  "id": 3234,
+  "title": "Long Run",
+  "type": "Long Run",
+  "subtype": "steadyLong",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 13200,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   }
+  ],
+  "training_load": 13263,
+  "work_rest_ratio": 1,
+  "work_duration": 13200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 13200,
+  "distance": 0,
+  "key": "lthw220.0z2"
+ },
+ {
+  "id": 1305,
+  "title": "Easy + Strides (2 x 15s)",
+  "type": "Easy Run",
+  "subtype": "strides",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 15,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 15,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   }
+  ],
+  "training_load": 2010,
+  "work_rest_ratio": 1,
+  "work_duration": 1530,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 1590,
+  "distance": 0,
+  "key": "ethw25.0z2w0.25z5r1.0z1w0.25z5"
+ },
+ {
+  "id": 2572,
+  "title": "Easy + Strides (4 x 25s)",
+  "type": "Easy Run",
+  "subtype": "strides",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 2100,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   }
+  ],
+  "training_load": 2850,
+  "work_rest_ratio": 1,
+  "work_duration": 2200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2380,
+  "distance": 0,
+  "key": "ethw35.0z2w0.4166666666666667z5r1.0z1w0.4166666666666667z5r1.0z1w0.4166666666666667z5r1.0z1w0.4166666666666667z5"
+ },
+ {
+  "id": 5169,
+  "title": "Easy + Strides (4 x 25s)",
+  "type": "Easy Run",
+  "subtype": "strides",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Work",
+    "duration": 3000,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 2
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 25,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   }
+  ],
+  "training_load": 4020,
+  "work_rest_ratio": 1,
+  "work_duration": 3100,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3280,
+  "distance": 0,
+  "key": "ethw50.0z2w0.4166666666666667z5r1.0z1w0.4166666666666667z5r1.0z1w0.4166666666666667z5r1.0z1w0.4166666666666667z5"
+ },
+ {
+  "id": 4925,
+  "title": "10K Pace (4 × 300s)",
+  "type": "Threshold",
+  "subtype": "tenkPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 90,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 6024,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2760,
+  "distance": 0,
+  "key": "tthw10.0z1w5.0z4r1.5z1w5.0z4r1.5z1w5.0z4r1.5z1w5.0z4r1.5z1c10.0z1"
+ },
+ {
+  "id": 8213,
+  "title": "10K Pace (4 × 300s)",
+  "type": "Threshold",
+  "subtype": "tenkPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 6152,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1200,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3000,
+  "distance": 0,
+  "key": "tthw10.0z1w5.0z4r2.5z1w5.0z4r2.5z1w5.0z4r2.5z1w5.0z4r2.5z1c10.0z1"
+ },
+ {
+  "id": 4985,
+  "title": "10K Pace (3 × 600s)",
+  "type": "Threshold",
+  "subtype": "tenkPace",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 150,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 8288,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1800,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3450,
+  "distance": 0,
+  "key": "tthw10.0z1w10.0z4r2.5z1w10.0z4r2.5z1w10.0z4r2.5z1c10.0z1"
+ },
+ {
+  "id": 1276,
+  "title": "Threshold Run (2 x 12min)",
+  "type": "Threshold",
+  "subtype": "threshold",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 720,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 720,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 6739,
+  "work_rest_ratio": 4.0,
+  "work_duration": 1440,
+  "rest_duration": 60,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2400,
+  "distance": 0,
+  "key": "tthw10.0z1w12.0z4r1.0z1w12.0z4c5.0z1"
+ },
+ {
+  "id": 5703,
+  "title": "Threshold Run (3 x 10min)",
+  "type": "Threshold",
+  "subtype": "threshold",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 60,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 8437,
+  "work_rest_ratio": 4.0,
+  "work_duration": 1800,
+  "rest_duration": 120,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2820,
+  "distance": 0,
+  "key": "tthw10.0z1w10.0z4r1.0z1w10.0z4r1.0z1w10.0z4c5.0z1"
+ },
+ {
+  "id": 6126,
+  "title": "Threshold Run (3 x 12min)",
+  "type": "Threshold",
+  "subtype": "threshold",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 720,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Rest",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 720,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Rest",
+    "duration": 120,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 720,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Cooldown",
+    "duration": 300,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 10088,
+  "work_rest_ratio": 4.0,
+  "work_duration": 2160,
+  "rest_duration": 240,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3300,
+  "distance": 0,
+  "key": "tthw10.0z1w12.0z4r2.0z1w12.0z4r2.0z1w12.0z4c5.0z1"
+ },
+ {
+  "id": 8832,
+  "title": "Time Trial (15min)",
+  "type": "Intervals",
+  "subtype": "timeTrial",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 900,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 8134,
+  "work_rest_ratio": 3.0,
+  "work_duration": 900,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2100,
+  "distance": 0,
+  "key": "ithw10.0z1w15.0z5c10.0z1"
+ },
+ {
+  "id": 7650,
+  "title": "Time Trial (25min)",
+  "type": "Intervals",
+  "subtype": "timeTrial",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 1500,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 12434,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1500,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 2700,
+  "distance": 0,
+  "key": "ithw10.0z1w25.0z5c10.0z1"
+ },
+ {
+  "id": 1390,
+  "title": "Time Trial (40min)",
+  "type": "Intervals",
+  "subtype": "timeTrial",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 2400,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 5
+    }
+   },
+   {
+    "id": 2,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 18768,
+  "work_rest_ratio": 3.0,
+  "work_duration": 2400,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3600,
+  "distance": 0,
+  "key": "ithw10.0z1w40.0z5c10.0z1"
+ },
+ {
+  "id": 3482,
+  "title": "Yasso 800s (6 x 800m)",
+  "type": "Intervals",
+  "subtype": "yasso800",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 180,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 10693,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1080,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 3360,
+  "distance": 0,
+  "key": "ithw10.0z1w3.0z4r3.0z1w3.0z4r3.0z1w3.0z4r3.0z1w3.0z4r3.0z1w3.0z4r3.0z1w3.0z4r3.0z1c10.0z1"
+ },
+ {
+  "id": 1901,
+  "title": "Yasso 800s (8 x 800m)",
+  "type": "Intervals",
+  "subtype": "yasso800",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 14,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 16,
+    "type": "Recovery",
+    "duration": 210,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 17,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 16380,
+  "work_rest_ratio": 3.0,
+  "work_duration": 1680,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 4560,
+  "distance": 0,
+  "key": "ithw10.0z1w3.5z4r3.5z1w3.5z4r3.5z1w3.5z4r3.5z1w3.5z4r3.5z1w3.5z4r3.5z1w3.5z4r3.5z1w3.5z4r3.5z1w3.5z4r3.5z1c10.0z1"
+ },
+ {
+  "id": 7336,
+  "title": "Yasso 800s (10 x 800m)",
+  "type": "Intervals",
+  "subtype": "yasso800",
+  "trainingType": "Time-based",
+  "targetType": "HRZone",
+  "intervals": [
+   {
+    "id": 0,
+    "type": "Warmup",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   },
+   {
+    "id": 1,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 2,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 3,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 4,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 5,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 6,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 7,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 8,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 9,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 10,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 11,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 12,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 13,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 14,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 15,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 16,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 17,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 18,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 19,
+    "type": "Work",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 4
+    }
+   },
+   {
+    "id": 20,
+    "type": "Recovery",
+    "duration": 225,
+    "distance": 0,
+    "targetType": "HRZone",
+    "target": {
+     "type": "heartRateZone",
+     "zone": 1
+    }
+   },
+   {
+    "id": 21,
+    "type": "Cooldown",
+    "duration": 600,
+    "distance": 0,
+    "targetType": "NoTarget",
+    "target": {
+     "type": "noRange",
+     "noValue": true
+    }
+   }
+  ],
+  "training_load": 21905,
+  "work_rest_ratio": 3.0,
+  "work_duration": 2250,
+  "rest_duration": 0,
+  "work_distance": 0,
+  "rest_distance": 0,
+  "duration": 5700,
+  "distance": 0,
+  "key": "ithw10.0z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1c10.0z1"
+ }
+]
