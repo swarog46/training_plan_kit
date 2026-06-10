@@ -14,6 +14,15 @@ public struct WorkoutInterval: Identifiable, Codable, Equatable {
     public let distance: Int64
     public let targetType: TargetType
     public let target: TargetRange
+
+    public init(id: Int64, type: IntervalType, duration: Double, distance: Int64, targetType: TargetType, target: TargetRange) {
+        self.id = id
+        self.type = type
+        self.duration = duration
+        self.distance = distance
+        self.targetType = targetType
+        self.target = target
+    }
     
     public static func == (lhs: WorkoutInterval, rhs: WorkoutInterval) -> Bool {
         return lhs.id == rhs.id &&
