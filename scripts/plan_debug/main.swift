@@ -612,3 +612,19 @@ if mode == "projection" {
         }
     }
 }
+
+// phases: for each filtered plan, print the phase split + per-week load target
+// and multiplier. Shows how phase durations are derived and how load is balanced.
+if mode == "phases" {
+    for c in filtered {
+        let d = calculatePhaseDurations(config: c.config, totalWeeks: c.weeks)
+        let base = d["base"] ?? 0, speed = d["speed"] ?? 0, peak = d["peak"] ?? 0, taper = d["taper"] ?? 0
+        print("\n=== \(c.label) (\(c.weeks)w): BASE \(base) | SPEED \(speed) | PEAK \(peak) | TAPER \(taper) ===")
+        for w in 0..<c.weeks {
+            let (phase, wip) = determinePhaseV3(weekIndex: w, baseDur: base, speedDur: speed, peakDur: peak, taperDur: taper)
+            let t = calculateWeeklyTargetsV3(weekInPlan: w, weekInPhase: wip, phase: phase, phaseDurations: d, config: c.config)
+            let pname = "\(phase)".uppercased().padding(toLength: 6, withPad: " ", startingAt: 0)
+            print("W\(String(format: "%2d", w+1))  \(pname)  load=\(String(format: "%6d", Int(t.load)))  dur=\(String(format: "%4d", Int(t.duration)))min\(t.isDeloading ? "  [deload]" : "")")
+        }
+    }
+}
