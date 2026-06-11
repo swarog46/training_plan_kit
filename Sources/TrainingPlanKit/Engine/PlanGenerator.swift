@@ -8,7 +8,7 @@
 import Foundation
 
 // The rewritten createMarathonPlan function
-func createMarathonPlan(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
+public func createMarathonPlan(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
     // Normalize dates to start of day to ensure proper comparison
     let calendar = Calendar.current
     let normalizedStartDate = calendar.startOfDay(for: startDate)
@@ -153,7 +153,7 @@ func createMarathonPlan(startDate: Date, raceDate: Date, from workouts: [Workout
     return events.sorted { $0.date < $1.date }
 }
 
-func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
+public func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
     // Create a race day workout with free run configuration
     // The workout can be started on the watch just like a regular free run
     return Workout(

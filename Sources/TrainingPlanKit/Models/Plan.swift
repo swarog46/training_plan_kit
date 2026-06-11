@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftUI
 
 // MARK: - PlanCategory
 
@@ -190,19 +189,6 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     /// the older `DistanceUtils.planColor(for: Int)` which had a meters/km
     /// switch bug (callers passed km, switch keyed on meters → everything
     /// fell through to indigo). Use `plan.category?.color` everywhere.
-    public var color: Color {
-        switch self {
-        case .fiveK:                    return Theme.indigo
-        case .tenK:                     return Theme.mint
-        case .halfMarathon:             return Theme.orange
-        case .marathon:                 return Theme.pink
-        case .halfMarathonCompetitive:  return Color.red.opacity(0.85)   // distinct from .halfMarathon orange
-        case .marathonCompetitive:      return Color.red                  // intense, distinct from .marathon pink
-        case .recovery:                 return Theme.cyan
-        case .maintenance:              return Theme.purple
-        case .vo2max:                   return Theme.green                // separated from race-distance palette
-        }
-    }
 
     // MARK: Helpers
 
@@ -243,15 +229,6 @@ public enum DifficultyLevel: Int16, Codable, CaseIterable {
 
     public var flameCount: Int {
         return Int(self.rawValue)
-    }
-
-    public var displayName: String {
-        switch self {
-        case .beginner:     return "difficulty.beginner"
-        case .intermediate: return "difficulty.intermediate"
-        case .advanced:     return "difficulty.advanced"
-        case .competitive:  return "difficulty.competitive"
-        }
     }
 }
 

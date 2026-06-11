@@ -104,13 +104,6 @@ The sample here is deliberately small. RunPlan's full library is its tuned core
 and stays in the app. `scripts/generate_sample_catalog.py` shows how the sample
 was pulled from a larger catalog; point it at your own to build a bigger one.
 
-## How it relates to RunPlan
-
-RunPlan uses this package as a git submodule — the app is the engine plus the
-catalog, the UI, the watch app, and everything around them. Splitting the
-engine out keeps it honest: it has to build and pass its tests on its own,
-without the app.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).

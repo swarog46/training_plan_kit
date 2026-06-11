@@ -26,7 +26,7 @@ import Foundation
 
 public struct VDOT: Equatable {
     /// The VDOT value (typically 30-85 for amateur → elite range).
-    let value: Double
+    public let value: Double
 
     // MARK: - Construction
 
@@ -36,7 +36,7 @@ public struct VDOT: Equatable {
     ///   - distanceMeters: Race distance in meters (5000, 10000, 21097, 42195 — or any race distance).
     ///   - timeSeconds: Finish time in seconds.
     /// - Returns: The corresponding VDOT, or nil if inputs are invalid.
-    static func from(distanceMeters: Int, timeSeconds: Int) -> VDOT? {
+    public static func from(distanceMeters: Int, timeSeconds: Int) -> VDOT? {
         guard distanceMeters > 0, timeSeconds > 0 else { return nil }
 
         let timeMin = Double(timeSeconds) / 60.0
@@ -65,7 +65,7 @@ public struct VDOT: Equatable {
     ///
     /// - Parameter distanceMeters: Target race distance in meters.
     /// - Returns: Predicted time in seconds, or nil if no solution converges.
-    func predictedTime(forDistanceMeters distanceMeters: Int) -> Int? {
+    public func predictedTime(forDistanceMeters distanceMeters: Int) -> Int? {
         guard distanceMeters > 0 else { return nil }
 
         // Bisect over plausible times: 1 minute → 6 hours.
@@ -97,25 +97,25 @@ public struct VDOT: Equatable {
     /// Marathon pace — the pace this VDOT predicts can be held for 42.195km.
     /// This is the anchor for sub-3h training: derive everything else relative
     /// to this rather than to a goal-time-derived guess.
-    var marathonPaceSecondsPerKm: Int {
+    public var marathonPaceSecondsPerKm: Int {
         guard let t = predictedTime(forDistanceMeters: 42195) else { return 0 }
         return Int(Double(t) / 42.195)
     }
 
     /// Half-marathon pace — for sub-1:30 plans.
-    var halfMarathonPaceSecondsPerKm: Int {
+    public var halfMarathonPaceSecondsPerKm: Int {
         guard let t = predictedTime(forDistanceMeters: 21097) else { return 0 }
         return Int(Double(t) / 21.097)
     }
 
     /// 10K race pace.
-    var tenKPaceSecondsPerKm: Int {
+    public var tenKPaceSecondsPerKm: Int {
         guard let t = predictedTime(forDistanceMeters: 10000) else { return 0 }
         return Int(Double(t) / 10.0)
     }
 
     /// 5K race pace.
-    var fiveKPaceSecondsPerKm: Int {
+    public var fiveKPaceSecondsPerKm: Int {
         guard let t = predictedTime(forDistanceMeters: 5000) else { return 0 }
         return Int(Double(t) / 5.0)
     }
@@ -123,7 +123,7 @@ public struct VDOT: Equatable {
     /// Daniels' Easy pace — 59-74% VO2max, used for ~75-80% of weekly volume.
     /// Approximated as MP + 75 sec/km (Daniels' "E pace" middle of range for
     /// typical sub-elite VDOTs). Slightly slower than MP+60s for safety.
-    var easyPaceSecondsPerKm: Int {
+    public var easyPaceSecondsPerKm: Int {
         let mp = marathonPaceSecondsPerKm
         guard mp > 0 else { return 0 }
         return mp + 75
@@ -132,7 +132,7 @@ public struct VDOT: Equatable {
     /// Daniels' Threshold (T) pace — 85-88% VO2max, ~hour-race pace.
     /// Used for cruise intervals and tempo runs. Approximated as MP - 15s/km
     /// for sub-elite VDOTs (Daniels table shows T is closer to HMP).
-    var thresholdPaceSecondsPerKm: Int {
+    public var thresholdPaceSecondsPerKm: Int {
         let mp = marathonPaceSecondsPerKm
         guard mp > 0 else { return 0 }
         return mp - 15
@@ -140,7 +140,7 @@ public struct VDOT: Equatable {
 
     /// Daniels' Interval (I) pace — 95-100% VO2max, 3-5 min race pace.
     /// Used for VO2max work like 5×1000m. Approximated as 5K pace minus a few sec.
-    var intervalPaceSecondsPerKm: Int {
+    public var intervalPaceSecondsPerKm: Int {
         let fiveK = fiveKPaceSecondsPerKm
         guard fiveK > 0 else { return 0 }
         return fiveK - 3
@@ -148,7 +148,7 @@ public struct VDOT: Equatable {
 
     /// Daniels' Repetition (R) pace — neuromuscular work, faster than V̇O2max.
     /// Used for short reps (200-400m). Approximated as Interval - 10 sec/km.
-    var repetitionPaceSecondsPerKm: Int {
+    public var repetitionPaceSecondsPerKm: Int {
         let i = intervalPaceSecondsPerKm
         guard i > 0 else { return 0 }
         return i - 10
@@ -171,7 +171,7 @@ extension VDOT {
     /// - Returns: Recommended plan length in weeks. Returns a sensible
     ///   default if either the goal can't be parsed or it's well below
     ///   current fitness (no extra build needed).
-    func recommendedPlanWeeks(forDistance distanceMeters: Int, goalTimeSeconds: Int) -> Int {
+    public func recommendedPlanWeeks(forDistance distanceMeters: Int, goalTimeSeconds: Int) -> Int {
         guard let requiredVDOT = VDOT.from(distanceMeters: distanceMeters, timeSeconds: goalTimeSeconds) else {
             return distanceMeters == 42195 ? 18 : 14
         }
@@ -210,7 +210,7 @@ extension VDOT {
     /// asymptotes — this function only projects the current block.
     ///
     /// - Returns: Predicted finish time in seconds at the projected VDOT.
-    func realisticOutcome(forDistance distanceMeters: Int,
+    public func realisticOutcome(forDistance distanceMeters: Int,
                           planWeeks: Int,
                           perWeek: Double = 0.25,
                           adaptationCeiling: Double = 6.0) -> Int? {
@@ -238,7 +238,7 @@ extension VDOT {
     /// Pure-numeric API so test harnesses in plan_debug can exercise the
     /// growth math without depending on RunnerLevel (which lives in the
     /// iOS module). Call site computes `baseCap` per level.
-    static func adaptationCeiling(baseCap: Double, current: VDOT) -> Double {
+    public static func adaptationCeiling(baseCap: Double, current: VDOT) -> Double {
         let linearFactor = max(0.0, min(1.0, (65.0 - current.value) / 35.0))
         let ceilingFactor = max(0.10, pow(linearFactor, 1.5))
         return baseCap * ceilingFactor
@@ -251,7 +251,7 @@ extension VDOT {
     /// front-load). Kept deliberately small so the projection stays on
     /// the under-promise side — linear ramp from 1.20× at VDOT 30 down
     /// to 1.00× at VDOT ≥ 38.
-    static func newnessBoost(current: VDOT) -> Double {
+    public static func newnessBoost(current: VDOT) -> Double {
         return 1.0 + max(0.0, min(0.2, (38.0 - current.value) / 40.0))
     }
 }
@@ -260,14 +260,14 @@ extension VDOT {
 
 /// A user's recent race result, used to compute VDOT.
 public struct RaceResult: Equatable, Codable {
-    let distanceMeters: Int
-    let timeSeconds: Int
+    public let distanceMeters: Int
+    public let timeSeconds: Int
     /// When the race happened — used to discount stale results
     /// (VDOT fades 1-2 points per month without specific training).
-    let date: Date
+    public let date: Date
 
     /// Computed VDOT from this result, nil if invalid.
-    var vdot: VDOT? {
+    public var vdot: VDOT? {
         VDOT.from(distanceMeters: distanceMeters, timeSeconds: timeSeconds)
     }
 }

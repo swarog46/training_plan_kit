@@ -3,7 +3,7 @@
 //  Plan debugger CLI
 //
 //  Generates a plan for every (distance × level × duration) combination
-//  and prints week-by-week summaries. Pure Swift / Foundation / SwiftUI —
+//  and prints week-by-week summaries. Pure Swift / Foundation —
 //  no Xcode, no simulator, no XCTest.
 //
 //  Run via: ./scripts/plan_debug/build.sh && ./scripts/plan_debug/plan_debug
@@ -536,33 +536,9 @@ if mode == "gate" {
     }
 }
 
-// recommend: for each (level, distance) combo, print the UI-advised
-// trainings-per-week (RunningLevel.recommendedTrainingsPerWeek) alongside
-// the actual config trainingDays.count. The regression test asserts the
-// two match for every combination — drift here means the plan-setup UI
-// would lie to users about their plan structure. Format:
-//   LEVEL DIST UI=N CONFIG=N
-if mode == "recommend" {
-    let combos: [(String, RunningLevel, PlanConfiguration)] = [
-        ("Beg 5K",  .beginner,     .beginner5Default),
-        ("Int 5K",  .intermediate, .intermediate5Default),
-        ("Adv 5K",  .advanced,     .advanced5Default),
-        ("Beg 10K", .beginner,     .beginner10Default),
-        ("Int 10K", .intermediate, .intermediate10Default),
-        ("Adv 10K", .advanced,     .advanced10Default),
-        ("Beg 21K", .beginner,     .beginner21Default),
-        ("Int 21K", .intermediate, .intermediate21Default),
-        ("Adv 21K", .advanced,     .advanced21Default),
-        ("Beg 42K", .beginner,     .beginner42Default),
-        ("Int 42K", .intermediate, .intermediate42Default),
-        ("Adv 42K", .advanced,     .advanced42Default),
-    ]
-    for (label, level, config) in combos {
-        let ui = level.recommendedTrainingsPerWeek(for: Int(config.distance))
-        let actual = config.trainingDays.count
-        print("\(label) UI=\(ui) CONFIG=\(actual)")
-    }
-}
+// (The "recommend" mode lived here — it compared the app's UI-advised
+// trainings-per-week against the engine config. That's a UI-layer concern
+// tied to RunningLevel, which is app-only, so it's not part of this package.)
 
 // Exercise the realistic-outcome projection across a matrix of starting
 // VDOTs × runner levels × plan lengths. Output is parsed by the Python
@@ -633,6 +609,22 @@ if mode == "projection" {
                     }
                 }
             }
+        }
+    }
+}
+
+// phases: for each filtered plan, print the phase split + per-week load target
+// and multiplier. Shows how phase durations are derived and how load is balanced.
+if mode == "phases" {
+    for c in filtered {
+        let d = calculatePhaseDurations(config: c.config, totalWeeks: c.weeks)
+        let base = d["base"] ?? 0, speed = d["speed"] ?? 0, peak = d["peak"] ?? 0, taper = d["taper"] ?? 0
+        print("\n=== \(c.label) (\(c.weeks)w): BASE \(base) | SPEED \(speed) | PEAK \(peak) | TAPER \(taper) ===")
+        for w in 0..<c.weeks {
+            let (phase, wip) = determinePhaseV3(weekIndex: w, baseDur: base, speedDur: speed, peakDur: peak, taperDur: taper)
+            let t = calculateWeeklyTargetsV3(weekInPlan: w, weekInPhase: wip, phase: phase, phaseDurations: d, config: c.config)
+            let pname = "\(phase)".uppercased().padding(toLength: 6, withPad: " ", startingAt: 0)
+            print("W\(String(format: "%2d", w+1))  \(pname)  load=\(String(format: "%6d", Int(t.load)))  dur=\(String(format: "%4d", Int(t.duration)))min\(t.isDeloading ? "  [deload]" : "")")
         }
     }
 }

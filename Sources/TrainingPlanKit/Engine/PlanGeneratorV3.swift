@@ -13,7 +13,7 @@ import Foundation
 public struct SeededRandomNumberGenerator: RandomNumberGenerator {
     private var state: UInt64
 
-    init(seed: UInt64) {
+    public init(seed: UInt64) {
         self.state = seed
     }
 
@@ -25,7 +25,7 @@ public struct SeededRandomNumberGenerator: RandomNumberGenerator {
 
 // MARK: - Phase Duration Calculation (mirrors calculate_phase_durations)
 
-func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
+public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
     // Taper is fixed — longer plans get more training, not more taper
     let taper = config.minTaperPhaseWeeks
     let trainingWeeks = totalWeeks - taper
@@ -92,7 +92,7 @@ func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [Str
 
 // MARK: - Phase Determination (mirrors determine_phase)
 
-func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDur: Int, taperDur: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
+public func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDur: Int, taperDur: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
     // Week ordering: BASE -> SPEED -> PEAK -> TAPER -> RACE (last week)
     // The final week of the plan is race week — distinct from taper because
     // it cuts volume to ~50% of peak (Pfitz / Daniels) rather than the
@@ -116,10 +116,10 @@ func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDur: Int,
 // MARK: - Weekly Targets (mirrors calculate_weekly_targets)
 
 public struct WeeklyTargets {
-    let load: Double
-    let duration: Double
-    let isDeloading: Bool
-    let phaseProgression: Double
+    public let load: Double
+    public let duration: Double
+    public let isDeloading: Bool
+    public let phaseProgression: Double
 }
 
 func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: TrainingPhase,
@@ -2030,7 +2030,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
 
 // MARK: - Integration with existing createMarathonPlan
 
-func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
+public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
     let calendar = Calendar.current
     let normalizedStartDate = calendar.startOfDay(for: startDate)
     let normalizedRaceDate = calendar.startOfDay(for: raceDate)

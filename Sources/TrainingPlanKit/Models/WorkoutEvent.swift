@@ -29,6 +29,25 @@ public struct WorkoutEvent: Identifiable, Codable, Hashable {
     public var adjustmentReason: String? // Why this workout was adjusted
     public var adjustmentType: Int16 // 0=none, 1=increased, 2=decreased, 3=skipped-by-suggestion
 
+    public init(workout: Workout, id: UUID, planId: UUID?, date: Date, isCompleted: Bool, completionDate: Date?, hkWorkoutId: UUID?, actualDistance: Double?, actualDuration: TimeInterval?, isCancelled: Bool, originalDate: Date?, isSwapped: Bool, originalWorkoutType: String?, loadScore: Double?, adjustmentReason: String?, adjustmentType: Int16) {
+        self.workout = workout
+        self.id = id
+        self.planId = planId
+        self.date = date
+        self.isCompleted = isCompleted
+        self.completionDate = completionDate
+        self.hkWorkoutId = hkWorkoutId
+        self.actualDistance = actualDistance
+        self.actualDuration = actualDuration
+        self.isCancelled = isCancelled
+        self.originalDate = originalDate
+        self.isSwapped = isSwapped
+        self.originalWorkoutType = originalWorkoutType
+        self.loadScore = loadScore
+        self.adjustmentReason = adjustmentReason
+        self.adjustmentType = adjustmentType
+    }
+
     public init(workout: Workout, planId: UUID, date: Date, id: UUID = UUID()) {
         self.id = id
         self.workout = workout

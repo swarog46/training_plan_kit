@@ -5,7 +5,6 @@
 //  Created by Dan Sh on 16/01/2025.
 //
 
-import SwiftUI
 import Foundation
 
 public struct WorkoutInterval: Identifiable, Codable, Equatable {
@@ -15,6 +14,15 @@ public struct WorkoutInterval: Identifiable, Codable, Equatable {
     public let distance: Int64
     public let targetType: TargetType
     public let target: TargetRange
+
+    public init(id: Int64, type: IntervalType, duration: Double, distance: Int64, targetType: TargetType, target: TargetRange) {
+        self.id = id
+        self.type = type
+        self.duration = duration
+        self.distance = distance
+        self.targetType = targetType
+        self.target = target
+    }
     
     public static func == (lhs: WorkoutInterval, rhs: WorkoutInterval) -> Bool {
         return lhs.id == rhs.id &&
@@ -24,83 +32,30 @@ public struct WorkoutInterval: Identifiable, Codable, Equatable {
                lhs.targetType == rhs.targetType &&
                lhs.target == rhs.target
     }
-    
-    public func toString() -> String {
-        // Format based on duration or distance
-        let intervalString: String
-        
-        if duration > 0 {
-            // Use duration if it's not 0
-            let minutes = Int(duration) / 60
-            let seconds = Int(duration) % 60
-            
-            // Format as MIN'SEC" (e.g., 5:30)
-            intervalString = "\(minutes):\(String(format: "%02d", seconds))"
-        } else {
-            // Otherwise use distance with locale-based units
-            let measurementSystem = Locale.current.measurementSystem
-            let useMetric = (measurementSystem == .metric)
-            
-            if useMetric {
-                // Metric system (kilometers)
-                if distance < 1000 {
-                    // If less than 1 km, show in meters
-                    intervalString = "\(distance)\("meters_short")"
-                } else {
-                    // If 1 km or more, show in kilometers with 1 decimal place
-                    let kilometers = Double(distance) / 1000.0
-                    intervalString = "\(String(format: "%.1f", kilometers))\("km_short")"
-                }
-            } else {
-                // Imperial system (miles)
-                let meters = Double(distance)
-                let miles = meters / 1609.344 // Convert meters to miles
-                
-                if meters < 804.672 { // Less than 0.5 miles (in meters)
-                    // Show in yards (1 meter ≈ 1.09361 yards)
-                    let yards = Int(meters * 1.09361)
-                    intervalString = "\(yards)\("yards_short")"
-                } else {
-                    // Show in miles with 1 decimal place
-                    intervalString = "\(String(format: "%.1f", miles))\("miles_short")"
-                }
-            }
-        }
-        
-        // Special handling for rest/cooldown/recovery interval types
-        if type == .rest || type == .cooldown || type == .recovery {
-            return "\(intervalString), \("easy pace")"
-        } else {
-            // For normal intervals, combine with target
-            return "\(intervalString) in \(target.toString())"
-        }
-    }
 }
 
 public struct WorkoutType: Identifiable, Codable, Equatable, Hashable {
     public var name: String
-    public var color: Color
-    
+
     public var id: String { self.name }
 
-    // Convert Color to Codable-compatible representation
     enum CodingKeys: String, CodingKey {
-        case id, name, color
+        case name
     }
 
     // Default cases
-    public static let easyRun = WorkoutType(name: "Easy Run", color: .green)
-    public static let longRun = WorkoutType(name: "Long Run", color: .cyan)
-    public static let progressionRun = WorkoutType(name: "Progression Run", color: .indigo)
-    public static let intervalRun = WorkoutType(name: "Intervals", color: .orange)
-    public static let speedRun = WorkoutType(name: "Speed Run", color: .red)
-    public static let thresholdRun = WorkoutType(name: "Threshold", color: .red)
-    public static let fartlekRun = WorkoutType(name: "Fartlek Run", color: .pink)
-    public static let recoveryRun = WorkoutType(name: "Recovery Run", color: .green)
-    public static let freeRun = WorkoutType(name: "Free Run", color: .yellow)
-    public static let race = WorkoutType(name: "Race", color: .yellow)
-    public static let cycling = WorkoutType(name: "Cycling", color: .yellow)
-    public static let yoga = WorkoutType(name: "Yoga", color: .cyan)
+    public static let easyRun = WorkoutType(name: "Easy Run")
+    public static let longRun = WorkoutType(name: "Long Run")
+    public static let progressionRun = WorkoutType(name: "Progression Run")
+    public static let intervalRun = WorkoutType(name: "Intervals")
+    public static let speedRun = WorkoutType(name: "Speed Run")
+    public static let thresholdRun = WorkoutType(name: "Threshold")
+    public static let fartlekRun = WorkoutType(name: "Fartlek Run")
+    public static let recoveryRun = WorkoutType(name: "Recovery Run")
+    public static let freeRun = WorkoutType(name: "Free Run")
+    public static let race = WorkoutType(name: "Race")
+    public static let cycling = WorkoutType(name: "Cycling")
+    public static let yoga = WorkoutType(name: "Yoga")
 
     // Static array for default types
     public static var allCases: [WorkoutType] {
@@ -109,122 +64,26 @@ public struct WorkoutType: Identifiable, Codable, Equatable, Hashable {
         ]
     }
     
-    // Initializer with dynamic color mapping
-    public init(name: String, color: Color? = nil) {
+    public init(name: String) {
         self.name = name
-        // Assign predefined color if name matches; fallback to given color or gray
-        if let color = color {
-            self.color = color
-        } else {
-            self.color = WorkoutType.allCases.first { $0.name.lowercased() == name.lowercased() }?.color ?? color ?? .gray
-        }
-    }
-
-    // Fetch color dynamically by name (used externally if needed)
-    public static func color(for name: String) -> Color {
-        return allCases.first { $0.name.lowercased() == name.lowercased() }?.color ?? .gray
     }
     
-    // Custom Decoding to Handle String or Full Object
+    // Serializes as its name; decodes a bare string ("Long Run") or a { name } object.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-
         if let name = try? container.decode(String.self) {
-            // Decode from string (e.g., "Run")
-            if let matchingType = WorkoutType.allCases.first(where: { $0.name == name }) {
-                self = matchingType
-            } else {
-                throw DecodingError.dataCorruptedError(
-                    in: container,
-                    debugDescription: "Unknown WorkoutType name: \(name)"
-                )
-            }
+            self.name = name
         } else {
-            // Decode full object
-            let keyedContainer = try decoder.container(keyedBy: CodingKeys.self)
-            name = try keyedContainer.decode(String.self, forKey: .name)
-            let colorComponents = try keyedContainer.decode([CGFloat].self, forKey: .color)
-            color = Color(
-                red: Double(colorComponents[0]),
-                green: Double(colorComponents[1]),
-                blue: Double(colorComponents[2])
-            )
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            self.name = try keyed.decode(String.self, forKey: .name)
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        #if canImport(UIKit)
-        let colorComponents = color.components()
-        try container.encode([colorComponents.red, colorComponents.green, colorComponents.blue], forKey: .color)
-        #else
-        // CLI/macOS: serializing the rendered Color isn't meaningful here.
-        try container.encode([Double]([0, 0, 0]), forKey: .color)
-        #endif
-    }
-    
-    public func shortName() -> String {
-        switch name.lowercased() {
-        case "easy run":        return "workout_type.easy_run.short"
-        case "long run":        return "workout_type.long_run.short"
-        case "progression run": return "workout_type.progression_run.short"
-        case "intervals":       return "workout_type.intervals.short"
-        case "speed run":       return "workout_type.speed_run.short"
-        case "threshold":       return "workout_type.threshold.short"
-        case "fartlek run":     return "workout_type.fartlek.short"
-        case "recovery run":    return "workout_type.recovery.short"
-        case "free run":        return "workout_type.free_run.short"
-        case "race":            return "workout_type.race.short"
-        case "cycling":         return "workout_type.cycling.short"
-        case "yoga":            return "workout_type.yoga.short"
-        default:
-            // For any custom workout types, remove "Run" suffix if present
-            if name.hasSuffix("Run") {
-                return String(name.dropLast(4)).trimmingCharacters(in: .whitespaces)
-            }
-            return name
-        }
-    }
-    
-    public func shortDescription() -> String {
-        switch name.lowercased() {
-        case "easy run":
-            return "easy_run_short_description"
-        case "long run":
-            return "long_run_short_description"
-        case "progression run":
-            return "progression_run_short_description"
-        case "intervals":
-            return "intervals_short_description"
-        case "speed run":
-            return "speed_run_short_description"
-        case "threshold":
-            return "threshold_run_short_description"
-        case "fartlek run":
-            return "fartlek_run_short_description"
-        case "recovery run":
-            return "recovery_run_short_description"
-        case "free run":
-            return "free_run_short_description"
-        case "race":
-            return "race_short_description"
-        default:
-            return name
-        }
+        var container = encoder.singleValueContainer()
+        try container.encode(name)
     }
 }
-
-#if canImport(UIKit)
-extension Color {
-    public func components() -> (red: Double, green: Double, blue: Double) {
-        guard let components = UIColor(self).cgColor.components else {
-            return (0, 0, 0) // Default to black if components are unavailable
-        }
-        return (red: Double(components[0]), green: Double(components[1]), blue: Double(components[2]))
-    }
-}
-#endif
 
 public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
     case intervals
@@ -257,37 +116,6 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
 
     public var id: String { self.rawValue }
 
-    public var displayName: String {
-        switch self {
-        case .intervals: return "intervals"
-        case .pyramidIntervals: return "pyramidIntervals"
-        case .ladderIntervals: return "ladderIntervals"
-        case .long: return "long"
-        case .easy: return "easy"
-        case .progression: return "progression"
-        case .steadyLong: return "steadyLong"
-        case .progressiveLong: return "progressiveLong"
-        case .recovery: return "recovery"
-        case .speed: return "speed"
-        case .tempo: return "tempo"
-        case .fartlek: return "fartlek"
-        case .threshold: return "threshold"
-        case .hillRepeats: return "hillRepeats"
-        case .strides: return "strides"
-        case .marathonPace: return "marathonPace"
-        case .raceRehearsalM: return "raceRehearsalM"
-        case .mileRepeats: return "mileRepeats"
-        case .yasso800: return "yasso800"
-        case .timeTrial: return "timeTrial"
-        case .raceRehearsalHM: return "raceRehearsalHM"
-        case .raceRehearsal10K: return "raceRehearsal10K"
-        case .fivekPace: return "fivekPace"
-        case .tenkPace: return "tenkPace"
-        case .fastFinish: return "fastFinish"
-        case .mediumLong: return "mediumLong"
-        }
-    }
-
     /// The parent WorkoutType — used for color/icon when a subtype chip
     /// stands on its own (e.g. the plan-detail "Types of runs" section).
     /// Maps each fine-grained subtype back to one of the canonical types
@@ -311,47 +139,6 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
             return .speedRun
         case .fartlek:
             return .fartlekRun
-        }
-    }
-
-    /// Human-friendly title for the workout list and bottom sheet.
-    /// More specific than the WorkoutType name (e.g. "Hill Repeats" instead
-    /// of "Intervals", "Recovery Run" instead of "Easy Run"). For generic
-    /// subtypes (.easy / .long / .intervals) returns the same string the
-    /// type would, so callers can use it unconditionally for runs.
-    ///
-    /// English strings are used as the localization keys directly (mirroring
-    /// SwiftUI's `Text("Hello")` pattern). When a translation exists in the
-    /// catalog it's returned; otherwise the English source is returned. So
-    /// EN locale works correctly even before translations are added.
-    public var localizedTitle: String {
-        switch self {
-        case .intervals:        return "Intervals"
-        case .pyramidIntervals: return "Pyramid Intervals"
-        case .ladderIntervals:  return "Ladder Intervals"
-        case .long:             return "Long Run"
-        case .easy:             return "Easy Run"
-        case .progression:      return "Progression Run"
-        case .steadyLong:       return "Steady Long Run"
-        case .progressiveLong:  return "Progressive Long Run"
-        case .recovery:         return "Recovery Run"
-        case .tempo:            return "Tempo Run"
-        case .speed:            return "Speed Run"
-        case .fartlek:          return "Fartlek"
-        case .threshold:        return "Threshold Run"
-        case .hillRepeats:      return "Hill Repeats"
-        case .strides:          return "Easy with Strides"
-        case .marathonPace:     return "Marathon Pace"
-        case .raceRehearsalM:   return "Marathon Race Rehearsal"
-        case .raceRehearsalHM:  return "Half Marathon Race Rehearsal"
-        case .raceRehearsal10K: return "10K Race Rehearsal"
-        case .mileRepeats:      return "Mile Repeats"
-        case .yasso800:         return "Yasso 800s"
-        case .timeTrial:        return "Time Trial"
-        case .fivekPace:        return "5K Pace"
-        case .tenkPace:         return "10K Pace"
-        case .fastFinish:       return "Fast Finish"
-        case .mediumLong:       return "Medium-Long Run"
         }
     }
 
@@ -543,33 +330,6 @@ public enum TargetRange: Codable, Equatable {
             return "\(Int(avg) / 60)'\(String(format: "%02d", Int(avg) % 60))\""
         case .heartRateZone, .noRange:
             return nil
-        }
-    }
-
-    // Convert to string representation
-    public func toString() -> String {
-        switch self {
-        case .secondsRange(let min, let max):
-            // Average of min and max for the target time
-            let avgSeconds = (min + max) / 2
-
-            // Convert to minutes and seconds format
-            let minutes = Int(avgSeconds) / 60
-            let seconds = Int(avgSeconds) % 60
-
-            // Format as "X'YY"
-            return "\(minutes)'\(String(format: "%02d", seconds))\""
-
-        case .heartRateZone(let zone):
-            return "\("HR zone") \(zone)"
-
-        case .paceTarget(let basePace, let relative):
-            // Calculate target pace in seconds/km and format in user's units
-            let targetPaceSecondsPerKm = Int(Double(basePace) * relative)
-            return PaceConversion.formatPaceInUserUnits(targetPaceSecondsPerKm)
-
-        case .noRange:
-            return ""
         }
     }
 }
