@@ -336,20 +336,6 @@ func determinePhase(weekIndex: Int, baseDuration: Int, speedDuration: Int, peakD
     return (.taper, weekIndex - accumulatedWeeks)
 }
 
-// Helper function to add phase duration diagnostics for debugging
-func logPhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) {
-    print("Total training weeks: \(totalWeeks)")
-    print("Base phase: \(baseDuration) weeks (\(Double(baseDuration) / Double(totalWeeks) * 100)%)")
-    print("Speed phase: \(speedDuration) weeks (\(Double(speedDuration) / Double(totalWeeks) * 100)%)")
-    print("Peak phase: \(peakDuration) weeks (\(Double(peakDuration) / Double(totalWeeks) * 100)%)")
-    print("Taper phase: \(taperDuration) weeks (\(Double(taperDuration) / Double(totalWeeks) * 100)%)")
-}
-
-// Helper function to validate the phase durations add up to total weeks
-func validatePhaseDurations(totalWeeks: Int, baseDuration: Int, speedDuration: Int, peakDuration: Int, taperDuration: Int) -> Bool {
-    return baseDuration + speedDuration + peakDuration + taperDuration == totalWeeks
-}
-
 // Adjust training day count based on phase and runner level
 func determineTrainingDaysCount(phase: TrainingPhase, weekInPhase: Int, config: PlanConfiguration) -> Int {
     // Base number of training days based on runner level

@@ -9,7 +9,7 @@
 import Foundation
 
 public enum TrainingPlanKit {
-    public static let version = "0.1.0"
+    public static let version = "0.2.1"
 }
 
 /// One placed session: the engine's role for the slot ("Long Run",
