@@ -13,6 +13,8 @@ Defends the invariants we fixed by hand this round:
   - raceRehearsalHM HMP segments resolve at racePace (Z3 retag)
 
 Run:    python3 scripts/plan_debug/test_plans.py
+        Catalog-bound checks SKIP on the bundled sample;
+        WORKOUTS_PATH=/path/to/full_catalog.json runs everything.
 Exit 0 = all pass. Exit 1 = at least one fail (CI-friendly).
 
 Builds plan_debug on demand if it's missing, otherwise reuses the
@@ -90,8 +92,17 @@ def parse_plan(text, header):
 
 passed = []
 failed = []
+skipped = []
 
-def check(label, condition, detail=""):
+# Catalog-bound checks (exact volumes, aerobic mix, variety depth) only hold
+# against RunPlan's full catalog; on the bundled sample they SKIP.
+FULL_CATALOG = bool(os.environ.get("WORKOUTS_PATH"))
+
+def check(label, condition, detail="", full=False):
+    if full and not FULL_CATALOG:
+        skipped.append(label)
+        print(f"  SKIP  {label} (needs full catalog)")
+        return
     if condition:
         passed.append(label)
         print(f"  PASS  {label}")
@@ -158,7 +169,8 @@ for week in w.values():
 check(
     "Int 42K MP workouts hit 5:00/km exactly (Z3 unblend)",
     bool(mp_paces) and all(p == '5:00/km' for p in mp_paces),
-    f"got {mp_paces[:5]}"
+    f"got {mp_paces[:5]}",
+    full=True
 )
 
 # Cmp 21K race rehearsal HMP segments — Z3 retag means HMP shows at racePace.
@@ -198,7 +210,8 @@ for i in range(1, len(build_durs)):
 check(
     "Beg 42K long runs monotonic in build phases (≤5min slack)",
     not regressions,
-    f"regressions: {regressions}"
+    f"regressions: {regressions}",
+    full=True
 )
 
 # Cmp 21K TAPER: long runs decrease
@@ -476,17 +489,20 @@ for header, fil, rp, ep, exp_total, exp_sess, exp_peak in CMP_SNAPSHOTS:
     check(
         f"{header.split(' (')[0].split(',')[0]} total_min unchanged ({exp_total}±100)",
         abs(total - exp_total) <= 100,
-        f"got total={total}, expected {exp_total}±100"
+        f"got total={total}, expected {exp_total}±100",
+        full=True
     )
     check(
         f"{header.split(' (')[0].split(',')[0]} session count unchanged ({exp_sess}±3)",
         abs(sessions - exp_sess) <= 3,
-        f"got sessions={sessions}, expected {exp_sess}±3"
+        f"got sessions={sessions}, expected {exp_sess}±3",
+        full=True
     )
     check(
         f"{header.split(' (')[0].split(',')[0]} peak LR unchanged ({exp_peak}m)",
         peak_lr == exp_peak,
-        f"got peak_lr={peak_lr}m, expected {exp_peak}m"
+        f"got peak_lr={peak_lr}m, expected {exp_peak}m",
+        full=True
     )
 
 section("Long-than-recommended plans (30w) generate cleanly")
@@ -722,7 +738,8 @@ for header, fil, rp, ep in [
     check(
         f"{header.split(' (')[0]} no quality workout repeats 3+ weeks straight",
         not violations,
-        f"violations: {violations[:3]}"
+        f"violations: {violations[:3]}",
+        full=True
     )
 
 section("Pace ranges — every plan, every quality zone, within watch tolerance")
@@ -854,7 +871,8 @@ for header, fil, rp, ep, bb in PACE_INPUTS:
             check(
                 f"{label} Z{zone} race-week converges to target ±{TOL}s (.advanced)",
                 abs(last_pace - target) <= TOL,
-                f"target={target} race-week obs={last_pace}"
+                f"target={target} race-week obs={last_pace}",
+                full=True
             )
         # Direction check applies to all non-Cmp tiers: race-week ≤ W1.
         if not is_cmp_config:
@@ -1079,7 +1097,8 @@ for header, fil, rp, ep, bb, tier, dist in KM_PLANS:
     check(
         f"{header.split(' (')[0]} peak weekly km ∈ [{band_lo}, {band_hi}] (vs published refs)",
         band_lo <= peak_km <= band_hi,
-        f"observed peak={peak_km:.1f} km/wk, avg={avg_km:.1f} km/wk"
+        f"observed peak={peak_km:.1f} km/wk, avg={avg_km:.1f} km/wk",
+        full=True
     )
 
 section("Time-weighted aerobic share — Cmp plans, REAL Swift HR-zone data")
@@ -1192,7 +1211,8 @@ for header, fil, bb, slice_n, lo, hi in AEROBIC_TARGETS:
     check(
         f"{header}{suffix} aerobic share ∈ [{lo}, {hi}]% (real Swift HR zones)",
         lo <= pct <= hi,
-        f"observed {pct:.1f}% ({aero}/{total} long-run min from Swift)"
+        f"observed {pct:.1f}% ({aero}/{total} long-run min from Swift)",
+        full=True
     )
 
 section("Min/max plan durations — pace + load progression sane at boundaries")
@@ -1747,7 +1767,8 @@ for header, fil, rp, ep, lo, hi, ref in SHORT_RACE_KM_BANDS:
     check(
         f"{short} peak km ∈ [{lo}, {hi}] ({ref})",
         km is not None and lo <= km <= hi,
-        f"got {km:.1f} km/wk"
+        f"got {km:.1f} km/wk",
+        full=True
     )
 
 section("Int/Adv 42K Pfitz MP-volume pattern (marathonPace forced on alt PEAK weeks)")
@@ -1765,12 +1786,14 @@ adv_42k_mp = count_workout_subtype("Adv 42K (long, 22w)", "Adv 42K (long, 22w)",
 check(
     "Int 42K (long, 22w) has >= 4 marathonPace sessions (Pfitz MP pattern)",
     int_42k_mp is not None and int_42k_mp >= 4,
-    f"got {int_42k_mp} marathonPace workouts"
+    f"got {int_42k_mp} marathonPace workouts",
+    full=True
 )
 check(
     "Adv 42K (long, 22w) has >= 3 marathonPace sessions (was 0 before forcing)",
     adv_42k_mp is not None and adv_42k_mp >= 3,
-    f"got {adv_42k_mp} marathonPace workouts — forcing must keep MP visible"
+    f"got {adv_42k_mp} marathonPace workouts — forcing must keep MP visible",
+    full=True
 )
 
 # 21K plans should NOT be affected by the marathon-specific MP forcing.
@@ -1873,17 +1896,20 @@ for header, rp, ep, alo, ahi, klo, khi, lrlo, lrhi, must_q in GUARDS:
     check(
         f"{short} aerobic share ∈ [{alo}, {ahi}]% (real Swift HR zones)",
         alo <= aero_pct <= ahi,
-        f"observed {aero_pct:.1f}%"
+        f"observed {aero_pct:.1f}%",
+        full=True
     )
     check(
         f"{short} peak weekly km ∈ [{klo}, {khi}]",
         klo <= peak_km <= khi,
-        f"observed {peak_km:.1f} km/wk"
+        f"observed {peak_km:.1f} km/wk",
+        full=True
     )
     check(
         f"{short} peak LR ∈ [{lrlo}, {lrhi}] min (Pfitz tier cap)",
         lrlo <= peak_lr <= lrhi,
-        f"observed peak LR {peak_lr}min"
+        f"observed peak LR {peak_lr}min",
+        full=True
     )
     missing = must_q - qualities
     check(
@@ -1897,6 +1923,8 @@ for header, rp, ep, alo, ahi, klo, khi, lrlo, lrhi, must_q in GUARDS:
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")
 print(f"Failed: {len(failed)}")
+if skipped:
+    print(f"Skipped: {len(skipped)} (catalog-bound; set WORKOUTS_PATH to run them)")
 if failed:
     print(f"\nFAILURES:")
     for label, detail in failed:

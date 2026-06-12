@@ -79,15 +79,17 @@ straight from the sources (no Xcode, no SPM), and prints plans for inspection:
 ## Tests
 
 ```bash
-python3 scripts/plan_debug/test_plans.py
+swift test                                  # unit tests
+python3 scripts/plan_debug/test_plans.py    # plan regression suite
 ```
 
-The suite is split in two. Most of it checks structural invariants — volume
-progresses then tapers, deloads land on cadence, phases stay ordered, paces
-converge to target. Those pass against the bundled sample. The rest assert the
-exact volumes and aerobic mix of RunPlan's *full* catalog (peak weekly km,
-marathon-pace counts), which a small sample can't reproduce — they're meant to
-run against a complete catalog:
+The regression suite is split in two. Most of it checks structural
+invariants — volume progresses then tapers, deloads land on cadence, phases
+stay ordered, paces converge to target. Those run and pass against the
+bundled sample. The rest assert the exact volumes and aerobic mix of
+RunPlan's *full* catalog (peak weekly km, marathon-pace counts), which a
+small sample can't reproduce — they print `SKIP` on the sample and run
+against a complete catalog:
 
 ```bash
 WORKOUTS_PATH=/path/to/full_catalog.json python3 scripts/plan_debug/test_plans.py
