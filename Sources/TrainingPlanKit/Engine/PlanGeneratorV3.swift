@@ -651,6 +651,19 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         }
     }
     
+    // Z5 frequency guard (injury-conscious intensity policy). A "real" Z5
+    // session is any workout with a work interval targeting HR zone 5;
+    // strides are exempt (short neuromuscular reps, not VO2 stress).
+    // Race plans (VO2 blocks are exempt — Z5 is their entire point):
+    //   - no Z5 in BASE (aerobic foundation) or TAPER (sharpen, don't dig)
+    //   - at most one Z5 session per week
+    //   - 21K/42K: no Z5 in consecutive weeks (these distances are
+    //     threshold/MP-dominant; Pfitz runs ~5-6 VO2 sessions per cycle)
+    func isRealZ5(_ w: Workout) -> Bool {
+        w.subtype != .strides && hasZone5(w)
+    }
+    var lastWeekHadZ5 = false
+
     for week in 0..<actualWeeksToGenerate {
         let phaseInfo = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
         let phase = phaseInfo.phase
@@ -676,6 +689,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         let isDeloading = targets.isDeloading
         
         var weekWorkouts: [(type: String, workout: Workout)] = []
+        var z5UsedThisWeek = false
         let targetLoad = targets.load
         let targetDuration = targets.duration
         
@@ -1112,10 +1126,34 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                     return intervalPool
                 }()
 
-                if !preferredPool.isEmpty {
+                // Z5 policy: blocked in BASE/TAPER, and on the week after a
+                // Z5 week for 21K/42K. VO2 blocks are exempt.
+                // Note `week == weeksToTrim`: short plans are generated at
+                // recommended length and trimmed from the front, so the
+                // runner's first week can land mid-SPEED — it still must not
+                // open with a VO2 session.
+                let z5Blocked = !config.isVO2Max && (
+                    phase == .base || phase == .taper
+                    || week == weeksToTrim
+                    || (config.distance >= 21000 && lastWeekHadZ5))
+                if z5Blocked {
+                    let noZ5 = preferredPool.filter { !isRealZ5($0) }
+                    if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
+                        weekWorkouts.append(("interval", interval))
+                        prevInterval = interval
+                    } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
+                        // No sub-Z5 interval template exists for this distance
+                        // (5K pools are mostly I-pace). Use a threshold session
+                        // as the week's quality instead of breaking the policy —
+                        // Daniels' BASE-phase quality IS the LT run.
+                        weekWorkouts.append(("threshold", threshold))
+                        prevThreshold = threshold
+                    }
+                } else if !preferredPool.isEmpty {
                     if let interval = selectWorkoutByTargetV3(workouts: preferredPool, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
                         weekWorkouts.append(("interval", interval))
                         prevInterval = interval
+                        if isRealZ5(interval) { z5UsedThisWeek = true }
                     }
                 }
                 
@@ -1149,9 +1187,20 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                             $0.subtype != .timeTrial &&
                             $0.subtype != firstIntervalSubtype
                         }
-                        let pool2 = secondSlotPool.isEmpty ? intervalPool : secondSlotPool
+                        let pool2base = secondSlotPool.isEmpty ? intervalPool : secondSlotPool
+                        // Weekly Z5 cap + phase/cadence policy for the second
+                        // slot: one Z5 session per week is the ceiling (Adv
+                        // VO2 blocks excepted). No unfiltered fallback here —
+                        // if no sub-Z5 candidate exists, skip the second
+                        // interval; the week keeps its slot-1 quality.
+                        let blockZ5Second = z5Blocked
+                            || (z5UsedThisWeek && !(config.isVO2Max && config.runnerLevel == .advanced))
+                        let pool2: [Workout] = blockZ5Second
+                            ? pool2base.filter { !isRealZ5($0) }
+                            : pool2base
                         if let interval2 = selectWorkoutByTargetV3(workouts: pool2, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, isMaintenance: isMaintenance) {
                             weekWorkouts.append(("interval2", interval2))
+                            if isRealZ5(interval2) { z5UsedThisWeek = true }
                         }
                     } else if !filteredThresholds.isEmpty {
                         // Normal week: Add threshold
@@ -2011,6 +2060,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             }
         }
 
+        lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
         workoutsByWeek[week] = weekWorkouts
     }
 
