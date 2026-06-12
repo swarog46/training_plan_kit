@@ -17,5 +17,9 @@ let package = Package(
                 .copy("Catalog/sample_catalog.json"),
             ]
         ),
+        .testTarget(
+            name: "TrainingPlanKitTests",
+            dependencies: ["TrainingPlanKit"]
+        ),
     ]
 )
