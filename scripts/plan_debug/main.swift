@@ -15,7 +15,14 @@ import Foundation
 
 func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
     let plan = simulatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
-    let phaseDurations = calculatePhaseDurations(config: config, totalWeeks: weeks)
+    // Mirror the engine's front-trim: short plans are generated at
+    // recommended length and trimmed from the start, so phase labels must
+    // be computed against the generated length and offset by the trim.
+    let minRequired = config.minBasePhaseWeeks + config.minSpeedPhaseWeeks
+        + config.minPeakPhaseWeeks + config.minTaperPhaseWeeks
+    let genWeeks = max(weeks, minRequired)
+    let weeksTrimmed = genWeeks - weeks
+    let phaseDurations = calculatePhaseDurations(config: config, totalWeeks: genWeeks)
     let baseDur = phaseDurations["base"] ?? 0
     let speedDur = phaseDurations["speed"] ?? 0
     let peakDur = phaseDurations["peak"] ?? 0
@@ -29,7 +36,7 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
     print("-----------------------------------------------------------------")
 
     for week in 0..<weeks {
-        let (phase, weekInPhase) = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
+        let (phase, weekInPhase) = determinePhaseV3(weekIndex: week + weeksTrimmed, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
         let ws = plan[week] ?? []
         let totalLoad = ws.reduce(0) { $0 + Int($1.workout.trainingLoad) }
         let totalMin  = ws.reduce(0) { $0 + Int($1.workout.duration) } / 60
@@ -42,7 +49,13 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
             let load = Int(w.workout.trainingLoad)
             let title = w.workout.title.padding(toLength: 28, withPad: " ", startingAt: 0)
             let subtype = w.workout.subtype.rawValue
-            print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]", dur, load, subtype, w.type))")
+            // Z5 work minutes from the actual picked template — ground truth
+            // for the Z5-policy tests (title-based joins are ambiguous).
+            let z5min = Int(w.workout.intervals
+                .filter { $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5) }
+                .reduce(0.0) { $0 + $1.duration } / 60)
+            let z5tag = z5min > 0 ? " z5=\(z5min)" : ""
+            print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]%@", dur, load, subtype, w.type, z5tag))")
         }
     }
     print("=================================================================\n")

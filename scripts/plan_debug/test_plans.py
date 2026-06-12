@@ -765,8 +765,11 @@ print(f"  using Swift WorkoutPaceTolerance.seconds = {TOL}")
 # Hill repeats are pure Z5 in our catalog (verified). Threshold/mileRepeats/
 # yasso800 are pure Z4. marathonPace is pure Z3. timeTrial is Z5.
 Z3_SUBTYPES = {'marathonPace'}
-Z4_SUBTYPES = {'threshold', 'mileRepeats', 'yasso800'}
-Z5_SUBTYPES = {'hillRepeats', 'timeTrial', 'fivekPace', 'tenkPace'}
+# hillRepeats + timeTrial moved to Z4 with the catalog retag: hills are
+# strength reps (HR can't settle in Z5 in 60-90s), and nobody holds true
+# Z5 for a 20-25min time trial.
+Z4_SUBTYPES = {'threshold', 'mileRepeats', 'yasso800', 'hillRepeats', 'timeTrial'}
+Z5_SUBTYPES = {'fivekPace', 'tenkPace'}
 
 def parse_pace_secs_first(pace_str):
     """Single pace 'NN:NN/km' or multi-pace '[a:bc/km, d:ef/km]'.
@@ -867,7 +870,12 @@ for header, fil, rp, ep, bb in PACE_INPUTS:
                 not out,
                 f"target={target} first out: {out[:3]}"
             )
-        elif is_adv:
+        elif is_adv and zone == 4:
+            # Z4 only: threshold work runs through TAPER so its last
+            # occurrence IS race-adjacent. Z5 ends with PEAK under the
+            # intensity policy (no Z5 in taper/race), so its last occurrence
+            # sits weeks before the convergence point — direction check
+            # below still covers it.
             check(
                 f"{label} Z{zone} race-week converges to target ±{TOL}s (.advanced)",
                 abs(last_pace - target) <= TOL,
@@ -1917,6 +1925,74 @@ for header, rp, ep, alo, ahi, klo, khi, lrlo, lrhi, must_q in GUARDS:
         not missing,
         f"missing: {sorted(missing)}, found: {sorted(qualities)}"
     )
+
+# --- Z5 intensity policy -----------------------------------------------
+# A "real" Z5 session = a workout with >=3min of work intervals targeting
+# HR zone 5 (strides exempt). Engine policy for race plans:
+#   no Z5 in BASE/TAPER/RACE, week 1 never opens with Z5, max one Z5
+#   session per week, and 21K/42K never run Z5 in consecutive weeks.
+# VO2 blocks are exempt (Z5 is their point); Adv VO2 may double.
+
+section("Z5 intensity policy — frequency caps (injury-conscious)")
+
+def parse_dump_z5():
+    r = subprocess.run([PLAN_DEBUG, "dump"], capture_output=True, text=True)
+    plans = {}
+    plan = week = None
+    for line in r.stdout.splitlines():
+        m = re.match(r'^=== (.+?)\s+\(\d+w', line)
+        if m:
+            plan = m.group(1); plans[plan] = {}; week = None; continue
+        m = re.match(r'^W\s*(\d+) \[(\w+)', line)
+        if m and plan:
+            week = int(m.group(1))
+            plans[plan][week] = {'phase': m.group(2), 'z5': 0}
+            continue
+        m = re.match(r'^\s{4}.*?\[(\w+)/\S+\] z5=(\d+)', line)
+        if m and plan and week and int(m.group(2)) >= 3 and m.group(1) != 'strides':
+            plans[plan][week]['z5'] += 1
+    return plans
+
+z5plans = parse_dump_z5()
+bad_phase, bad_double, bad_consec, bad_w1 = [], [], [], []
+for pname, weeks in z5plans.items():
+    isvo2 = pname.startswith('VO2')
+    prev = False
+    for wn in sorted(weeks):
+        wd = weeks[wn]; c = wd['z5']
+        if c and not isvo2 and wd['phase'] in ('base', 'taper', 'race'):
+            bad_phase.append(f"{pname} W{wn}[{wd['phase']}]")
+        if c and wn == 1 and not isvo2:
+            bad_w1.append(pname)
+        if c > 1 and not (isvo2 and 'Adv' in pname):
+            bad_double.append(f"{pname} W{wn}")
+        if c and prev and ('21K' in pname or '42K' in pname):
+            bad_consec.append(f"{pname} W{wn}")
+        prev = c > 0
+check("No Z5 sessions in BASE/TAPER/RACE weeks (non-VO2 plans)",
+      not bad_phase, f"offenders: {bad_phase[:4]}")
+check("Week 1 never opens with a Z5 session (non-VO2 plans)",
+      not bad_w1, f"offenders: {bad_w1[:4]}")
+check("At most one Z5 session per week (Adv VO2 block excepted)",
+      not bad_double, f"offenders: {bad_double[:4]}")
+check("21K/42K plans never run Z5 in consecutive weeks",
+      not bad_consec, f"offenders: {bad_consec[:4]}")
+
+# Catalog guard: strength/benchmark subtypes must not carry Z5 work
+# intervals (hills are strength, not VO2; nobody holds true Z5 for a
+# 25min TT; fast-finish tails are hard-but-controlled — all Z4).
+import json as _json
+_cat_path = os.environ.get(
+    "WORKOUTS_PATH",
+    os.path.join(ROOT, "Sources/TrainingPlanKit/Catalog/sample_catalog.json"))
+_cat = _json.load(open(_cat_path))
+_badcat = sorted({w.get('title', '?') for w in _cat
+                  if w.get('subtype') in ('hillRepeats', 'timeTrial', 'fastFinish')
+                  for iv in w.get('intervals', [])
+                  if iv.get('type') == 'Work'
+                  and (iv.get('target') or {}).get('zone') == 5})
+check("Catalog: hillRepeats/timeTrial/fastFinish carry no Z5 work (Z4 retag)",
+      not _badcat, f"offenders: {_badcat[:3]}")
 
 # --- report ----------------------------------------------------------
 
