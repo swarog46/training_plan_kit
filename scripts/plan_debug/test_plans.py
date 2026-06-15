@@ -11,6 +11,8 @@ Defends the invariants we fixed by hand this round:
   - Race week has a shakeout (3 sessions)
   - Maintenance volume progresses across phases (not flat)
   - raceRehearsalHM HMP segments resolve at racePace (Z3 retag)
+  - Accessible tier is lighter than textbook but keeps the same
+    periodization, safety rails, and gentle-beginner policy
 
 Run:    python3 scripts/plan_debug/test_plans.py
         Catalog-bound checks SKIP on the bundled sample;
@@ -1993,6 +1995,136 @@ _badcat = sorted({w.get('title', '?') for w in _cat
                   and (iv.get('target') or {}).get('zone') == 5})
 check("Catalog: hillRepeats/timeTrial/fastFinish carry no Z5 work (Z4 retag)",
       not _badcat, f"offenders: {_badcat[:3]}")
+
+section("Accessible (\"real life\") tier — lighter than textbook, same structure & safety")
+
+# The app ships a parallel ACCESSIBLE config set (PlanConfiguration.accessible*)
+# for non-competitive plans: fewer days/week and a gentler beginner phase mix,
+# but the SAME periodization (base→speed→peak→taper), the SAME safety rails,
+# and 72-90% of the textbook training load. The textbook ("ideal") configs stay
+# in the package (and are exercised by the sections above); these checks defend
+# the configs users actually receive.
+#
+# Accessible day matrix — 5K 2/3/4, 10K 2/3/4, 21K 3/4/5, 42K 4/4/5. Three
+# cells (Adv 21K, Beg 42K, Adv 42K) intentionally equal textbook and alias it.
+# Each accessible "(rec)" case pairs with its textbook "(rec)" case at the same
+# week count, so the "accessible ≤ textbook" comparisons are apples-to-apples
+# (same race/easy pace inputs, same plan length, same catalog).
+#
+# (accessible_label, textbook_label, racePace, easyPace, expected_days)
+ACCESSIBLE_CASES = [
+    ("Acc Beg 5K (rec, 7w)",   "Beg 5K (rec, 7w)",   240, 360, 2),
+    ("Acc Int 5K (rec, 7w)",   "Int 5K (rec, 7w)",   240, 320, 3),
+    ("Acc Adv 5K (rec, 7w)",   "Adv 5K (rec, 7w)",   240, 320, 4),
+    ("Acc Beg 10K (rec, 9w)",  "Beg 10K (rec, 9w)",  300, 420, 2),
+    ("Acc Int 10K (rec, 9w)",  "Int 10K (rec, 9w)",  270, 380, 3),
+    ("Acc Adv 10K (rec, 9w)",  "Adv 10K (rec, 9w)",  260, 320, 4),
+    ("Acc Beg 21K (rec, 14w)", "Beg 21K (rec, 14w)", 360, 480, 3),
+    ("Acc Int 21K (rec, 14w)", "Int 21K (rec, 14w)", 300, 420, 4),
+    ("Acc Adv 21K (rec, 14w)", "Adv 21K (rec, 14w)", 270, 360, 5),
+    ("Acc Beg 42K (rec, 18w)", "Beg 42K (rec, 18w)", 330, 450, 4),
+    ("Acc Int 42K (rec, 18w)", "Int 42K (rec, 18w)", 300, 400, 4),
+    ("Acc Adv 42K (rec, 18w)", "Adv 42K (rec, 18w)", 280, 380, 5),
+]
+
+def total_minutes(label, rp, ep):
+    """Sum of every workout's duration across the whole plan, in minutes."""
+    w = parse_plan(run_pacedump_with(label, rp, ep, False), label)
+    if not w:
+        return None
+    return sum(d for wk in w for _, d, _ in w[wk])
+
+# 1) Every accessible plan still generates a complete, non-empty plan.
+for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
+    w = parse_plan(run_pacedump_with(acc, rp, ep, False), acc)
+    short = acc.split(' (')[0]
+    check(
+        f"{short} generates a complete plan (every week filled)",
+        w is not None and len(w) > 0 and all(len(w[wk]) > 0 for wk in w),
+        f"weeks={len(w) if w else None}",
+    )
+
+# 2) Day-counts match the accessible matrix (build weeks carry the full set).
+for acc, _, rp, ep, days in ACCESSIBLE_CASES:
+    r = session_count_per_week(acc, acc, rp, ep)
+    short = acc.split(' (')[0]
+    check(
+        f"{short} runs {days} days/wk (accessible matrix)",
+        r is not None and r[1] == days,
+        f"got max sessions/wk={r[1] if r else None}, expected {days}",
+    )
+
+# 3) The defining contract: an accessible plan is never heavier than its
+#    textbook twin (alias cells are equal, which satisfies <=).
+for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
+    a = total_minutes(acc, rp, ep)
+    t = total_minutes(ideal, rp, ep)
+    short = acc.split(' (')[0]
+    check(
+        f"{short} total volume <= textbook {ideal.split(' (')[0]}",
+        a is not None and t is not None and a <= t,
+        f"accessible={a}min textbook={t}min",
+    )
+
+# 4) Safety rails hold on the lighter plans, exactly as on textbook:
+#    at most one long run per week, long runs >= 60min, race week is light.
+for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
+    w = parse_plan(run_pacedump_with(acc, rp, ep, False), acc)
+    if not w:
+        continue
+    short = acc.split(' (')[0]
+    multi_lr = [wk for wk in w if sum(1 for s, _, _ in w[wk] if s in LONG) > 1]
+    check(f"{short} has at most one long run per week", not multi_lr,
+          f"weeks with >1 LR: {multi_lr[:3]}")
+    short_lr = [(wk, d) for wk in w for s, d, _ in w[wk] if s in LONG and d < 60]
+    check(f"{short} long runs are >= 60min", not short_lr,
+          f"short long runs: {short_lr[:3]}")
+    last = max(w)
+    rw = w[last]
+    check(
+        f"{short} race week is light (no quality, no long run)",
+        not any(s in QUALITY for s, _, _ in rw) and not any(s in LONG for s, _, _ in rw),
+        f"race week: {[(s, d) for s, d, _ in rw]}",
+    )
+
+# 5) Accessible beginners (5K/10K) are base-heavy and gentle: no aggressive
+#    quality (intervals / mile repeats / Yasso / ladders). Threshold is fine.
+AGGRESSIVE_QUALITY = {'intervals', 'mileRepeats', 'yasso800',
+                      'ladderIntervals', 'pyramidIntervals'}
+for acc, rp, ep in [
+    ("Acc Beg 5K (rec, 7w)", 240, 360),
+    ("Acc Beg 10K (rec, 9w)", 300, 420),
+]:
+    w = parse_plan(run_pacedump_with(acc, rp, ep, False), acc)
+    short = acc.split(' (')[0]
+    found = {s for wk in (w or {}) for s, _, _ in w[wk]} & AGGRESSIVE_QUALITY
+    check(f"{short} excludes aggressive quality (base-heavy beginner)",
+          not found, f"found: {sorted(found)}")
+
+# 6) Same periodization shape. The TAPER is universal — the race week always
+#    sits below the plan's peak. The BUILD (peak lands past week 1) is catalog-
+#    bound: on the bundled sample the lightest plans (2-day beginners, whose
+#    long run is a fixed length every week) can tie their peak at week 1, so
+#    that half runs only against the full catalog.
+for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
+    w = parse_plan(run_pacedump_with(acc, rp, ep, False), acc)
+    if not w:
+        continue
+    short = acc.split(' (')[0]
+    vols = {wk: sum(d for _, d, _ in w[wk]) for wk in w}
+    ks = sorted(vols)
+    peak_wk = max(vols, key=vols.get)
+    check(
+        f"{short} tapers into the race week (race week below peak)",
+        vols[ks[-1]] < vols[peak_wk],
+        f"peak(W{peak_wk})={vols[peak_wk]} race={vols[ks[-1]]}",
+    )
+    check(
+        f"{short} builds toward a mid-plan peak (peak past W1)",
+        peak_wk != ks[0],
+        f"W1={vols[ks[0]]} peak at W{peak_wk}",
+        full=True,
+    )
 
 # --- report ----------------------------------------------------------
 

@@ -202,6 +202,20 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("VO2 Beg (8w)",         .vo2maxBeginner,         8),
     ("VO2 Int (8w)",         .vo2maxIntermediate,     8),
     ("VO2 Adv (8w)",         .vo2maxAdvanced,         8),
+
+    // Accessible ("real life") tier — lighter variants, same structure
+    ("Acc Beg 5K (rec, 7w)",  .accessibleBeginner5Default,      7),
+    ("Acc Int 5K (rec, 7w)",  .accessibleIntermediate5Default,  7),
+    ("Acc Adv 5K (rec, 7w)",  .accessibleAdvanced5Default,      7),
+    ("Acc Beg 10K (rec, 9w)", .accessibleBeginner10Default,     9),
+    ("Acc Int 10K (rec, 9w)", .accessibleIntermediate10Default, 9),
+    ("Acc Adv 10K (rec, 9w)", .accessibleAdvanced10Default,     9),
+    ("Acc Beg 21K (rec, 14w)",.accessibleBeginner21Default,    14),
+    ("Acc Int 21K (rec, 14w)",.accessibleIntermediate21Default,14),
+    ("Acc Adv 21K (rec, 14w)",.accessibleAdvanced21Default,    14),
+    ("Acc Beg 42K (rec, 18w)",.accessibleBeginner42Default,    18),
+    ("Acc Int 42K (rec, 18w)",.accessibleIntermediate42Default,18),
+    ("Acc Adv 42K (rec, 18w)",.accessibleAdvanced42Default,    18),
 ]
 
 let filtered = cases.filter { filter.isEmpty || $0.label.lowercased().contains(filter.lowercased()) }
