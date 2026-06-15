@@ -230,6 +230,28 @@ public struct PaceZoneConverter {
         return adjusted
     }
 
+    // MARK: - Quality Pace Multiplier (anchored to 5K speed)
+
+    /// Multiplier applied to the runner's **5K pace** for quality zones, with
+    /// level-appropriate easing. Goal-distance independent (Daniels/Pfitzinger):
+    ///   - Zone 5 (VO2 intervals) → 5K race pace          (target 1.00)
+    ///   - Zone 4 (threshold/LT)  → 15K-HM pace           (target ~1.06)
+    /// Less-fit tiers ease in from a slower start; competitive sits at target
+    /// from day 1 (Pro VO2 work at true 5K pace).
+    public static func qualitySpeedMultiplier(
+        for zone: Int,
+        progressionFactor: Double,
+        config: PaceProgressionConfig
+    ) -> Double {
+        let target: Double = (zone >= 5) ? 1.00 : 1.06   // 5K pace / threshold
+        let slow: Double   = (zone >= 5) ? 1.12 : 1.16   // conservative start
+        let p = max(0, min(1.0, progressionFactor))
+        let adjustment = config.initialAdjustment +
+            (config.finalAdjustment - config.initialAdjustment) * p
+        let clampedAdj = max(0, min(1.0, adjustment))
+        return target + (slow - target) * clampedAdj
+    }
+
     // MARK: - Interval Conversion
 
     /// Converts an HR-based interval to pace-based with progression
@@ -237,20 +259,33 @@ public struct PaceZoneConverter {
         interval: WorkoutInterval,
         racePace: Int,
         conversationalPace: Int? = nil,
+        speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
         config: PaceProgressionConfig = .intermediate
     ) -> WorkoutInterval {
         let newTarget: TargetRange
         switch interval.target {
         case .heartRateZone(let zone):
-            let relative = progressiveMultiplier(
-                for: zone,
-                racePace: racePace,
-                conversationalPace: conversationalPace,
-                progressionFactor: progressionFactor,
-                config: config
-            )
-            newTarget = .paceTarget(basePace: racePace, relative: relative)
+            if let speedPace = speedPace, zone >= 4 {
+                // Quality zones (Z4 threshold, Z5 VO2 intervals) anchor to the
+                // runner's 5K SPEED, not the goal-race pace. A threshold run is
+                // 15K-HM pace and an interval is 5K pace whether the goal is a 5K
+                // or a marathon (Daniels/Pfitzinger). Anchoring these to goal pace
+                // made marathon "intervals" run at marathon pace.
+                let relative = qualitySpeedMultiplier(
+                    for: zone, progressionFactor: progressionFactor, config: config)
+                newTarget = .paceTarget(basePace: speedPace, relative: relative)
+            } else {
+                // Z1/Z2 (easy) and Z3 (marathon pace) stay anchored to race pace.
+                let relative = progressiveMultiplier(
+                    for: zone,
+                    racePace: racePace,
+                    conversationalPace: conversationalPace,
+                    progressionFactor: progressionFactor,
+                    config: config
+                )
+                newTarget = .paceTarget(basePace: racePace, relative: relative)
+            }
         case .noRange:
             // Assign easy pace (zone 2 equivalent) for warmup/rest/cooldown with no target
             let easyRelative = progressiveMultiplier(
@@ -282,6 +317,7 @@ public struct PaceZoneConverter {
         workout: Workout,
         racePace: Int,
         conversationalPace: Int? = nil,
+        speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
         config: PaceProgressionConfig = .intermediate
     ) -> Workout {
@@ -290,6 +326,7 @@ public struct PaceZoneConverter {
                 interval: interval,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
+                speedPace: speedPace,
                 progressionFactor: progressionFactor,
                 config: config
             )
@@ -338,6 +375,7 @@ public struct PaceZoneConverter {
         to events: [WorkoutEvent],
         racePace: Int,
         conversationalPace: Int?,
+        speedPace: Int? = nil,
         config: PaceProgressionConfig,
         startDate: Date,
         endDate: Date
@@ -356,6 +394,7 @@ public struct PaceZoneConverter {
                 workout: event.workout,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
+                speedPace: speedPace,
                 progressionFactor: progressionFactor,
                 config: config
             )

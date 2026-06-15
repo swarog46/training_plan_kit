@@ -806,10 +806,13 @@ PACE_INPUTS = [
     ("Beg 10K (long, 12w)",  "Beg 10K (long, 12w)",  330, 450, False),
 ]
 
-def run_pacedump_with(filter_str, race_pace, easy_pace, build_band):
+def run_pacedump_with(filter_str, race_pace, easy_pace, build_band, speed_pace=None):
     env = os.environ.copy()
     env["RACE_PACE"] = str(race_pace)
     env["EASY_PACE"] = str(easy_pace)
+    # speed_pace (runner's 5K pace) anchors quality zones; omit → legacy path.
+    if speed_pace is not None: env["SPEED_PACE"] = str(speed_pace)
+    else: env.pop("SPEED_PACE", None)
     if build_band: env["BUILD_BAND"] = "1"
     else: env.pop("BUILD_BAND", None)
     r = subprocess.run([PLAN_DEBUG, "pacedump", filter_str],
@@ -828,69 +831,88 @@ def collect_zone_paces(weeks):
             elif s in Z5_SUBTYPES: out[5].append((wk, secs))
     return out
 
-for header, fil, rp, ep, bb in PACE_INPUTS:
-    label = f"{header.split(' (')[0]}" + (" [build]" if bb else "")
-    text = run_pacedump_with(fil, rp, ep, bb)
-    w = parse_plan(text, header)
+# --- Quality paces are anchored to the runner's 5K SPEED, not the goal race
+# pace (Daniels/Pfitzinger): an interval is 5K pace and a threshold is 15K-HM
+# pace whether the goal is a 5K or a marathon. Only marathon-pace (Z3) work
+# stays at the goal race pace. These checks pin that contract for every plan.
+QUALITY_SUBTYPES = {'intervals', 'ladderIntervals', 'pyramidIntervals', 'threshold',
+                    'mileRepeats', 'yasso800', 'hillRepeats', 'timeTrial',
+                    'fivekPace', 'tenkPace'}
+
+import math as _m
+def _vf(d, t):
+    tm = t / 60.0; v = d / tm
+    return (-4.60 + 0.182258 * v + 0.000104 * v * v) / \
+           (0.8 + 0.1894393 * _m.exp(-0.012778 * tm) + 0.2989558 * _m.exp(-0.1932605 * tm))
+def _pred(d, vd):
+    lo, hi = 60.0, 6 * 3600.0
+    for _ in range(60):
+        mid = (lo + hi) / 2; mv = _vf(d, int(mid))
+        if abs(mv - vd) < 0.001: return mid
+        lo, hi = (mid, hi) if mv > vd else (lo, mid)
+    return (lo + hi) / 2
+def _vel(vd, q):
+    a, b, c = 0.000104, 0.182258, -(4.60 + q * vd)
+    return 60000.0 / ((-b + _m.sqrt(b * b - 4 * a * c)) / (2 * a))
+def _mm(x): return f"{int(round(x)) // 60}:{int(round(x)) % 60:02d}"
+
+# (header, filter, representative 5K time s -> VDOT, plan distance m, is_cmp).
+# Cmp hard-locks goal pace to 256 (sub-3 MP); others use their goal-distance
+# pace. speedPace = the runner's true 5K pace (what quality anchors to).
+PACE_QUALITY_PLANS = [
+    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 1800, 10000, False),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 1320, 10000, False),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 1080, 10000, False),
+    ("Beg 21K (long, 18w)", "Beg 21K (long, 18w)", 1800, 21097, False),
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 1320, 21097, False),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)", 1080, 21097, False),
+    ("Beg 42K (long, 22w)", "Beg 42K (long, 22w)", 1800, 42195, False),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 1320, 42195, False),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)", 1080, 42195, False),
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)", 1050, 21097, True),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)", 1050, 42195, True),
+]
+for header, fil, t5k, dist, is_cmp in PACE_QUALITY_PLANS:
+    vd = _vf(5000, t5k)
+    speed5k = int(_pred(5000, vd) / 5)
+    p10k = int(_pred(10000, vd) / 10)
+    goal = 256 if is_cmp else int(_pred(dist, vd) / (dist / 1000.0))
+    easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, goal, easy, is_cmp, speed_pace=speed5k), header)
     if not w:
-        check(f"{label} pace parse", False, "no plan parsed")
-        continue
-    zones = collect_zone_paces(w)
-    # Target paces (sec/km) from the base zone multipliers. Z3 is racePace
-    # itself; Z4 = 0.93 × racePace; Z5 = 0.85 × racePace.
-    targets = {3: rp, 4: int(rp * 0.93), 5: int(rp * 0.85)}
-    is_cmp_config = "Cmp" in header  # .competitive* configs pin Z3/Z4/Z5 to target
-
-    # Z3 always hits target ±15s in every plan (the Z3 unblend ships in all
-    # configs, not just Cmp).
-    obs_z3 = zones[3]
-    if obs_z3:
-        out = [(wk, p) for wk, p in obs_z3 if abs(p - targets[3]) > TOL]
-        check(
-            f"{label} Z3 (MP) always at target ±{TOL}s",
-            not out,
-            f"target={targets[3]} first out: {out[:3]}"
-        )
-
-    # Z4 / Z5 expectations differ by config:
-    #   Cmp .competitive*           : qualityZonesAlwaysAtTarget=true → flat at target every week.
-    #   Adv (finalAdjustment=0.0)   : converges to target by race week.
-    #   Int (finalAdjustment=0.2)   : race-week stays slightly above target — direction only.
-    #   Beg (finalAdjustment=0.5)   : same — direction only.
-    is_adv = "Adv" in header
-    for zone in (4, 5):
-        observations = zones[zone]
-        if not observations:
-            continue
-        target = targets[zone]
-        first_pace = observations[0][1]
-        last_pace = observations[-1][1]
-        if is_cmp_config:
-            out = [(wk, p) for wk, p in observations if abs(p - target) > TOL]
-            check(
-                f"{label} Z{zone} pinned to target every week (.competitive config)",
-                not out,
-                f"target={target} first out: {out[:3]}"
-            )
-        elif is_adv and zone == 4:
-            # Z4 only: threshold work runs through TAPER so its last
-            # occurrence IS race-adjacent. Z5 ends with PEAK under the
-            # intensity policy (no Z5 in taper/race), so its last occurrence
-            # sits weeks before the convergence point — direction check
-            # below still covers it.
-            check(
-                f"{label} Z{zone} race-week converges to target ±{TOL}s (.advanced)",
-                abs(last_pace - target) <= TOL,
-                f"target={target} race-week obs={last_pace}",
-                full=True
-            )
-        # Direction check applies to all non-Cmp tiers: race-week ≤ W1.
-        if not is_cmp_config:
-            check(
-                f"{label} Z{zone} race-week ≤ W1 (progressed faster)",
-                last_pace <= first_pace + 2,
-                f"W1={first_pace} race-week={last_pace}"
-            )
+        check(f"{short} pace parse", False, "no plan", full=True); continue
+    mp, qual = [], []
+    for wk in w:
+        for s, _, pp in w[wk]:
+            secs = parse_pace_secs_first(pp)
+            if secs is None: continue
+            if s == 'marathonPace': mp.append(secs)
+            elif s in QUALITY_SUBTYPES: qual.append(secs)
+    # (1) Marathon-pace work is the one quality kind that stays at goal pace.
+    if mp:
+        check(f"{short} marathon-pace work at goal pace +/-{TOL}s (Z3 race-anchored)",
+              all(abs(p - goal) <= TOL for p in mp),
+              f"goal={_mm(goal)} out={[_mm(p) for p in mp if abs(p - goal) > TOL][:3]}",
+              full=True)
+    # (2) Core invariant: every quality pace sits in [5K pace .. ~HM pace] -
+    #     5K-speed anchored with easing slack, NEVER as slow as marathon pace.
+    if qual:
+        lo, hi = speed5k - TOL, int(speed5k * 1.16) + TOL
+        bad = [p for p in qual if not (lo <= p <= hi)]
+        check(f"{short} quality in [5K {_mm(speed5k)} .. ~HM {_mm(int(speed5k * 1.16))}] (5K-anchored)",
+              not bad, f"out={[_mm(p) for p in bad[:4]]}", full=True)
+    # (3) The fix in one line: on the marathon, fastest quality reaches ~10K
+    #     pace - far faster than goal MP - proving it is decoupled from goal.
+    if qual and dist >= 42195 and 'Beg' not in short:
+        check(f"{short} fastest quality reaches >= 10K pace, not goal MP (decoupled)",
+              min(qual) <= p10k + TOL,
+              f"fastest={_mm(min(qual))} 10K={_mm(p10k)} goal(MP)={_mm(goal)}", full=True)
+    # (4) Adv / Cmp fully sharpen: fastest quality reaches ~5K pace.
+    if qual and ('Adv' in short or is_cmp):
+        check(f"{short} fastest quality reaches ~5K pace +/-{TOL}s (Adv/Cmp sharpen)",
+              min(qual) <= speed5k + TOL,
+              f"fastest={_mm(min(qual))} 5K={_mm(speed5k)}", full=True)
 
 section("Progression direction — easy zones blend, quality stays flat")
 
@@ -956,35 +978,6 @@ for header, fil, rp, ep, bb in PACE_INPUTS:
         not drift_issues,
         f"drift: {drift_issues}"
     )
-
-section("Cross-plan zone-math consistency — race-week paces converge to universal multiplier targets")
-
-# Sanity check that base zone multipliers (1.00 / 0.93 / 0.85) are stable
-# across tiers. Pin racePace=300 across one plan per tier and verify
-# RACE-WEEK Z3/Z4/Z5 paces hit the universal target. Only .advanced converges
-# fully (finalAdjustment=0); .intermediate/.beginner intentionally keep the
-# fast zones slower than base at race week (their finalAdjustment > 0).
-RP_PIN = 300
-EXPECTED = {3: RP_PIN, 4: int(RP_PIN * 0.93), 5: int(RP_PIN * 0.85)}
-
-for header, fil in [
-    ("Adv 42K (long, 22w)",  "Adv 42K (long, 22w)"),
-]:
-    text = run_pacedump_with(fil, RP_PIN, RP_PIN + 90, False)
-    w = parse_plan(text, header)
-    if not w: continue
-    zones = collect_zone_paces(w)
-    for zone, target in EXPECTED.items():
-        observations = zones[zone]
-        if not observations: continue
-        # Look at the LAST observation in chronological order — by race
-        # week the gap-blend has converged the multiplier back to base.
-        last_pace = observations[-1][1]
-        check(
-            f"{header.split(' (')[0]} (rp={RP_PIN}) race-week Z{zone} hits universal target ±{TOL}s",
-            abs(last_pace - target) <= TOL,
-            f"target={target} race-week obs={last_pace}"
-        )
 
 section("Competitive gate — VDOT thresholds (real Swift via plan_debug gate mode)")
 

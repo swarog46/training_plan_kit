@@ -120,22 +120,38 @@ public struct VDOT: Equatable {
         return Int(Double(t) / 5.0)
     }
 
-    /// Daniels' Easy pace — 59-74% VO2max, used for ~75-80% of weekly volume.
-    /// Approximated as MP + 75 sec/km (Daniels' "E pace" middle of range for
-    /// typical sub-elite VDOTs). Slightly slower than MP+60s for safety.
-    public var easyPaceSecondsPerKm: Int {
-        let mp = marathonPaceSecondsPerKm
-        guard mp > 0 else { return 0 }
-        return mp + 75
+    /// Steady-state training pace (sec/km) at a given fraction of VO2max —
+    /// Daniels' method, and how his training-pace tables are generated.
+    ///
+    /// Inverts the VO2-cost curve  VO2 = -4.60 + 0.182258·v + 0.000104·v²
+    /// to find the velocity (m/min) whose oxygen cost equals `fraction × VDOT`,
+    /// then converts to sec/km. Unlike a marathon-pace offset this stays
+    /// meaningful at every fitness level: a beginner's "marathon pace" is a
+    /// fictional extrapolation, but their VO2max fraction is real, so easy and
+    /// threshold come out sane instead of near-walking.
+    public func paceAtVO2Fraction(_ fraction: Double) -> Int {
+        let target = fraction * value                 // VO2 cost to sustain
+        let a = 0.000104, b = 0.182258, c = -(4.60 + target)
+        let disc = b * b - 4 * a * c
+        guard disc > 0 else { return 0 }
+        let v = (-b + disc.squareRoot()) / (2 * a)    // velocity, m/min
+        guard v > 0 else { return 0 }
+        return Int(60000.0 / v)                        // sec/km
     }
 
-    /// Daniels' Threshold (T) pace — 85-88% VO2max, ~hour-race pace.
-    /// Used for cruise intervals and tempo runs. Approximated as MP - 15s/km
-    /// for sub-elite VDOTs (Daniels table shows T is closer to HMP).
+    /// Daniels' Easy (E) pace — derived directly from VDOT at ~72% VO2max
+    /// (the runnable middle of his 59-74% E range). Was `MP + 75`, which
+    /// anchored easy to a beginner's fictional marathon prediction and landed
+    /// 25-40s/km too slow at every fitness level.
+    public var easyPaceSecondsPerKm: Int {
+        paceAtVO2Fraction(0.72)
+    }
+
+    /// Daniels' Threshold (T) pace — ~88% VO2max, ~hour-race effort. Derived
+    /// directly from VDOT (was `MP - 15`, which inherited the same fictional
+    /// marathon anchor and ran beginners ~15s/km too slow).
     public var thresholdPaceSecondsPerKm: Int {
-        let mp = marathonPaceSecondsPerKm
-        guard mp > 0 else { return 0 }
-        return mp - 15
+        paceAtVO2Fraction(0.88)
     }
 
     /// Daniels' Interval (I) pace — 95-100% VO2max, 3-5 min race pace.

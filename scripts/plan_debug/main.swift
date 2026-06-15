@@ -318,6 +318,8 @@ if mode == "pace" {
 if mode == "pacedump" {
     let racePace = Int(ProcessInfo.processInfo.environment["RACE_PACE"] ?? "300") ?? 300
     let easyPace = Int(ProcessInfo.processInfo.environment["EASY_PACE"] ?? "390") ?? 390
+    // 5K speed anchor for quality zones (Z4/Z5). nil → legacy race-pace anchoring.
+    let speedPace = ProcessInfo.processInfo.environment["SPEED_PACE"].flatMap { Int($0) }
 
     func fmtPace(_ secPerKm: Int) -> String {
         return String(format: "%d:%02d/km", secPerKm / 60, secPerKm % 60)
@@ -359,6 +361,7 @@ if mode == "pacedump" {
 
         let paceEvents = PaceZoneConverter.applyPaceProgression(
             to: events, racePace: racePace, conversationalPace: easyPace,
+            speedPace: speedPace,
             config: progression, startDate: startDate, endDate: endDate
         )
 
