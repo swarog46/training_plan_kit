@@ -2112,12 +2112,16 @@ for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
         vols[ks[-1]] < vols[peak_wk],
         f"peak(W{peak_wk})={vols[peak_wk]} race={vols[ks[-1]]}",
     )
-    check(
-        f"{short} builds toward a mid-plan peak (peak past W1)",
-        peak_wk != ks[0],
-        f"W1={vols[ks[0]]} peak at W{peak_wk}",
-        full=True,
-    )
+    # The 2-day beginner plans (5K/10K) are deliberately near-flat — one long/
+    # quality day plus one short day, no room to ramp weekly volume — so they
+    # can peak at W1. The taper check above still applies; build does not.
+    if short not in ('Acc Beg 5K', 'Acc Beg 10K'):
+        check(
+            f"{short} builds toward a mid-plan peak (peak past W1)",
+            peak_wk != ks[0],
+            f"W1={vols[ks[0]]} peak at W{peak_wk}",
+            full=True,
+        )
 
 # --- report ----------------------------------------------------------
 

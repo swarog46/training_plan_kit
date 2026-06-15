@@ -611,9 +611,15 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             // timeTrial in the interval pool (hills build strength, TT is a
             // tune-up race), and threshold + marathonPace in the threshold pool
             // (the two pillars of marathon-specific quality).
-            let begAllowedIntervals: Set<WorkoutSubtype> = [.hillRepeats, .timeTrial]
+            // Beginner speed work = strides (neuromuscular, low-injury — the
+            // canonical novice speed intro, Daniels/Higdon) + hills + time-trial.
+            // Strides aren't in `intervalSubtypes`, and the catalog's hills/TT are
+            // all 40min+ (too long for short 5K/10K SPEED targets), so without
+            // pulling strides in directly the beginner quality collapses to
+            // threshold-only — and a 5K is a speed race that needs fast running.
             let begAllowedThresholds: Set<WorkoutSubtype> = [.threshold, .marathonPace]
-            filteredIntervals = filteredIntervals.filter { begAllowedIntervals.contains($0.subtype) }
+            filteredIntervals = filterWorkoutsBySubtypeV3(
+                workouts: allWorkouts, subtypes: [.hillRepeats, .timeTrial, .strides])
             filteredThresholds = filteredThresholds.filter { begAllowedThresholds.contains($0.subtype) }
         }
     }
@@ -1172,8 +1178,12 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                         if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
                             weekWorkouts.append(("progressive_surprise", progressive))
                         }
-                    } else if weekVariation == 3 && !intervalPool.isEmpty {
-                        // Every 5th week (week % 5 == 3): Double intervals instead of threshold.
+                    } else if weekVariation == 3 && !intervalPool.isEmpty && config.distance < 21097 {
+                        // Every 5th week (week % 5 == 3): Double intervals instead
+                        // of threshold — 5K/10K ONLY. Doubling VO2 in a week suits
+                        // a speed race, but a half/marathon is LT- and MP-dominant
+                        // (Pfitzinger): no VO2-doubling weeks. 21K/42K fall through
+                        // to the threshold (LT) slot below instead.
                         // Exclude milestones (Yasso/TT) from the second slot so we
                         // don't end up with two milestone workouts in the same week —
                         // those are meant to be standalone benchmarks. Also exclude
