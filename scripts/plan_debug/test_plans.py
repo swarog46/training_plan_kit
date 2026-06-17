@@ -932,6 +932,52 @@ for header, fil, t5k, dist, is_cmp in PACE_QUALITY_PLANS:
               min(qual) <= speed5k + TOL,
               f"fastest={_mm(min(qual))} 5K={_mm(speed5k)}", full=True)
 
+section("Distance-aware threshold + aerobic floor (slow runner = teeth)")
+# Half/marathon: threshold (~1hr effort) must be FASTER than goal race pace —
+# these races are run at/above threshold (5K/10K are the opposite, so this is
+# half/marathon only). Easy is never faster than race. The slow VDOT~25 runner
+# is the teeth: beginner threshold used to invert PAST race pace here until
+# PaceProgressionConfig.beginner.finalAdjustment dropped 0.5 -> 0.0.
+def _slowest_pace(pace_str):
+    ms = re.findall(r'(\d+):(\d+)/km', pace_str or "")
+    return max(int(m) * 60 + int(s) for m, s in ms) if ms else None
+
+THRESH_PLANS = [
+    # (header, filter, 5K-time s [slow VDOT~25 runner], plan distance m)
+    ("Beg 21K (long, 18w)", "Beg 21K (long, 18w)", 2160, 21097),
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 2160, 21097),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)", 2160, 21097),
+    ("Beg 42K (long, 22w)", "Beg 42K (long, 22w)", 2160, 42195),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 2160, 42195),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)", 2160, 42195),
+]
+for header, fil, t5k, dist in THRESH_PLANS:
+    vd = _vf(5000, t5k)
+    speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0))
+    easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    if not w:
+        check(f"{short} threshold parse", False, "no plan", full=True); continue
+    thr, easies = [], []
+    for wk in w:
+        for s, _, pp in w[wk]:
+            if s == 'threshold':
+                v = parse_pace_secs_first(pp)
+                if v is not None: thr.append(v)
+            elif s == 'easy':
+                v = _slowest_pace(pp)   # easy BODY (slowest), not the strides
+                if v is not None: easies.append(v)
+    if thr:
+        check(f"{short} fastest threshold faster than race pace (half/marathon)",
+              min(thr) < race,
+              f"fastest_thr={_mm(min(thr))} race={_mm(race)}", full=True)
+    if easies:
+        check(f"{short} easy body never faster than race pace",
+              min(easies) >= race,
+              f"fastest_easy={_mm(min(easies))} race={_mm(race)}", full=True)
+
 section("Progression direction — easy zones blend, quality stays flat")
 
 EASY_SUBTYPES_FOR_TEST = {'easy'}

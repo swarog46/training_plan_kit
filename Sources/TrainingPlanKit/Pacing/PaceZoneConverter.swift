@@ -62,7 +62,8 @@ public struct PaceProgressionConfig {
 
     public static let beginner = PaceProgressionConfig(
         initialAdjustment: 1.0,     // Start fully conservative
-        finalAdjustment: 0.5,       // End still somewhat conservative
+        finalAdjustment: 0.0,       // Reach true zones by race week (0.5 kept beginner
+                                    //   threshold slower than race pace at half/marathon)
         minMultiplier: 0.92,        // Never faster than 92% of race pace (~4:36 for 5:00 pace)
         conservativeTarget: 1.12    // Start intervals at ~112% race pace (5:36 for 5:00 target)
     )
@@ -251,6 +252,8 @@ public struct PaceZoneConverter {
         config: PaceProgressionConfig
     ) -> Double {
         let target: Double = (zone >= 5) ? 1.00 : 1.06   // 5K pace / threshold
+        // Competitive/build-band lock quality at goal pace from day 1 (no easing).
+        if config.qualityZonesAlwaysAtTarget { return target }
         let slow: Double   = (zone >= 5) ? 1.12 : 1.16   // conservative start
         let p = max(0, min(1.0, progressionFactor))
         let adjustment = config.initialAdjustment +
