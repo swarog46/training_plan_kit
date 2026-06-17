@@ -62,6 +62,26 @@ final class PaceZoneConverterTests: XCTestCase {
         XCTAssertGreaterThan(tenK, mult(5, 1.0, c), "10K pace must be slower than 5K pace")
     }
 
+    // MARK: - Competitive easy anchors to the runner's real easy (build-band)
+
+    func testCompetitiveEasyAnchorsToRunnerEasyNotFrozenBase() {
+        // Build-band: race 256, runner's real easy 277 (4:37). Easy must anchor
+        // to the runner's easy, NOT the generic 1.15×race = 294 (the frozen bug).
+        let bb = PaceProgressionConfig.competitiveBuildBand
+        func easyPace(_ zone: Int, _ conv: Int) -> Double {
+            256.0 * PaceZoneConverter.progressiveMultiplier(
+                for: zone, racePace: 256, conversationalPace: conv,
+                progressionFactor: 0.0, config: bb)
+        }
+        let easy = easyPace(2, 277)
+        XCTAssertEqual(easy, 277, accuracy: 4, "build-band easy ≈ runner's real easy (277), not 294")
+        XCTAssertLessThan(easy, 294, "must not be the frozen 1.15×race")
+        XCTAssertGreaterThanOrEqual(easy, 256, "easy never faster than race")
+        XCTAssertGreaterThan(easyPace(1, 277), easy, "recovery (Z1) slower than easy (Z2)")
+        // Over-qualified runner (easy faster than race) is floored at race.
+        XCTAssertGreaterThanOrEqual(easyPace(2, 250), 256, "easy floored at race when runner's easy is faster")
+    }
+
     // MARK: - Easing is monotonic (never sharper early than late)
 
     func testEasingIsMonotonicTowardTarget() {

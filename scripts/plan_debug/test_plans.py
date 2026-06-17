@@ -973,10 +973,49 @@ for header, fil, t5k, dist in THRESH_PLANS:
         check(f"{short} fastest threshold faster than race pace (half/marathon)",
               min(thr) < race,
               f"fastest_thr={_mm(min(thr))} race={_mm(race)}", full=True)
+        # EVERY threshold week (not just the fastest) must be >= race pace — the
+        # easing-in floor. Without it, early-plan threshold renders slower than race.
+        check(f"{short} every threshold week >= race pace (never slower; floored)",
+              max(thr) <= race + 3,
+              f"slowest_thr={_mm(max(thr))} race={_mm(race)}", full=True)
+        # Threshold is a REAL LT stimulus at true threshold (speed×1.06), not
+        # pinned at race — beginners used to render every week AT race pace.
+        true_thr = int(speed5k * 1.06)
+        check(f"{short} threshold reaches true LT (~speed x1.06), not pinned at race",
+              max(thr) <= true_thr + 6,
+              f"slowest_thr={_mm(max(thr))} true_thr={_mm(true_thr)} race={_mm(race)}", full=True)
     if easies:
         check(f"{short} easy body never faster than race pace",
               min(easies) >= race,
               f"fastest_easy={_mm(min(easies))} race={_mm(race)}", full=True)
+        # Easy reflects the runner's REAL easy, not the frozen generic 1.15×race
+        # (which over-slows slow runners whose race pace is near their easy).
+        frozen = int(race * 1.15)
+        check(f"{short} easy ~ runner's real easy, not frozen 1.15x race",
+              min(easies) <= easy + 8 and min(easies) < frozen - 8,
+              f"easy_rendered={_mm(min(easies))} input={_mm(easy)} frozen={_mm(frozen)}", full=True)
+
+section("Z5 VO2 floor — VO2 work never slower than race (5K/10K)")
+# A true VO2 interval (5K pace) is <= race at every distance, so it must never
+# ease in slower than race. On 5K/10K (speed≈race) the old 1.12 ease-in start
+# put W1 VO2 work 30-47s slower than race. fivekPace is pure Z5.
+for header, fil, t5k, dist in [
+    ("Int 5K (long, 10w)", "Int 5K (long, 10w)", 2160, 5000),
+    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 2160, 5000),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 2160, 10000),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    if not w:
+        check(f"{short} VO2 parse", False, "no plan", full=True); continue
+    z5 = [parse_pace_secs_first(pp) for wk in w for s, _, pp in w[wk] if s == 'fivekPace']
+    z5 = [v for v in z5 if v is not None]
+    if z5:
+        check(f"{short} every VO2 (fivekPace) work <= race pace (Z5 floor)",
+              max(z5) <= race + 3,
+              f"slowest_vo2={_mm(max(z5))} race={_mm(race)}", full=True)
 
 section("Progression direction — easy zones blend, quality stays flat")
 
@@ -2349,6 +2388,51 @@ for header, fil, ceil_pct in TAPER_PLANS:
     pct = 100 * race // max(peak, 1)
     check(f"{header} — race-week load <= {ceil_pct}% of peak",
           pct <= ceil_pct, f"race={race} peak={peak} = {pct}% (ceil {ceil_pct})", full=True)
+
+section("Hill progression — competitive base ramps, doesn't park")
+# Long competitive bases used to repeat the cheapest hill (8×60s) for ~16 weeks.
+# Hills should climb through distinct variants by load, not park on one.
+def _hills_in_order(header):
+    # (variant_label, load) per Hill Repeats workout, in week order. Variant =
+    # the "N x Ms" rep structure; the 3 duplicate templates per variant differ
+    # slightly in load, so distinctness must be measured on the variant, not load.
+    text = run_dump(header)
+    if f'=== {header}' not in text: return []
+    sec = text.split(f'=== {header}')[1].split('=== ')[0]
+    out = []
+    for line in sec.splitlines():
+        if 'Hill Repeats' in line:
+            mt = re.search(r'Hill Repeats \(([^)]+)\)', line)
+            ml = re.search(r'l=\s*(\d+)', line)
+            if mt and ml: out.append((mt.group(1), int(ml.group(1))))
+    return out
+
+for header in ["Cmp 42K (max", "Cmp 21K (max"]:
+    hills = _hills_in_order(header)
+    short = header.replace('(', '').strip()
+    if len(hills) >= 4:
+        variants = [v for v, _ in hills]
+        loads = [l for _, l in hills]
+        distinct = len(set(variants))
+        check(f"{short} base hills use >=4 distinct variants (no parking on 8x60s)",
+              distinct >= 4, f"{len(hills)} hills, {distinct} distinct variants: {variants}", full=True)
+        h = len(loads) // 2
+        check(f"{short} base hills progress (back half heavier than front)",
+              sum(loads[h:]) / len(loads[h:]) > sum(loads[:h]) / len(loads[:h]),
+              f"variants={variants}", full=True)
+
+# Speed-phase / short plans must vary too — the ramp now covers BASE+SPEED, so
+# short plans (hills in speed) no longer park on 8×60s. The "=== " prefix in
+# _hills_in_order disambiguates from the "Acc " variants, so full labels are safe.
+for header in ["Int 5K (long, 10w)", "Int 10K (long, 12w)", "VO2 Int (8w)"]:
+    hills = _hills_in_order(header)
+    short = header.split(' (')[0]
+    if len(hills) >= 3:
+        variants = [v for v, _ in hills]
+        distinct = len(set(variants))
+        check(f"{short} hills don't park on one variant (>={min(3, len(hills))} distinct)",
+              distinct >= min(3, len(hills)),
+              f"{len(hills)} hills, {distinct} distinct: {variants}", full=True)
 
 # --- report ----------------------------------------------------------
 

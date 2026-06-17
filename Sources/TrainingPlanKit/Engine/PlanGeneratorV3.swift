@@ -742,6 +742,19 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         let yassoWeek = phase == .peak && config.runnerLevel != .beginner && (weekInPhase % milestoneCadence) == 0
         let ttWeek    = phase == .peak && (weekInPhase % milestoneCadence) == milestoneCadence / 2
 
+        // Hills climb one variant per ~2 plan weeks (load-sorted) across BASE+
+        // SPEED, so the load-target selector can't park on the cheapest 8×60s.
+        // Absolute week (not weekInPhase) so the ramp continues base → speed.
+        func rampHillsByPlanWeek(_ hills: [Workout]) -> [Workout] {
+            var byTitle: [String: Workout] = [:]
+            for w in hills where byTitle[w.title] == nil { byTitle[w.title] = w }
+            let variants = byTitle.values.sorted { $0.trainingLoad < $1.trainingLoad }
+            guard variants.count >= 2 else { return hills }
+            let idx = min(week / 2, variants.count - 1)
+            let titles = Set(variants[idx...min(idx + 1, variants.count - 1)].map { $0.title })
+            return hills.filter { titles.contains($0.title) }
+        }
+
         let intervalPool: [Workout] = {
             var pool = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
             // Gate hill repeats: BASE and SPEED only (strength foundation,
@@ -792,7 +805,13 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             // Don't return an empty pool — fall back to full pool if the
             // floor excluded everything (catalog gap, not the user's
             // problem).
-            return filtered.isEmpty ? pool : filtered
+            var result = filtered.isEmpty ? pool : filtered
+            let hills = result.filter { $0.subtype == .hillRepeats }
+            if hills.count > 1 {
+                let ramped = rampHillsByPlanWeek(hills)
+                if !ramped.isEmpty { result = result.filter { $0.subtype != .hillRepeats } + ramped }
+            }
+            return result
         }()
         
         // MAINTENANCE plan: dedicated gentle progression
@@ -1047,7 +1066,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 }
             }
         }
-        
+
         if shouldAddIntervals {
             if isBeginner {
                 // Alternate: even weeks = intervals, odd = threshold.
