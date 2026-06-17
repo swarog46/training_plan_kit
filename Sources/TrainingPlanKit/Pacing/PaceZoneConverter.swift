@@ -68,10 +68,17 @@ public struct PaceProgressionConfig {
     )
 
     public static let intermediate = PaceProgressionConfig(
-        initialAdjustment: 0.8,     // Start mostly conservative
-        finalAdjustment: 0.2,       // End near standard intensity
+        // Quality easing matched to .advanced (0.5 → 0.0). The previous
+        // 0.8 → 0.2 ramp held quality so conservative that a "10K Pace" or
+        // "5K Pace" workout ran ~10-15s/km slower than its named pace right
+        // through SPEED/PEAK — the name oversold the effort. Intermediates
+        // have the base to ramp like Advanced; this lets the named race-pace
+        // sessions actually reach their pace by the sharpening phase, while
+        // the minMultiplier floor still caps how fast Z5 can get.
+        initialAdjustment: 0.5,     // Start moderate (was 0.8)
+        finalAdjustment: 0.0,       // Reach true target by race week (was 0.2)
         minMultiplier: 0.88,        // Never faster than 88% of race pace (~4:24 for 5:00 pace)
-        conservativeTarget: 1.10    // Start intervals at ~105% race pace (5:15 for 5:00 target)
+        conservativeTarget: 1.10    // (legacy race-pace-anchored path only)
     )
 
     public static let advanced = PaceProgressionConfig(

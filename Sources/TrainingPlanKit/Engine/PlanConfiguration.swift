@@ -580,7 +580,17 @@ public struct PlanConfiguration {
         var speedWeeks = max(idealSpeedWeeks, minSpeedPhaseWeeks)
         var peakWeeks = max(idealPeakWeeks, minPeakPhaseWeeks)
         var taperWeeks = max(idealTaperWeeks, minTaperPhaseWeeks)
-        
+
+        // Marathon taper floor: a 3-week ramp-down (Pfitzinger). The long-run
+        // progression peaks at the last PEAK week and can only step down in
+        // taper (monotonic build), so a 2-week taper lands the longest run
+        // just 2 weeks out — too close to absorb. Floor marathon tapers at 3
+        // so the peak long run sits ~3 weeks from race day. Half/shorter keep
+        // their shorter tapers (less volume to shed). Cmp already ships 3.
+        if distance >= 30000 {
+            taperWeeks = max(taperWeeks, 3)
+        }
+
         // Calculate total of all phases after applying minimums
         let totalPlannedWeeks = baseWeeks + speedWeeks + peakWeeks + taperWeeks
         

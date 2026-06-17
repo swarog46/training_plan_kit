@@ -144,7 +144,13 @@ public struct VDOT: Equatable {
     /// anchored easy to a beginner's fictional marathon prediction and landed
     /// 25-40s/km too slow at every fitness level.
     public var easyPaceSecondsPerKm: Int {
-        paceAtVO2Fraction(0.72)
+        let natural = paceAtVO2Fraction(0.72)
+        // Below VDOT 30 (Daniels' table floor) the 72% pace balloons into a
+        // walk — a 1:20 10K runner would get a 9:12 "easy". Cap the gap to
+        // threshold, tightening as VDOT drops, so easy stays a real run.
+        guard value < 30 else { return natural }
+        let maxGap = Int(max(33.0, min(65.0, 65.0 - (30.0 - value) * 3.5)))
+        return min(natural, thresholdPaceSecondsPerKm + maxGap)
     }
 
     /// Daniels' Threshold (T) pace — ~88% VO2max, ~hour-race effort. Derived

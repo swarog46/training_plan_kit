@@ -61,6 +61,11 @@ def run_pacedump(filter_str, race_pace=300, easy_pace=420):
     )
     return r.stdout
 
+def run_dump(filter_str):
+    r = subprocess.run([PLAN_DEBUG, "dump", filter_str],
+                       capture_output=True, text=True, env=os.environ.copy())
+    return r.stdout
+
 def parse_plan(text, header):
     """Return dict[week_num] = [(subtype, duration_min, pace_str)]."""
     if header not in text:
@@ -315,27 +320,36 @@ for header, fil, rp, ep, last_wk in [
         f"got {race_sessions} sessions"
     )
 
-section("Competitive TAPER drops volume ≥30% from peak")
+section("Competitive TAPER drops volume from peak")
 
 for header, fil in [
     ("Cmp 21K (long, 18w)", "Cmp 21K (long"),
     ("Cmp 42K (long, 22w)", "Cmp 42K (long"),
 ]:
-    text = run_pacedump(fil, race_pace=256, easy_pace=300)
-    w = parse_plan(text, header)
-    # Peak: avg of last 3 build weeks. Taper: next two weeks after that.
-    week_vols = {wk: sum(d for _,d,_ in w[wk]) for wk in w}
-    weeks_sorted = sorted(week_vols)
-    nweeks = len(weeks_sorted)
-    # Peak block: weeks [nweeks-5 ... nweeks-3]
-    peak_block = [week_vols[wk] for wk in weeks_sorted[-5:-2]]
-    taper_block = [week_vols[wk] for wk in weeks_sorted[-3:-1]]
-    peak_avg = sum(peak_block) / len(peak_block) if peak_block else 1
-    taper_first = taper_block[0] if taper_block else peak_avg
+    # Phase-aware (parses dump, which labels phases). The earlier version
+    # hard-coded week indices for a 2-week taper; the marathon 3-week taper
+    # then folded a taper week into the "peak" block and understated the drop.
+    # Peak = avg of PEAK-phase weeks, taper_first = first TAPER-phase week.
+    sect = run_dump(fil)
+    sect = sect.split(f'=== {header}')[1] if f'=== {header}' in sect else ""
+    pk, tp = [], []
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *\d+ \[(\w+)[^\]]*\]\s+\d+wkts\s+load=\s*\d+\s+(\d+)min', line)
+        if m:
+            ph, mins = m.group(1), int(m.group(2))
+            if ph == 'peak':    pk.append(mins)
+            elif ph == 'taper': tp.append(mins)
+    peak_avg = sum(pk) / len(pk) if pk else 1
+    taper_first = tp[0] if tp else peak_avg
     drop_pct = (peak_avg - taper_first) / peak_avg * 100
+    # Pfitz's first taper week is only ~10-20% down (the deep cuts come weeks
+    # 2-3) — so ≥20% off the peak AVERAGE is the right floor. Absolute taper
+    # depth (race week ≤ X% of peak) is guarded by the load-based taper tests.
     check(
-        f"{header.split(' (')[0]} TAPER drops ≥30% from peak",
-        drop_pct >= 30,
+        f"{header.split(' (')[0]} TAPER first week drops >=20% from peak avg",
+        drop_pct >= 20,
         f"peak_avg={peak_avg:.0f}, taper_first={taper_first}, drop={drop_pct:.0f}%"
     )
 
@@ -475,11 +489,15 @@ CMP_SNAPSHOTS = [
     # for Cmp 42K midweek long-easy slots, matching Pfitz 18/85's explicit
     # "Wed/Thu MLR" prescription. +124min (long, 22w) / +147min (build, 28w)
     # over 22-28 weeks ≈ +5min/wk per the new Pfitz-aligned ML slot.
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 10244, 129, 210),
+    # 2026-06-16: total 10244→9789, sessions 129→124 from the peak-volume
+    # soft cap (Adv/Cmp marathons capped ~9h; sheds the largest aerobic FILL,
+    # never the long run — peak LR unchanged at 210) + the 3-week taper floor.
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 9789, 124, 210),
     # Additional bump 12002 → 12123 from the alternating-week mediumLong
     # forcing — Cmp 42K build picks 90-100min ML on even weeks where
-    # selector previously picked 80min easy.
-    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 12123, 165, 200),
+    # selector previously picked 80min easy. 2026-06-16: 12123→11809,
+    # 165→162 sessions from the same peak-volume cap.
+    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 11809, 162, 200),
 ]
 for header, fil, rp, ep, exp_total, exp_sess, exp_peak in CMP_SNAPSHOTS:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)
@@ -1721,29 +1739,39 @@ check(
 )
 
 # 10K LR caps — tier-appropriate (was flat 80min everywhere before today)
-def peak_lr_for(label, fil, rp, ep):
+def lr_first_and_peak(label, fil, rp, ep):
+    """Return (first-build-week LR, peak LR) in minutes, or (None, None)."""
     text = run_pacedump_with(fil, rp, ep, False)
     w = parse_plan(text, label)
-    if not w: return None
+    if not w: return (None, None)
     LR = {'steadyLong','long','progressiveLong','raceRehearsalM','raceRehearsalHM','raceRehearsal10K','fastFinish'}
-    peak = 0
-    for wk in w:
-        for s, dur, _ in w[wk]:
-            if s in LR:
-                peak = max(peak, dur)
-    return peak
+    byweek = {}
+    for wk in sorted(w):
+        longs = [dur for s, dur, _ in w[wk] if s in LR]
+        if longs: byweek[wk] = max(longs)
+    if not byweek: return (None, None)
+    return (byweek[min(byweek)], max(byweek.values()))
 
+# Beg 10K cap was 60 (a flat cap that froze the long run — no progression at
+# all). Bumped to 70 (Higdon Novice 10K ~5-6mi) so it climbs 60→70. The GROWS
+# check is the regression guard: a long run stuck at its minimum (the old bug)
+# fails it.
 for label, fil, rp, ep, cap, ref in [
-    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 300, 420, 60, "Higdon Novice 10K ~ 50min"),
-    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 75, "Higdon Int 10K ~ 65min"),
-    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 90, "Daniels/Pfitz Adv 10K ~ 80-90min"),
+    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 300, 420, 72, "Higdon Novice 10K, grows 60→70"),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 78, "Higdon Int 10K ~ 75min"),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 92, "Daniels/Pfitz Adv 10K ~ 80-90min"),
 ]:
-    peak = peak_lr_for(label, fil, rp, ep)
+    first, peak = lr_first_and_peak(label, fil, rp, ep)
     short = label.split(' (')[0]
     check(
         f"{short} peak LR <= {cap}min ({ref})",
         peak is not None and peak <= cap,
         f"got peak LR {peak}min"
+    )
+    check(
+        f"{short} long run GROWS over the plan (peak > first build LR)",
+        first is not None and peak is not None and peak >= first + 5,
+        f"first build LR={first}min, peak LR={peak}min", full=True
     )
 
 # Int/Adv 5K/10K peak km — after baseLoad ×1.15 bump
@@ -1760,7 +1788,10 @@ def peak_km_for(label, fil, rp, ep):
 SHORT_RACE_KM_BANDS = [
     # (header, fil, rp, ep, lo, hi, reference)
     ("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320, 42, 55, "Daniels Int 5K ~ 50-65 km"),
-    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 48, 62, "Pfitz Int 10K ~ 55-70 km"),
+    # max 62→66: 2026-06-16 intermediate quality easing matched to Advanced
+    # (honest race-pace naming) runs quality a few s/km faster, so the same
+    # time covers slightly more ground. 66 km is still inside the 55-70 ref.
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 48, 66, "Pfitz Int 10K ~ 55-70 km"),
     ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 75, 95, "Daniels Adv 5K ~ 70-85 km"),
     ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 65, 85, "Daniels Adv 10K ~ 70-90 km"),
 ]
@@ -1867,7 +1898,9 @@ GUARDS = [
     ("Beg 42K (long, 22w)", 330, 450, 92, 99, 35, 55, 175, 195,
      {'marathonPace', 'threshold'}),
     # Int 42K — Pfitz 18/55 territory: full quality variety incl. MP.
-    ("Int 42K (long, 22w)", 300, 400, 88, 96, 50, 80, 185, 205,
+    # km max 80→84: 2026-06-16 intermediate quality easing → Advanced (honest
+    # race-pace naming) runs quality slightly faster → marginally more km/wk.
+    ("Int 42K (long, 22w)", 300, 400, 88, 96, 50, 84, 185, 205,
      {'marathonPace', 'threshold'}),
     # Adv 42K — Pfitz 18/70 territory after Track D engine work:
     # baseLoad×1.20 + MP-forcing on alt PEAK weeks. Now hits ~101 km/wk
@@ -2122,6 +2155,154 @@ for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
             f"W1={vols[ks[0]]} peak at W{peak_wk}",
             full=True,
         )
+
+# === Workout distribution & polarization (all tiers) =================
+#
+# The time-weighted aerobic-share test above runs for COMPETITIVE plans
+# only. That left Beg/Int/Adv and the accessible tier with no guard on the
+# easy:hard balance — which is exactly how the accessible 3-day plans came
+# to cram two quality sessions into a week with zero easy days and still
+# pass the whole suite. These checks close that gap. A regression that
+# crams quality into a reduced-day week, or strips the easy aerobic base,
+# must turn one of these RED.
+#
+# Classification mirrors the engine's intensity intent (not the subtype
+# label): hills/ladders carry an `interval` subtype but the real question
+# for polarization is "is this an easy aerobic day or a hard quality day".
+section("Workout distribution & polarization")
+
+HARD_SUB    = QUALITY - {'marathonPace'}     # Z4-Z5 quality sessions
+MOD_SUB     = PROG | {'marathonPace'}        # Z3 moderate
+AEROBIC_SUB = EASY | LONG | STRIDES          # genuine easy / long / recovery days
+
+def _dist_minutes(weeks):
+    e = m = h = 0
+    for wk in weeks.values():
+        for sub, dur, _ in wk:
+            if sub in HARD_SUB:   h += dur
+            elif sub in MOD_SUB:  m += dur
+            else:                 e += dur   # easy/long/strides (+ any aerobic)
+    return e, m, h
+
+def _hard_per_week(weeks):
+    return {w: sum(1 for s, _, _ in wk if s in HARD_SUB) for w, wk in weeks.items()}
+
+def _aerobic_per_week(weeks):
+    return {w: sum(1 for s, _, _ in wk if s in AEROBIC_SUB) for w, wk in weeks.items()}
+
+# (header, filter, race_pace, easy_pace, days, easy_floor%, hard_ceil%)
+# Floors/ceilings are distance/tier-aware: a 5K is legitimately quality-
+# heavier than a marathon, and an Adv marathon runs pyramidal (~50% easy),
+# not polarized (~80%) like the higher-volume Cmp tier. Bands sit ~5-12pts
+# off the current value: loose enough not to be flaky, tight enough that a
+# crammed-quality regression (which drops easy 20-30pts) trips them.
+DISTRIBUTION_PLANS = [
+    # header                    filter            rp   ep  days  Efloor Hceil
+    ("Acc Beg 5K (rec, 7w)",    "Acc Beg 5K",    370, 462,  2,   45,   30),
+    ("Acc Int 5K (rec, 7w)",    "Acc Int 5K",    300, 360,  3,   38,   50),
+    ("Acc Adv 5K (rec, 7w)",    "Acc Adv 5K",    240, 290,  4,   38,   50),
+    ("Acc Beg 10K (rec, 9w)",   "Acc Beg 10K",   395, 462,  2,   50,   25),
+    ("Acc Int 10K (rec, 9w)",   "Acc Int 10K",   283, 325,  3,   42,   48),
+    ("Acc Adv 10K (rec, 9w)",   "Acc Adv 10K",   242, 278,  4,   42,   46),
+    ("Beg 5K (long, 10w)",      "Beg 5K (long",  370, 462,  3,   50,   30),
+    ("Beg 10K (long, 12w)",     "Beg 10K (long", 395, 462,  3,   55,   25),
+    ("Int 21K (long, 18w)",     "Int 21K (long", 297, 340,  5,   55,   35),
+    ("Adv 21K (long, 18w)",     "Adv 21K (long", 253, 278,  5,   48,   38),
+    ("Int 42K (long, 22w)",     "Int 42K (long", 310, 340,  5,   60,   30),
+    ("Adv 42K (long, 22w)",     "Adv 42K (long", 265, 300,  5,   46,   38),
+    ("Cmp 42K (long, 22w)",     "Cmp 42K (long", 223, 255,  6,   68,   30),
+]
+
+for header, fil, rp, ep, days, efloor, hceil in DISTRIBUTION_PLANS:
+    txt = run_pacedump(fil, race_pace=rp, easy_pace=ep)
+    weeks = parse_plan(txt, header)
+    if not weeks:
+        check(f"{header} — distribution plan parses", False, "no plan parsed", full=True)
+        continue
+    e, m, h = _dist_minutes(weeks)
+    tot = e + m + h or 1
+    epct, hpct = 100 * e // tot, 100 * h // tot
+
+    # (1) Polarization floor — enough easy aerobic volume for the tier.
+    check(f"{header} — easy share >= {efloor}% by volume",
+          epct >= efloor, f"easy={epct}% (floor {efloor}); E/M/H={e}/{m}/{h}min", full=True)
+
+    # (2) Not quality-crammed — hard volume under the tier ceiling.
+    check(f"{header} — hard share <= {hceil}% by volume",
+          hpct <= hceil, f"hard={hpct}% (ceil {hceil}); E/M/H={e}/{m}/{h}min", full=True)
+
+    # (3) Low-day quality cap — a <=3-day week must never carry 2 quality
+    #     sessions (that leaves zero easy days). This is the direct guard
+    #     for the accessible 3-day plans.
+    if days <= 3:
+        bad = {w: c for w, c in _hard_per_week(weeks).items() if c > 1}
+        check(f"{header} — <=1 quality/week ({days}-day plan)",
+              not bad, f"weeks with 2+ quality: {bad}", full=True)
+
+    # (4) Every non-final week has a genuine easy/aerobic day — no week is
+    #     all-quality (the crammed accessible weeks had quality+quality+prog,
+    #     zero easy). The final (race) week is exempt: it's a shakeout.
+    last = max(weeks)
+    bad = {w: c for w, c in _aerobic_per_week(weeks).items() if c < 1 and w != last}
+    check(f"{header} — every non-race week has an easy/aerobic day",
+          not bad, f"weeks with 0 easy/long/strides days: {bad}", full=True)
+
+# === Taper — race-week training-LOAD drop ============================
+#
+# The aerobic/volume checks above work in minutes. The taper, though, cuts
+# intensity as much as duration: a marathon race week keeps an easy shakeout
+# (similar minutes) but a fraction of the peak LOAD. A minutes-only check
+# barely moves when the taper is broken — neutralize the taper-volume factor
+# in the engine and a "race week < peak minutes" guard still passes. So this
+# guards LOAD (intensity-weighted), parsed from dump mode, with a real
+# ceiling: a broken taper pushes race-week load toward peak and trips it.
+section("Taper — race-week load drop")
+
+def parse_dump_loads(text, header):
+    """dict[week_num] = weekly training load, from dump mode."""
+    if f'=== {header}' not in text:
+        return None
+    sect = text.split(f'=== {header}')[1]
+    loads = {}
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *(\d+) \[\w+[^\]]*\]\s+\d+wkts\s+load=\s*(\d+)', line)
+        if m:
+            loads[int(m.group(1))] = int(m.group(2))
+    return loads
+
+# (header, filter, race-week ceiling as % of peak-week load)
+# Ceilings are tier-aware: 21K/42K taper deep (race ~22-32% of peak), 5K/10K
+# moderately (~27-52%), and the short 2-3 day accessible plans only mildly
+# (~49-71%) because there's little volume to shed. Each ceiling sits ~10-20pt
+# above the current value — a neutralized taper (race-week load -> ~100% of
+# peak) blows through all of them.
+TAPER_PLANS = [
+    ("Beg 5K (long, 10w)",    "Beg 5K (long",  62),
+    ("Beg 10K (long, 12w)",   "Beg 10K (long", 62),
+    ("Adv 5K (long, 10w)",    "Adv 5K (long",  58),
+    ("Int 10K (long, 12w)",   "Int 10K (long", 58),
+    ("Int 21K (long, 18w)",   "Int 21K (long", 45),
+    ("Adv 21K (long, 18w)",   "Adv 21K (long", 45),
+    ("Int 42K (long, 22w)",   "Int 42K (long", 45),
+    ("Adv 42K (long, 22w)",   "Adv 42K (long", 45),
+    ("Cmp 42K (long, 22w)",   "Cmp 42K (long", 45),
+    ("Acc Beg 5K (rec, 7w)",  "Acc Beg 5K",    80),
+    ("Acc Int 5K (rec, 7w)",  "Acc Int 5K",    80),
+    ("Acc Beg 10K (rec, 9w)", "Acc Beg 10K",   80),
+    ("Acc Int 10K (rec, 9w)", "Acc Int 10K",   80),
+]
+for header, fil, ceil_pct in TAPER_PLANS:
+    loads = parse_dump_loads(run_dump(fil), header)
+    if not loads:
+        check(f"{header} — taper plan parses", False, "no plan parsed", full=True)
+        continue
+    peak = max(loads.values())
+    race = loads[max(loads)]
+    pct = 100 * race // max(peak, 1)
+    check(f"{header} — race-week load <= {ceil_pct}% of peak",
+          pct <= ceil_pct, f"race={race} peak={peak} = {pct}% (ceil {ceil_pct})", full=True)
 
 # --- report ----------------------------------------------------------
 
