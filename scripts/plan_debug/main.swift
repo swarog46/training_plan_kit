@@ -15,7 +15,14 @@ import Foundation
 
 func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
     let plan = simulatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
-    let phaseDurations = calculatePhaseDurations(config: config, totalWeeks: weeks)
+    // Mirror the engine's front-trim: short plans are generated at
+    // recommended length and trimmed from the start, so phase labels must
+    // be computed against the generated length and offset by the trim.
+    let minRequired = config.minBasePhaseWeeks + config.minSpeedPhaseWeeks
+        + config.minPeakPhaseWeeks + config.minTaperPhaseWeeks
+    let genWeeks = max(weeks, minRequired)
+    let weeksTrimmed = genWeeks - weeks
+    let phaseDurations = calculatePhaseDurations(config: config, totalWeeks: genWeeks)
     let baseDur = phaseDurations["base"] ?? 0
     let speedDur = phaseDurations["speed"] ?? 0
     let peakDur = phaseDurations["peak"] ?? 0
@@ -29,7 +36,7 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
     print("-----------------------------------------------------------------")
 
     for week in 0..<weeks {
-        let (phase, weekInPhase) = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
+        let (phase, weekInPhase) = determinePhaseV3(weekIndex: week + weeksTrimmed, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
         let ws = plan[week] ?? []
         let totalLoad = ws.reduce(0) { $0 + Int($1.workout.trainingLoad) }
         let totalMin  = ws.reduce(0) { $0 + Int($1.workout.duration) } / 60
@@ -42,7 +49,13 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
             let load = Int(w.workout.trainingLoad)
             let title = w.workout.title.padding(toLength: 28, withPad: " ", startingAt: 0)
             let subtype = w.workout.subtype.rawValue
-            print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]", dur, load, subtype, w.type))")
+            // Z5 work minutes from the actual picked template — ground truth
+            // for the Z5-policy tests (title-based joins are ambiguous).
+            let z5min = Int(w.workout.intervals
+                .filter { $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5) }
+                .reduce(0.0) { $0 + $1.duration } / 60)
+            let z5tag = z5min > 0 ? " z5=\(z5min)" : ""
+            print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]%@", dur, load, subtype, w.type, z5tag))")
         }
     }
     print("=================================================================\n")
@@ -189,6 +202,20 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("VO2 Beg (8w)",         .vo2maxBeginner,         8),
     ("VO2 Int (8w)",         .vo2maxIntermediate,     8),
     ("VO2 Adv (8w)",         .vo2maxAdvanced,         8),
+
+    // Accessible ("real life") tier — lighter variants, same structure
+    ("Acc Beg 5K (rec, 7w)",  .accessibleBeginner5Default,      7),
+    ("Acc Int 5K (rec, 7w)",  .accessibleIntermediate5Default,  7),
+    ("Acc Adv 5K (rec, 7w)",  .accessibleAdvanced5Default,      7),
+    ("Acc Beg 10K (rec, 9w)", .accessibleBeginner10Default,     9),
+    ("Acc Int 10K (rec, 9w)", .accessibleIntermediate10Default, 9),
+    ("Acc Adv 10K (rec, 9w)", .accessibleAdvanced10Default,     9),
+    ("Acc Beg 21K (rec, 14w)",.accessibleBeginner21Default,    14),
+    ("Acc Int 21K (rec, 14w)",.accessibleIntermediate21Default,14),
+    ("Acc Adv 21K (rec, 14w)",.accessibleAdvanced21Default,    14),
+    ("Acc Beg 42K (rec, 18w)",.accessibleBeginner42Default,    18),
+    ("Acc Int 42K (rec, 18w)",.accessibleIntermediate42Default,18),
+    ("Acc Adv 42K (rec, 18w)",.accessibleAdvanced42Default,    18),
 ]
 
 let filtered = cases.filter { filter.isEmpty || $0.label.lowercased().contains(filter.lowercased()) }
@@ -291,6 +318,8 @@ if mode == "pace" {
 if mode == "pacedump" {
     let racePace = Int(ProcessInfo.processInfo.environment["RACE_PACE"] ?? "300") ?? 300
     let easyPace = Int(ProcessInfo.processInfo.environment["EASY_PACE"] ?? "390") ?? 390
+    // 5K speed anchor for quality zones (Z4/Z5). nil → legacy race-pace anchoring.
+    let speedPace = ProcessInfo.processInfo.environment["SPEED_PACE"].flatMap { Int($0) }
 
     func fmtPace(_ secPerKm: Int) -> String {
         return String(format: "%d:%02d/km", secPerKm / 60, secPerKm % 60)
@@ -332,6 +361,7 @@ if mode == "pacedump" {
 
         let paceEvents = PaceZoneConverter.applyPaceProgression(
             to: events, racePace: racePace, conversationalPace: easyPace,
+            speedPace: speedPace,
             config: progression, startDate: startDate, endDate: endDate
         )
 
@@ -611,6 +641,33 @@ if mode == "projection" {
             }
         }
     }
+}
+
+// vdotpaces: derive every training pace from a race result, exactly as the
+// app does (race=distance pace, easy=easyPaceSecondsPerKm, speed=5K pace).
+// Prints the three values pacedump consumes (RACE_PACE/EASY_PACE/SPEED_PACE)
+// so slow-runner plans can be generated with faithful paces.
+//   DIST=5000 TIME=2400 ./plan_debug vdotpaces
+if mode == "vdotpaces" {
+    let dist = Int(ProcessInfo.processInfo.environment["DIST"] ?? "5000") ?? 5000
+    let time = Int(ProcessInfo.processInfo.environment["TIME"] ?? "1200") ?? 1200
+    guard let v = VDOT.from(distanceMeters: dist, timeSeconds: time) else {
+        print("ERROR: bad DIST/TIME"); exit(1)
+    }
+    func f(_ s: Int) -> String { String(format: "%d:%02d", s/60, s%60) }
+    let racePace: Int = {
+        switch dist {
+        case 42195: return v.marathonPaceSecondsPerKm
+        case 21097: return v.halfMarathonPaceSecondsPerKm
+        case 10000: return v.tenKPaceSecondsPerKm
+        default: return v.fiveKPaceSecondsPerKm
+        }
+    }()
+    print("VDOT=\(String(format: "%.1f", v.value)) for \(dist)m in \(f(time))")
+    print("RACE_PACE=\(racePace)   # \(f(racePace))/km")
+    print("EASY_PACE=\(v.easyPaceSecondsPerKm)   # \(f(v.easyPaceSecondsPerKm))/km  (raw 72%: \(f(v.paceAtVO2Fraction(0.72)))/km)")
+    print("SPEED_PACE=\(v.fiveKPaceSecondsPerKm)   # \(f(v.fiveKPaceSecondsPerKm))/km")
+    print("threshold=\(f(v.thresholdPaceSecondsPerKm))  interval=\(f(v.intervalPaceSecondsPerKm))  rep=\(f(v.repetitionPaceSecondsPerKm))")
 }
 
 // phases: for each filtered plan, print the phase split + per-week load target

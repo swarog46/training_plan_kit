@@ -27,7 +27,16 @@ public struct SeededRandomNumberGenerator: RandomNumberGenerator {
 
 public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
     // Taper is fixed — longer plans get more training, not more taper
-    let taper = config.minTaperPhaseWeeks
+    var taper = config.minTaperPhaseWeeks
+    // Marathon taper floor: a 3-week Pfitzinger ramp-down. The long-run
+    // progression peaks at the last PEAK week and can only step down in taper
+    // (monotonic build), so a 2-week taper lands the longest run just 2 weeks
+    // out — too close to absorb. Floor marathon tapers at 3 so the peak long
+    // run sits ~3 weeks from race day. Half/shorter keep shorter tapers (less
+    // volume to shed); Cmp marathons already ship 3.
+    if config.distance >= 30000 {
+        taper = max(taper, 3)
+    }
     let trainingWeeks = totalWeeks - taper
 
     // Calculate training phase durations from remaining weeks
@@ -611,9 +620,15 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             // timeTrial in the interval pool (hills build strength, TT is a
             // tune-up race), and threshold + marathonPace in the threshold pool
             // (the two pillars of marathon-specific quality).
-            let begAllowedIntervals: Set<WorkoutSubtype> = [.hillRepeats, .timeTrial]
+            // Beginner speed work = strides (neuromuscular, low-injury — the
+            // canonical novice speed intro, Daniels/Higdon) + hills + time-trial.
+            // Strides aren't in `intervalSubtypes`, and the catalog's hills/TT are
+            // all 40min+ (too long for short 5K/10K SPEED targets), so without
+            // pulling strides in directly the beginner quality collapses to
+            // threshold-only — and a 5K is a speed race that needs fast running.
             let begAllowedThresholds: Set<WorkoutSubtype> = [.threshold, .marathonPace]
-            filteredIntervals = filteredIntervals.filter { begAllowedIntervals.contains($0.subtype) }
+            filteredIntervals = filterWorkoutsBySubtypeV3(
+                workouts: allWorkouts, subtypes: [.hillRepeats, .timeTrial, .strides])
             filteredThresholds = filteredThresholds.filter { begAllowedThresholds.contains($0.subtype) }
         }
     }
@@ -651,6 +666,19 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         }
     }
     
+    // Z5 frequency guard (injury-conscious intensity policy). A "real" Z5
+    // session is any workout with a work interval targeting HR zone 5;
+    // strides are exempt (short neuromuscular reps, not VO2 stress).
+    // Race plans (VO2 blocks are exempt — Z5 is their entire point):
+    //   - no Z5 in BASE (aerobic foundation) or TAPER (sharpen, don't dig)
+    //   - at most one Z5 session per week
+    //   - 21K/42K: no Z5 in consecutive weeks (these distances are
+    //     threshold/MP-dominant; Pfitz runs ~5-6 VO2 sessions per cycle)
+    func isRealZ5(_ w: Workout) -> Bool {
+        w.subtype != .strides && hasZone5(w)
+    }
+    var lastWeekHadZ5 = false
+
     for week in 0..<actualWeeksToGenerate {
         let phaseInfo = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
         let phase = phaseInfo.phase
@@ -676,6 +704,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         let isDeloading = targets.isDeloading
         
         var weekWorkouts: [(type: String, workout: Workout)] = []
+        var z5UsedThisWeek = false
         let targetLoad = targets.load
         let targetDuration = targets.duration
         
@@ -712,6 +741,19 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         let milestoneCadence = max(3, peakDur / 2)
         let yassoWeek = phase == .peak && config.runnerLevel != .beginner && (weekInPhase % milestoneCadence) == 0
         let ttWeek    = phase == .peak && (weekInPhase % milestoneCadence) == milestoneCadence / 2
+
+        // Hills climb one variant per ~2 plan weeks (load-sorted) across BASE+
+        // SPEED, so the load-target selector can't park on the cheapest 8×60s.
+        // Absolute week (not weekInPhase) so the ramp continues base → speed.
+        func rampHillsByPlanWeek(_ hills: [Workout]) -> [Workout] {
+            var byTitle: [String: Workout] = [:]
+            for w in hills where byTitle[w.title] == nil { byTitle[w.title] = w }
+            let variants = byTitle.values.sorted { $0.trainingLoad < $1.trainingLoad }
+            guard variants.count >= 2 else { return hills }
+            let idx = min(week / 2, variants.count - 1)
+            let titles = Set(variants[idx...min(idx + 1, variants.count - 1)].map { $0.title })
+            return hills.filter { titles.contains($0.title) }
+        }
 
         let intervalPool: [Workout] = {
             var pool = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
@@ -763,7 +805,13 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             // Don't return an empty pool — fall back to full pool if the
             // floor excluded everything (catalog gap, not the user's
             // problem).
-            return filtered.isEmpty ? pool : filtered
+            var result = filtered.isEmpty ? pool : filtered
+            let hills = result.filter { $0.subtype == .hillRepeats }
+            if hills.count > 1 {
+                let ramped = rampHillsByPlanWeek(hills)
+                if !ramped.isEmpty { result = result.filter { $0.subtype != .hillRepeats } + ramped }
+            }
+            return result
         }()
         
         // MAINTENANCE plan: dedicated gentle progression
@@ -1018,7 +1066,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 }
             }
         }
-        
+
         if shouldAddIntervals {
             if isBeginner {
                 // Alternate: even weeks = intervals, odd = threshold.
@@ -1030,6 +1078,19 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                         if phase == .peak && ttWeek {
                             let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
                             if !ttOnly.isEmpty { return ttOnly }
+                        }
+                        // PEAK = race sharpening. Bias 5K/10K beginners toward
+                        // race-specific neuromuscular work (strides @ ~5K pace)
+                        // and the tune-up time-trial; drop hill repeats, which
+                        // are a BASE-phase strength stimulus. Sustained race-pace
+                        // intervals (fivekPace, ~12k load) are intentionally NOT
+                        // in the beginner pool — too heavy for a ~9k-load week,
+                        // and the catalog has no beginner-dosed variant. Strides
+                        // are the injury-safe way a novice rehearses fast running
+                        // (Daniels/Higdon). Other distances keep the full pool.
+                        if phase == .peak && config.distance <= 10000 {
+                            let raceSpecific = intervalPool.filter { $0.subtype != .hillRepeats }
+                            if !raceSpecific.isEmpty { return raceSpecific }
                         }
                         return intervalPool
                     }()
@@ -1112,15 +1173,49 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                     return intervalPool
                 }()
 
-                if !preferredPool.isEmpty {
+                // Z5 policy: blocked in BASE/TAPER, and on the week after a
+                // Z5 week for 21K/42K. VO2 blocks are exempt.
+                // Note `week == weeksToTrim`: short plans are generated at
+                // recommended length and trimmed from the front, so the
+                // runner's first week can land mid-SPEED — it still must not
+                // open with a VO2 session.
+                let z5Blocked = !config.isVO2Max && (
+                    phase == .base || phase == .taper
+                    || week == weeksToTrim
+                    || (config.distance >= 21000 && lastWeekHadZ5))
+                if z5Blocked {
+                    let noZ5 = preferredPool.filter { !isRealZ5($0) }
+                    if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
+                        weekWorkouts.append(("interval", interval))
+                        prevInterval = interval
+                    } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
+                        // No sub-Z5 interval template exists for this distance
+                        // (5K pools are mostly I-pace). Use a threshold session
+                        // as the week's quality instead of breaking the policy —
+                        // Daniels' BASE-phase quality IS the LT run.
+                        weekWorkouts.append(("threshold", threshold))
+                        prevThreshold = threshold
+                    }
+                } else if !preferredPool.isEmpty {
                     if let interval = selectWorkoutByTargetV3(workouts: preferredPool, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
                         weekWorkouts.append(("interval", interval))
                         prevInterval = interval
+                        if isRealZ5(interval) { z5UsedThisWeek = true }
                     }
                 }
                 
-                // Threshold in SPEED/PEAK only (not BASE)
-                if phase == .speed || phase == .peak {
+                // Threshold in SPEED/PEAK only (not BASE).
+                //
+                // Quality cap for low-day plans: a 2nd quality session here
+                // (slot-1 already placed one) is right for 4+ day weeks, but on
+                // a 3-day week it leaves zero easy days (quality + quality +
+                // long). The accessible 3-day plans are meant to be the GENTLER
+                // option, not the same load crammed into fewer days — so cap
+                // them at one quality/week and let the freed day fill with easy/
+                // long aerobic running. Textbook non-beginner plans are all 4+
+                // days, so this only relaxes the accessible 3-day tier; the
+                // Pfitz MP/mile forcing below (42K/Cmp, all 5+ days) is untouched.
+                if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 {
                     // Determine variation type for this week
                     let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
@@ -1134,8 +1229,12 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                         if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
                             weekWorkouts.append(("progressive_surprise", progressive))
                         }
-                    } else if weekVariation == 3 && !intervalPool.isEmpty {
-                        // Every 5th week (week % 5 == 3): Double intervals instead of threshold.
+                    } else if weekVariation == 3 && !intervalPool.isEmpty && config.distance < 21097 {
+                        // Every 5th week (week % 5 == 3): Double intervals instead
+                        // of threshold — 5K/10K ONLY. Doubling VO2 in a week suits
+                        // a speed race, but a half/marathon is LT- and MP-dominant
+                        // (Pfitzinger): no VO2-doubling weeks. 21K/42K fall through
+                        // to the threshold (LT) slot below instead.
                         // Exclude milestones (Yasso/TT) from the second slot so we
                         // don't end up with two milestone workouts in the same week —
                         // those are meant to be standalone benchmarks. Also exclude
@@ -1149,9 +1248,20 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                             $0.subtype != .timeTrial &&
                             $0.subtype != firstIntervalSubtype
                         }
-                        let pool2 = secondSlotPool.isEmpty ? intervalPool : secondSlotPool
+                        let pool2base = secondSlotPool.isEmpty ? intervalPool : secondSlotPool
+                        // Weekly Z5 cap + phase/cadence policy for the second
+                        // slot: one Z5 session per week is the ceiling (Adv
+                        // VO2 blocks excepted). No unfiltered fallback here —
+                        // if no sub-Z5 candidate exists, skip the second
+                        // interval; the week keeps its slot-1 quality.
+                        let blockZ5Second = z5Blocked
+                            || (z5UsedThisWeek && !(config.isVO2Max && config.runnerLevel == .advanced))
+                        let pool2: [Workout] = blockZ5Second
+                            ? pool2base.filter { !isRealZ5($0) }
+                            : pool2base
                         if let interval2 = selectWorkoutByTargetV3(workouts: pool2, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, isMaintenance: isMaintenance) {
                             weekWorkouts.append(("interval2", interval2))
+                            if isRealZ5(interval2) { z5UsedThisWeek = true }
                         }
                     } else if !filteredThresholds.isEmpty {
                         // Normal week: Add threshold
@@ -1333,7 +1443,9 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         // first matching subtype.
         if phase == .peak {
             for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
-            where rehearsal.eligibleDistances.contains(config.distance) {
+            where rehearsal.eligibleDistances.contains(config.distance)
+                // 10K-pace rehearsal is a quality session — Int/Adv only.
+                && !(isBeginner && rehearsal == .raceRehearsal10K) {
                 longRunTypes.append(rehearsal)
             }
             // fastFinish: universal — long-ish easy + race-pace tail. The
@@ -1441,7 +1553,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 // 60 is the floor — catalog's shortest long-run workout is
                 // 60min. Below that the pool empties and the runner gets
                 // zero LRs (breaks the "long run every build week" invariant).
-                case .beginner: maxDurationMins = 60   // Higdon Novice 10K (real prescription is 40-50min, capped at catalog floor)
+                case .beginner: maxDurationMins = 70   // Higdon Novice 10K peaks ~5-6mi (~60-72min). A flat 60 cap froze the long run and fought the 60→70→80 progression table; 70 lets it grow 60→70 while staying under Int's 75.
                 case .intermediate: maxDurationMins = 75  // Higdon Int 10K
                 case .advanced: maxDurationMins = 90   // Daniels/Pfitz Adv 10K (bumped to give visible step over 5K)
                 case .competitive: maxDurationMins = 90
@@ -1590,6 +1702,28 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - targetLongRunMins) <= toleranceMins }
                 if !filteredByTarget.isEmpty {
                     pool = filteredByTarget
+                }
+                // Low-mileage short races only: the long-run load budget sits
+                // below even the shortest run, so the load pick freezes the long
+                // run at the minimum (Beg 10K stuck at 60). Snap to the nearest-
+                // target AEROBIC run. (Half/marathon clear it — left alone, so
+                // their MP-segment peak runs stay intact.)
+                let snapLoadMult: Double = config.runnerLevel == .competitive ? 0.50 : 0.35
+                let snapMinLoad = pool.map { Double($0.trainingLoad) }.min() ?? 0
+                if config.distance < 21000,
+                   Double(targetLoad) * snapLoadMult < snapMinLoad {
+                    let aerobic = pool.filter {
+                        $0.subtype == .steadyLong || $0.subtype == .long || $0.subtype == .progressiveLong
+                    }
+                    let base = aerobic.isEmpty ? pool : aerobic
+                    if let nearest = base.min(by: {
+                        abs(Int($0.duration) / 60 - targetLongRunMins)
+                            < abs(Int($1.duration) / 60 - targetLongRunMins)
+                    }) {
+                        let nd = Int(nearest.duration) / 60
+                        let snapped = base.filter { abs(Int($0.duration) / 60 - nd) <= 2 }
+                        if !snapped.isEmpty { pool = snapped }
+                    }
                 }
             } else {
                 // 5K / maintenance: use initial range or weekly duration percentage
@@ -1845,34 +1979,29 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                             weekWorkouts.append(("long_base", longRun))
                         }
                     } else {
-                        // Already have a long run, add progression instead
-                        let progressivePool = filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.progression])
-                            .filter { $0.duration >= 40 * 60 && $0.duration <= 70 * 60 }
-                        if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.15, targetDuration: 50, usedIds: &usedIds, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("progressive_base", progressive))
-                        } else if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
+                        // Already have a long run — BASE wants easy aerobic
+                        // volume here, not a 2nd Z3 progression. The every-3rd-
+                        // week progression (slot above) already supplies the
+                        // controlled tempo touch; stacking another keeps Adv in
+                        // the gray zone (~50% easy) instead of polarized (~80%,
+                        // like the Cmp tier). Default this base slot to easy.
+                        if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
                             weekWorkouts.append(("easy_base", easy))
                         }
                     }
                 } else {
-                    // 10K Advanced: Add easy or progression (NOT long run - max 1 per week)
-                    let progressivePool = filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.progression])
-                        .filter { $0.duration >= 40 * 60 && $0.duration <= 70 * 60 }  // Cap at 1h10m
-                    if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.15, targetDuration: 50, usedIds: &usedIds, isMaintenance: isMaintenance) {
-                        weekWorkouts.append(("progressive_base", progressive))
-                    } else if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
+                    // 10K Advanced: BASE wants easy aerobic volume (polarized
+                    // base) — the every-3rd-week progression already covers tempo.
+                    if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
                         weekWorkouts.append(("easy_base", easy))
                     }
                 }
             } else if config.runnerLevel == .intermediate {
-                // Add progression run (40+ mins, cap at 1h10m for <42K)
-                var progressivePool = filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.progression])
-                    .filter { $0.duration >= 40 * 60 }
-                if config.distance < 42000 {
-                    progressivePool = progressivePool.filter { $0.duration <= 70 * 60 }
-                }
-                if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                    weekWorkouts.append(("progressive_base", progressive))
+                // BASE wants easy aerobic volume, not a 2nd Z3 progression — keep
+                // the base polarized (the every-3rd-week SPEED/PEAK progression
+                // already supplies tempo variety for intermediates).
+                if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
+                    weekWorkouts.append(("easy_base", easy))
                 }
             } else if config.runnerLevel == .competitive {
                 // Competitive: add a medium-long easy (60-90min) for Pfitz-style
@@ -1901,27 +2030,15 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                         break  // No more workouts available
                     }
                 } else if config.distance >= 21000 {
-                    // 21K+ Advanced: Alternate between progression and easy
-                    if weekWorkouts.count % 2 == 1 {
-                        var progressivePool = filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.progression])
-                            .filter { $0.duration >= 40 * 60 }
-                        // Cap progressions for all distances
-                        if config.distance < 42000 {
-                            progressivePool = progressivePool.filter { $0.duration <= 70 * 60 }  // 1h10m max for 21K
-                        }
-                        if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.10, targetDuration: 50, usedIds: &usedIds, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("progressive_fill", progressive))
-                        } else if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.10, targetDuration: Int(targetDuration * 0.20), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("easy_fill", easy))
-                        } else {
-                            break
-                        }
+                    // 21K+ Advanced: fill volume with EASY aerobic running.
+                    // (Previously alternated progression/easy here, which — on top
+                    // of the every-3rd-week progression and the long run — left
+                    // the half/marathon Adv plans ~50% easy. The endurance base
+                    // for a 21K+/Adv plan wants easy volume, not more Z3 fill.)
+                    if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.10, targetDuration: Int(targetDuration * 0.20), usedIds: &usedIds, isMaintenance: isMaintenance) {
+                        weekWorkouts.append(("easy_fill", easy))
                     } else {
-                        if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.10, targetDuration: Int(targetDuration * 0.20), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("easy_fill", easy))
-                        } else {
-                            break
-                        }
+                        break
                     }
                 } else {
                     // 10K Advanced: Add easy run
@@ -2011,6 +2128,33 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             }
         }
 
+        // Peak-volume soft cap (marathon Adv/Cmp). Pfitz 18/70 and 18/85 push
+        // 9-10h weeks at peak — faithful to the books, but above what most
+        // amateurs choosing these plans can absorb without breaking down. Shed
+        // the excess from the largest aerobic FILL (medium-long / easy) only —
+        // never the long run, the quality session, or MP work — and let the
+        // freed day become recovery. Halves and shorter never approach the cap.
+        let weeklyCapMinutes: Int = {
+            guard config.distance >= 42195 else { return .max }
+            switch config.runnerLevel {
+            case .competitive: return 540   // ~9.0h ceiling (was up to 10.1h)
+            case .advanced:    return 480   // ~8.0h ceiling (was up to 8.4h)
+            default:           return .max  // Beg/Int already sit well below
+            }
+        }()
+        if weeklyCapMinutes != .max {
+            let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]
+            func weekMins() -> Int { weekWorkouts.reduce(0) { $0 + Int($1.workout.duration) / 60 } }
+            // Drop the largest aerobic fill until under the cap (keep >= 4
+            // sessions so a 6-day peak week never collapses below a real week).
+            while weekMins() > weeklyCapMinutes && weekWorkouts.count > 4 {
+                let cands = weekWorkouts.enumerated().filter { trimmable.contains($0.element.workout.subtype) }
+                guard let victim = cands.max(by: { Int($0.element.workout.duration) < Int($1.element.workout.duration) }) else { break }
+                weekWorkouts.remove(at: victim.offset)
+            }
+        }
+
+        lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
         workoutsByWeek[week] = weekWorkouts
     }
 

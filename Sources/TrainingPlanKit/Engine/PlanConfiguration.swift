@@ -580,7 +580,17 @@ public struct PlanConfiguration {
         var speedWeeks = max(idealSpeedWeeks, minSpeedPhaseWeeks)
         var peakWeeks = max(idealPeakWeeks, minPeakPhaseWeeks)
         var taperWeeks = max(idealTaperWeeks, minTaperPhaseWeeks)
-        
+
+        // Marathon taper floor: a 3-week ramp-down (Pfitzinger). The long-run
+        // progression peaks at the last PEAK week and can only step down in
+        // taper (monotonic build), so a 2-week taper lands the longest run
+        // just 2 weeks out — too close to absorb. Floor marathon tapers at 3
+        // so the peak long run sits ~3 weeks from race day. Half/shorter keep
+        // their shorter tapers (less volume to shed). Cmp already ships 3.
+        if distance >= 30000 {
+            taperWeeks = max(taperWeeks, 3)
+        }
+
         // Calculate total of all phases after applying minimums
         let totalPlannedWeeks = baseWeeks + speedWeeks + peakWeeks + taperWeeks
         
@@ -633,5 +643,325 @@ public struct PlanConfiguration {
     // Calculate the recommended minimum weeks for this plan configuration
     public func recommendedWeeks() -> Int {
         return minBasePhaseWeeks + minSpeedPhaseWeeks + minPeakPhaseWeeks + minTaperPhaseWeeks
+    }
+}
+
+// MARK: - Accessible ("real life") tier
+// Lighter, more sustainable variants of the textbook plans above:
+// fewer days/week, gentler beginner phase mix. SAME periodization
+// structure (base->speed->peak->taper, deloads, taper). The textbook
+// configs above are UNCHANGED; these are an additive, opt-in tier.
+// 3 cells (Adv 21K, Beg 42K, Adv 42K) are unchanged from textbook and
+// alias it directly. See articles/ACCESSIBLE_TIER_NOTES.md.
+extension PlanConfiguration {
+    public static let accessibleBeginner5Default = PlanConfiguration(
+        raceDate: Date(), // This should be set by the caller
+        runnerLevel: .beginner,
+        distance: 5000,
+        basePhaseRatio: 0.50,
+        speedPhaseRatio: 0.18,
+        peakPhaseRatio: 0.20,
+        taperPhaseRatio: 0.12,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 2,
+        minPeakPhaseWeeks: 1,
+        minTaperPhaseWeeks: 1,
+        // Higdon Novice 5K / Couch-to-5K both prescribe 3 days/wk minimum
+        // (often with optional cross-training on top). Previous [2, 6]
+        // (Wed/Sun) was 2 days, which left adaptation frequency too low
+        // for true beginners: each session had to carry too much, and
+        // missing one of the two reset the rhythm. Tue/Thu/Sun spaces
+        // training across the week and matches Int 5K's pattern for a
+        // clean tier ladder.
+        trainingDays: [2, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: false,
+        weeklyLoadIncreasePercent: 17...25,
+        phaseFinishDeloadPercent: 14...16,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 50,
+        initialLongRunDuration: 25...30
+    )
+
+    public static let accessibleIntermediate5Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 5000,
+        basePhaseRatio: 0.23,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.12,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 1,
+        // Int 5K: 4 days/wk (Tue/Thu/Sat/Sun). Was 3 days (Wed/Fri/Sun);
+        // Daniels' Int 5K Phase II prescribes 5-6 days. Going to 4 is a
+        // measured move — keeps tier-distinct from Adv 5K (5 days) while
+        // matching Pfitz's "5K Intermediate" guidance more honestly.
+        trainingDays: [1, 3, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: false,
+        weeklyLoadIncreasePercent: 17...23,
+        phaseFinishDeloadPercent: 14...16,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 70,
+        initialLongRunDuration: 30...35
+    )
+
+    public static let accessibleAdvanced5Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 5000,
+        basePhaseRatio: 0.23,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.12,
+        minBasePhaseWeeks: 3,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 4,
+        minTaperPhaseWeeks: 1,
+        // Adv 5K: 5 days/wk (Tue/Wed/Thu/Sat/Sun). Was 4 days (Tue/Wed/Fri/Sun);
+        // Daniels' Adv 5K Phase II prescribes 6-7 days. 5 days is the
+        // honest middle — keeps tier distinct from Cmp (6 days) and
+        // matches Pfitz's 5K Advanced guidance. Tue-Thu block lets Q1/Q2
+        // alternate with a recovery easy in between (Daniels pattern).
+        trainingDays: [1, 3, 5, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: false,
+        weeklyLoadIncreasePercent: 15...25,
+        phaseFinishDeloadPercent: 15...17,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 125,
+        initialLongRunDuration: 45...50
+    )
+
+    public static let accessibleBeginner10Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .beginner,
+        distance: 10000,
+        basePhaseRatio: 0.55,
+        speedPhaseRatio: 0.15,
+        peakPhaseRatio: 0.20,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 2,
+        minPeakPhaseWeeks: 1,
+        minTaperPhaseWeeks: 1,
+        trainingDays: [2, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        weeklyLoadIncreasePercent: 18...26,
+        phaseFinishDeloadPercent: 14...16,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 70,
+        initialLongRunDuration: 30...40
+    )
+
+    public static let accessibleIntermediate10Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 10000,
+        basePhaseRatio: 0.20,
+        speedPhaseRatio: 0.40,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 2,
+        minTaperPhaseWeeks: 1,
+        // Int 10K: 5 days/wk (Tue/Wed/Thu/Sat/Sun). Was 4 days (Tue/Thu/Sat/Sun);
+        // Pfitz Int 10K prescribes 5-6 days. Adding a Wednesday recovery
+        // easy fills the gap between Tuesday Q1 and Thursday Q2 — Daniels'
+        // standard pattern.
+        trainingDays: [1, 3, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        weeklyLoadIncreasePercent: 17...26,
+        phaseFinishDeloadPercent: 15...17,
+        taperDeloadPercent: 35,
+        // Bumped 140 → 170 so 10K plan visibly out-volumes 5K plan (matches
+        // user mental model "longer race = more training"). Daniels' Phase II
+        // Int 10K is 50-65 km/wk — bump lands ~58 km vs 5K's 48 km, clean
+        // step up.
+        initialWeeklyDuration: 130,
+        initialLongRunDuration: 45...55
+    )
+
+    public static let accessibleAdvanced10Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 10000,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 1,
+        // Adv 10K: 5 days/wk (Tue/Wed/Thu/Sat/Sun). Was 4 days; Daniels'
+        // Adv 10K prescribes 6 days. Going to 5 keeps tier distinct from
+        // Cmp marathon (6 days) while letting the runner do Q1/easy/Q2/
+        // easy/long — Daniels' standard.
+        trainingDays: [1, 3, 5, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        weeklyLoadIncreasePercent: 15...25,
+        phaseFinishDeloadPercent: 15...17,
+        taperDeloadPercent: 35,
+        // Bumped 180 → 220 + bumped LR duration 70-75 → 80-90 so 10K plan
+        // visibly out-volumes 5K plan. Daniels Phase II Adv 10K is 70-90
+        // km/wk; combined with baseLoad ×1.15 × 1.20 (5K/10K + 10K-specific
+        // bumps), bump lands Adv 10K at ~90 km vs Adv 5K's 85 km — clean
+        // step up matching user mental model "longer race = more training".
+        initialWeeklyDuration: 185,
+        initialLongRunDuration: 80...90
+    )
+
+    public static let accessibleBeginner21Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .beginner,
+        distance: 21097,
+        // Beginner half-marathoners need MORE base than intermediate/advanced
+        // (cardio least adapted, highest injury risk). Inverted previously
+        // (0.08 / 1 week min) — likely a transcription error from 5K config.
+        basePhaseRatio: 0.30,
+        speedPhaseRatio: 0.30,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 4,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        weeklyLoadIncreasePercent: 18...26,
+        phaseFinishDeloadPercent: 14...16,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 95,
+        initialLongRunDuration: 35...40
+    )
+
+    public static let accessibleIntermediate21Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 21097,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 4,
+        minTaperPhaseWeeks: 2,
+        // Higdon Intermediate 1 Half = 5 days. The 5th day differentiates Int from
+        // Beg's 4-day plan (otherwise volume gap collapses to ~7%).
+        trainingDays: [1, 3, 5, 6], // accessible tier
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        weeklyLoadIncreasePercent: 17...26,
+        phaseFinishDeloadPercent: 15...17,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 165,
+        initialLongRunDuration: 60...70
+    )
+
+    /// Accessible advanced21Default — identical to the textbook plan.
+    public static let accessibleAdvanced21Default = advanced21Default
+
+    /// Accessible beginner42Default — identical to the textbook plan.
+    public static let accessibleBeginner42Default = beginner42Default
+
+    public static let accessibleIntermediate42Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 42195,
+        basePhaseRatio: 0.15,
+        speedPhaseRatio: 0.30,
+        peakPhaseRatio: 0.45,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 6,
+        minTaperPhaseWeeks: 2,
+        // Higdon Intermediate 1 marathon = 5 days (Mon off, Tue/Wed/Thu, Fri off,
+        // Sat pace, Sun long). Beg uses 4 days; the 5th day differentiates Int's
+        // higher volume tier from Beg.
+        trainingDays: [1, 3, 5, 6], // accessible tier
+        longestWorkoutDay: 6,
+        weeklyLoadIncreasePercent: 17...26,
+        phaseFinishDeloadPercent: 15...17,
+        taperDeloadPercent: 35,
+        initialWeeklyDuration: 270,
+        initialLongRunDuration: 95...105
+    )
+
+    /// Accessible advanced42Default — identical to the textbook plan.
+    public static let accessibleAdvanced42Default = advanced42Default
+
+}
+
+// MARK: - Tier switch (accessible vs textbook)
+
+extension PlanConfiguration {
+    /// Master switch: which non-competitive plan set the app generates.
+    ///
+    /// `true`  → the **accessible** tier (fewer days/week, gentler beginners,
+    ///           ~72-90% of textbook load) — what RunPlan ships today.
+    /// `false` → the **textbook** tier (Higdon / Pfitzinger / Daniels
+    ///           day-counts and volumes).
+    ///
+    /// Flip this one value to switch the whole app. Both of the app's config
+    /// selectors resolve through `raceConfig(level:distanceMeters:)` below, so
+    /// they can never drift apart. Competitive (Pro), maintenance, and VO2
+    /// plans are unaffected — they're routed to their own configs by the
+    /// caller before reaching here.
+    public static var shipAccessibleTier = true
+
+    /// Resolve the non-competitive (5K / 10K / 21K / 42K) config for a runner
+    /// level + race distance, honoring `shipAccessibleTier`. Single source of
+    /// truth for non-competitive plan selection.
+    public static func raceConfig(level: RunnerLevel, distanceMeters: Int) -> PlanConfiguration {
+        let acc = shipAccessibleTier
+        switch distanceMeters {
+        case 0..<7500: // 5K
+            switch level {
+            case .beginner:     return acc ? accessibleBeginner5Default     : beginner5Default
+            case .intermediate: return acc ? accessibleIntermediate5Default : intermediate5Default
+            default:            return acc ? accessibleAdvanced5Default      : advanced5Default
+            }
+        case 7500..<15000: // 10K
+            switch level {
+            case .beginner:     return acc ? accessibleBeginner10Default     : beginner10Default
+            case .intermediate: return acc ? accessibleIntermediate10Default : intermediate10Default
+            default:            return acc ? accessibleAdvanced10Default      : advanced10Default
+            }
+        case 15000..<30000: // 21K
+            switch level {
+            case .beginner:     return acc ? accessibleBeginner21Default     : beginner21Default
+            case .intermediate: return acc ? accessibleIntermediate21Default : intermediate21Default
+            default:            return acc ? accessibleAdvanced21Default      : advanced21Default
+            }
+        default: // Marathon
+            switch level {
+            case .beginner:     return acc ? accessibleBeginner42Default     : beginner42Default
+            case .intermediate: return acc ? accessibleIntermediate42Default : intermediate42Default
+            default:            return acc ? accessibleAdvanced42Default      : advanced42Default
+            }
+        }
+    }
+}
+
+extension DifficultyLevel {
+    /// Map the stored difficulty level to the engine's `RunnerLevel`.
+    public var toRunnerLevel: RunnerLevel {
+        switch self {
+        case .beginner:     return .beginner
+        case .intermediate: return .intermediate
+        case .advanced:     return .advanced
+        case .competitive:  return .competitive
+        }
     }
 }

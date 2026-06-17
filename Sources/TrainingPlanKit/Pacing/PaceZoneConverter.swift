@@ -62,16 +62,24 @@ public struct PaceProgressionConfig {
 
     public static let beginner = PaceProgressionConfig(
         initialAdjustment: 1.0,     // Start fully conservative
-        finalAdjustment: 0.5,       // End still somewhat conservative
+        finalAdjustment: 0.0,       // Reach true zones by race week (0.5 kept beginner
+                                    //   threshold slower than race pace at half/marathon)
         minMultiplier: 0.92,        // Never faster than 92% of race pace (~4:36 for 5:00 pace)
         conservativeTarget: 1.12    // Start intervals at ~112% race pace (5:36 for 5:00 target)
     )
 
     public static let intermediate = PaceProgressionConfig(
-        initialAdjustment: 0.8,     // Start mostly conservative
-        finalAdjustment: 0.2,       // End near standard intensity
+        // Quality easing matched to .advanced (0.5 → 0.0). The previous
+        // 0.8 → 0.2 ramp held quality so conservative that a "10K Pace" or
+        // "5K Pace" workout ran ~10-15s/km slower than its named pace right
+        // through SPEED/PEAK — the name oversold the effort. Intermediates
+        // have the base to ramp like Advanced; this lets the named race-pace
+        // sessions actually reach their pace by the sharpening phase, while
+        // the minMultiplier floor still caps how fast Z5 can get.
+        initialAdjustment: 0.5,     // Start moderate (was 0.8)
+        finalAdjustment: 0.0,       // Reach true target by race week (was 0.2)
         minMultiplier: 0.88,        // Never faster than 88% of race pace (~4:24 for 5:00 pace)
-        conservativeTarget: 1.10    // Start intervals at ~105% race pace (5:15 for 5:00 target)
+        conservativeTarget: 1.10    // (legacy race-pace-anchored path only)
     )
 
     public static let advanced = PaceProgressionConfig(
@@ -95,10 +103,9 @@ public struct PaceProgressionConfig {
     /// Sub-3 / sub-1:30 plans for the "build band" runners (VDOT 54-57).
     /// They CAN reach goal fitness with more weeks, but currently can't run
     /// goal easy pace. Quality (MP/threshold/intervals) locks at goal paces
-    /// from day 1 — forces real race-pace exposure. Easy/long zones gap-
-    /// blend from VDOT-derived current easy pace at W1 toward goal easy
-    /// pace at race week, mirroring `.advanced`'s initial=0.5/final=0.0
-    /// envelope.
+    /// from day 1 — forces real race-pace exposure. Easy/long zones run flat
+    /// at the runner's VDOT-derived easy pace (floored at race), not the
+    /// generic 1.15×race which is too slow at elite goal paces.
     public static let competitiveBuildBand = PaceProgressionConfig(
         initialAdjustment: 0.5,
         finalAdjustment: 0.0,
@@ -194,6 +201,17 @@ public struct PaceZoneConverter {
         // Calculate gap between conversational and race pace
         // e.g., 370/300 = 1.233 → 23% gap
         let gapRatio = Double(convPace) / Double(racePace)
+
+        // Easy-pace freeze fix: when the runner's REAL easy is faster than the
+        // generic 1.15×race base, max(base, gapRatio) used to freeze easy at base
+        // and discard their input — over-slowing slow runners (whose race pace is
+        // already near their easy, e.g. an 8:05 easy rendered 8:59) and elite goal
+        // paces alike. Anchor to their real easy (floored at race). Slower-easy
+        // runners (gapRatio >= base) keep the gap-blend below. (Quality Z>=3 above.)
+        if gapRatio < base {
+            return max(1.0, gapRatio) * (base / 1.15)
+        }
+
         let gapFactor = max(0, min(1.0, (gapRatio - 1.0) / 0.20))
 
         // No adjustment if gap is negligible
@@ -230,6 +248,32 @@ public struct PaceZoneConverter {
         return adjusted
     }
 
+    // MARK: - Quality Pace Multiplier (anchored to 5K speed)
+
+    /// Multiplier applied to the runner's **5K pace** for quality zones, with
+    /// level-appropriate easing. Goal-distance independent (Daniels/Pfitzinger):
+    ///   - Zone 5 (VO2 intervals) → 5K race pace          (target 1.00)
+    ///   - Zone 4 (threshold/LT)  → 15K-HM pace           (target ~1.06)
+    /// Less-fit tiers ease in from a slower start; competitive sits at target
+    /// from day 1 (Pro VO2 work at true 5K pace).
+    public static func qualitySpeedMultiplier(
+        for zone: Int,
+        progressionFactor: Double,
+        config: PaceProgressionConfig,
+        tenK: Bool = false
+    ) -> Double {
+        // 10K-pace work sits between 5K pace (Z5 1.00) and threshold (Z4 1.06).
+        let target: Double = tenK ? 1.04 : ((zone >= 5) ? 1.00 : 1.06)   // 5K / 10K / threshold
+        // Competitive/build-band lock quality at goal pace from day 1 (no easing).
+        if config.qualityZonesAlwaysAtTarget { return target }
+        let slow: Double   = tenK ? 1.14 : ((zone >= 5) ? 1.12 : 1.16)   // conservative start
+        let p = max(0, min(1.0, progressionFactor))
+        let adjustment = config.initialAdjustment +
+            (config.finalAdjustment - config.initialAdjustment) * p
+        let clampedAdj = max(0, min(1.0, adjustment))
+        return target + (slow - target) * clampedAdj
+    }
+
     // MARK: - Interval Conversion
 
     /// Converts an HR-based interval to pace-based with progression
@@ -237,20 +281,52 @@ public struct PaceZoneConverter {
         interval: WorkoutInterval,
         racePace: Int,
         conversationalPace: Int? = nil,
+        speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
-        config: PaceProgressionConfig = .intermediate
+        config: PaceProgressionConfig = .intermediate,
+        subtype: WorkoutSubtype? = nil
     ) -> WorkoutInterval {
         let newTarget: TargetRange
         switch interval.target {
         case .heartRateZone(let zone):
-            let relative = progressiveMultiplier(
-                for: zone,
-                racePace: racePace,
-                conversationalPace: conversationalPace,
-                progressionFactor: progressionFactor,
-                config: config
-            )
-            newTarget = .paceTarget(basePace: racePace, relative: relative)
+            if let speedPace = speedPace, zone >= 4 {
+                // Quality zones (Z4 threshold, Z5 VO2 intervals) anchor to the
+                // runner's 5K SPEED, not the goal-race pace. A threshold run is
+                // 15K-HM pace and an interval is 5K pace whether the goal is a 5K
+                // or a marathon (Daniels/Pfitzinger). Anchoring these to goal pace
+                // made marathon "intervals" run at marathon pace.
+                var relative = qualitySpeedMultiplier(
+                    for: zone, progressionFactor: progressionFactor, config: config,
+                    tenK: subtype == .tenkPace)
+                // Threshold floor (half/marathon only): clamp the eased threshold
+                // to TRUE threshold (1.06×speed), which is faster than race for
+                // these distances — so every threshold week is a real LT stimulus,
+                // not race effort (beginners otherwise pin AT race the whole plan).
+                // The ease-in lives in VOLUME (rep length grows), not pace. 5K/10K
+                // (threshold correctly slower than race) fail the guard, untouched.
+                if subtype == .threshold, Double(speedPace) * 1.06 < Double(racePace) {
+                    relative = min(relative, 1.06)
+                }
+                // Z5 (VO2/5K-pace) floor: 5K pace is ≤ race at every distance, so
+                // a VO2 interval must never ease in slower than race. On 5K/10K
+                // (speed ≈ race) the 1.12 ease-in start otherwise lands W1 work
+                // 30-47s/km slower than race. Caps the ease-in at race; half/
+                // marathon keep easing down toward true 5K pace.
+                if zone >= 5 {
+                    relative = min(relative, Double(racePace) / Double(speedPace))
+                }
+                newTarget = .paceTarget(basePace: speedPace, relative: relative)
+            } else {
+                // Z1/Z2 (easy) and Z3 (marathon pace) stay anchored to race pace.
+                let relative = progressiveMultiplier(
+                    for: zone,
+                    racePace: racePace,
+                    conversationalPace: conversationalPace,
+                    progressionFactor: progressionFactor,
+                    config: config
+                )
+                newTarget = .paceTarget(basePace: racePace, relative: relative)
+            }
         case .noRange:
             // Assign easy pace (zone 2 equivalent) for warmup/rest/cooldown with no target
             let easyRelative = progressiveMultiplier(
@@ -282,6 +358,7 @@ public struct PaceZoneConverter {
         workout: Workout,
         racePace: Int,
         conversationalPace: Int? = nil,
+        speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
         config: PaceProgressionConfig = .intermediate
     ) -> Workout {
@@ -290,8 +367,10 @@ public struct PaceZoneConverter {
                 interval: interval,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
+                speedPace: speedPace,
                 progressionFactor: progressionFactor,
-                config: config
+                config: config,
+                subtype: workout.subtype
             )
         }
 
@@ -338,6 +417,7 @@ public struct PaceZoneConverter {
         to events: [WorkoutEvent],
         racePace: Int,
         conversationalPace: Int?,
+        speedPace: Int? = nil,
         config: PaceProgressionConfig,
         startDate: Date,
         endDate: Date
@@ -356,6 +436,7 @@ public struct PaceZoneConverter {
                 workout: event.workout,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
+                speedPace: speedPace,
                 progressionFactor: progressionFactor,
                 config: config
             )
