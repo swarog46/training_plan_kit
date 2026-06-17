@@ -12,8 +12,8 @@ import XCTest
 ///      marathon. Dropped to 0.0 to match intermediate/advanced.
 final class PaceZoneConverterTests: XCTestCase {
 
-    private func mult(_ zone: Int, _ p: Double, _ c: PaceProgressionConfig) -> Double {
-        PaceZoneConverter.qualitySpeedMultiplier(for: zone, progressionFactor: p, config: c)
+    private func mult(_ zone: Int, _ p: Double, _ c: PaceProgressionConfig, tenK: Bool = false) -> Double {
+        PaceZoneConverter.qualitySpeedMultiplier(for: zone, progressionFactor: p, config: c, tenK: tenK)
     }
 
     // MARK: - qualityZonesAlwaysAtTarget locks quality at every point in the plan
@@ -46,6 +46,20 @@ final class PaceZoneConverterTests: XCTestCase {
             XCTAssertEqual(mult(4, 1.0, c), 1.06, accuracy: 0.0001, "Z4 reaches target")
             XCTAssertEqual(mult(5, 1.0, c), 1.00, accuracy: 0.0001, "Z5 reaches target")
         }
+    }
+
+    // MARK: - 10K-pace work sits between 5K pace and threshold (F3)
+
+    func testTenKPaceSitsBetweenFiveKAndThreshold() {
+        // A "10K Pace" workout is Z4-tagged but must run at true 10K pace
+        // (~1.04x 5K speed) — faster than threshold (1.06), slower than 5K (1.00).
+        // Before the converter learned the tenkPace subtype it was identical to
+        // threshold at 1.06.
+        let c = PaceProgressionConfig.advanced   // reaches target at race week
+        let tenK = mult(4, 1.0, c, tenK: true)
+        XCTAssertEqual(tenK, 1.04, accuracy: 0.0001, "10K-pace target is 1.04x 5K speed")
+        XCTAssertLessThan(tenK, mult(4, 1.0, c), "10K pace must be faster than threshold")
+        XCTAssertGreaterThan(tenK, mult(5, 1.0, c), "10K pace must be slower than 5K pace")
     }
 
     // MARK: - Easing is monotonic (never sharper early than late)

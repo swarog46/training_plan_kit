@@ -249,12 +249,14 @@ public struct PaceZoneConverter {
     public static func qualitySpeedMultiplier(
         for zone: Int,
         progressionFactor: Double,
-        config: PaceProgressionConfig
+        config: PaceProgressionConfig,
+        tenK: Bool = false
     ) -> Double {
-        let target: Double = (zone >= 5) ? 1.00 : 1.06   // 5K pace / threshold
+        // 10K-pace work sits between 5K pace (Z5 1.00) and threshold (Z4 1.06).
+        let target: Double = tenK ? 1.04 : ((zone >= 5) ? 1.00 : 1.06)   // 5K / 10K / threshold
         // Competitive/build-band lock quality at goal pace from day 1 (no easing).
         if config.qualityZonesAlwaysAtTarget { return target }
-        let slow: Double   = (zone >= 5) ? 1.12 : 1.16   // conservative start
+        let slow: Double   = tenK ? 1.14 : ((zone >= 5) ? 1.12 : 1.16)   // conservative start
         let p = max(0, min(1.0, progressionFactor))
         let adjustment = config.initialAdjustment +
             (config.finalAdjustment - config.initialAdjustment) * p
@@ -271,7 +273,8 @@ public struct PaceZoneConverter {
         conversationalPace: Int? = nil,
         speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
-        config: PaceProgressionConfig = .intermediate
+        config: PaceProgressionConfig = .intermediate,
+        subtype: WorkoutSubtype? = nil
     ) -> WorkoutInterval {
         let newTarget: TargetRange
         switch interval.target {
@@ -283,7 +286,8 @@ public struct PaceZoneConverter {
                 // or a marathon (Daniels/Pfitzinger). Anchoring these to goal pace
                 // made marathon "intervals" run at marathon pace.
                 let relative = qualitySpeedMultiplier(
-                    for: zone, progressionFactor: progressionFactor, config: config)
+                    for: zone, progressionFactor: progressionFactor, config: config,
+                    tenK: subtype == .tenkPace)
                 newTarget = .paceTarget(basePace: speedPace, relative: relative)
             } else {
                 // Z1/Z2 (easy) and Z3 (marathon pace) stay anchored to race pace.
@@ -338,7 +342,8 @@ public struct PaceZoneConverter {
                 conversationalPace: conversationalPace,
                 speedPace: speedPace,
                 progressionFactor: progressionFactor,
-                config: config
+                config: config,
+                subtype: workout.subtype
             )
         }
 
