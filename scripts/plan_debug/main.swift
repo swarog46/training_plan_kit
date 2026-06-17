@@ -643,6 +643,33 @@ if mode == "projection" {
     }
 }
 
+// vdotpaces: derive every training pace from a race result, exactly as the
+// app does (race=distance pace, easy=easyPaceSecondsPerKm, speed=5K pace).
+// Prints the three values pacedump consumes (RACE_PACE/EASY_PACE/SPEED_PACE)
+// so slow-runner plans can be generated with faithful paces.
+//   DIST=5000 TIME=2400 ./plan_debug vdotpaces
+if mode == "vdotpaces" {
+    let dist = Int(ProcessInfo.processInfo.environment["DIST"] ?? "5000") ?? 5000
+    let time = Int(ProcessInfo.processInfo.environment["TIME"] ?? "1200") ?? 1200
+    guard let v = VDOT.from(distanceMeters: dist, timeSeconds: time) else {
+        print("ERROR: bad DIST/TIME"); exit(1)
+    }
+    func f(_ s: Int) -> String { String(format: "%d:%02d", s/60, s%60) }
+    let racePace: Int = {
+        switch dist {
+        case 42195: return v.marathonPaceSecondsPerKm
+        case 21097: return v.halfMarathonPaceSecondsPerKm
+        case 10000: return v.tenKPaceSecondsPerKm
+        default: return v.fiveKPaceSecondsPerKm
+        }
+    }()
+    print("VDOT=\(String(format: "%.1f", v.value)) for \(dist)m in \(f(time))")
+    print("RACE_PACE=\(racePace)   # \(f(racePace))/km")
+    print("EASY_PACE=\(v.easyPaceSecondsPerKm)   # \(f(v.easyPaceSecondsPerKm))/km  (raw 72%: \(f(v.paceAtVO2Fraction(0.72)))/km)")
+    print("SPEED_PACE=\(v.fiveKPaceSecondsPerKm)   # \(f(v.fiveKPaceSecondsPerKm))/km")
+    print("threshold=\(f(v.thresholdPaceSecondsPerKm))  interval=\(f(v.intervalPaceSecondsPerKm))  rep=\(f(v.repetitionPaceSecondsPerKm))")
+}
+
 // phases: for each filtered plan, print the phase split + per-week load target
 // and multiplier. Shows how phase durations are derived and how load is balanced.
 if mode == "phases" {
