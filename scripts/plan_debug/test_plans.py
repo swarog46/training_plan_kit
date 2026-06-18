@@ -157,10 +157,10 @@ section("Z3 (MP) workouts hit racePace from day 1, all tiers")
 text = run_pacedump("Cmp 42K (long", race_pace=256, easy_pace=300)
 w = parse_plan(text, "Cmp 42K (long, 22w)")
 mp_paces_w1 = [(s, p) for s,_,p in (w[1] if w else []) if s == 'steadyLong']
-# Cmp 42K W1 steadyLong (Z2) should be 4:54/km (1.15 × 256) — race-pace-anchored
+# Cmp 42K W1 steadyLong (Z2) ≈ 1.15 × 256 = 294 → 4:55/km (5s-rounded) — race-pace-anchored
 check(
-    "Cmp 42K W1 steadyLong @ 4:54/km",
-    any('4:54/km' in p for _, p in mp_paces_w1),
+    "Cmp 42K W1 steadyLong @ 4:55/km",
+    any('4:55/km' in p for _, p in mp_paces_w1),
     f"got {mp_paces_w1}"
 )
 
@@ -236,6 +236,61 @@ check(
     "Cmp 21K TAPER long runs decrease (≤5min slack)",
     not taper_violations,
     f"violations: {taper_violations}"
+)
+
+# Long marathon builds (36w) must RAMP the BASE long run, not park it flat at
+# p.base for ~16 weeks. Two teeth: (1) strictly non-decreasing across BASE (the
+# load selector would otherwise drift it DOWN at the start), (2) de-flattened —
+# the build spans >=15min from first to last base week instead of a plateau.
+def base_long_runs(dump_text, header):
+    """[(week, long_dur)] for BASE-phase weeks only, parsed from dump output."""
+    if f'=== {header}' not in dump_text:
+        return None
+    sect = dump_text.split(f'=== {header}')[1]
+    out = []
+    wk = ph = lr = None
+    def flush():
+        if wk is not None and ph == 'base' and lr is not None:
+            out.append((wk, lr))
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *(\d+) \[(\w+)', line)
+        if m:
+            flush()
+            wk, ph, lr = int(m.group(1)), m.group(2), None
+            continue
+        mm = re.search(r'\s(\d+)min\s+l=\d+\s+\[(\w+)/(\w+)\]', line)
+        if mm and ph == 'base':
+            dur, sub, role = int(mm.group(1)), mm.group(2), mm.group(3)
+            if role == 'long' or sub in LONG:
+                lr = dur if lr is None else max(lr, dur)
+    flush()
+    return out
+
+cmp_max_dump = run_dump("Cmp 42K (max")
+base_lr = base_long_runs(cmp_max_dump, "Cmp 42K (max, 36w)") or []
+descents = [f"W{base_lr[i-1][0]}→W{base_lr[i][0]}: {base_lr[i-1][1]}→{base_lr[i][1]}m"
+            for i in range(1, len(base_lr)) if base_lr[i][1] < base_lr[i-1][1]]
+check(
+    "Cmp 42K max BASE long run strictly non-decreasing (no backward step at start)",
+    bool(base_lr) and not descents,
+    f"base seq={[d for _,d in base_lr]}, descents: {descents}",
+    full=True
+)
+# Trend: the LAST 3 base weeks must sit >=12min above the FIRST 3 — a genuine
+# progressive build, not a plateau. The old wobble (~+5min) and a flat-at-p.base
+# base that just climbs then parks (~+7min) both fail; only the ramp clears it.
+first3 = [d for _, d in base_lr[:3]]
+last3 = [d for _, d in base_lr[-3:]]
+trend = (sum(last3) / len(last3) - sum(first3) / len(first3)) if base_lr else 0
+check(
+    "Cmp 42K max BASE long run trends up >=12min (progressive build, not plateau)",
+    trend >= 12,
+    f"first3_avg={sum(first3)/max(len(first3),1):.0f}, "
+    f"last3_avg={sum(last3)/max(len(last3),1):.0f}, trend={trend:.0f}min, "
+    f"seq={[d for _,d in base_lr]}",
+    full=True
 )
 
 section("Marathon long-run peak durations match references")
@@ -492,7 +547,14 @@ CMP_SNAPSHOTS = [
     # 2026-06-16: total 10244→9789, sessions 129→124 from the peak-volume
     # soft cap (Adv/Cmp marathons capped ~9h; sheds the largest aerobic FILL,
     # never the long run — peak LR unchanged at 210) + the 3-week taper floor.
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 9789, 124, 210),
+    # 2026-06-18: 9789→9686 (−1%) from BASE quality-variety injection — every
+    # other competitive/advanced BASE off-week now runs an MP/LT (threshold-pool)
+    # session instead of a ladder. MP is Z3 (load-dense), so easy fill rebalances
+    # down slightly. Sessions (124) and peak LR (210) unchanged.
+    # 2026-06-18: 9686→9790 (+1%) from the ACWR volume ramp-cap — capping a
+    # peak-finish target spike frees workouts that redistribute to later weeks
+    # (cascade). Sessions (124) and peak LR (210) unchanged.
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 9790, 124, 210),
     # Additional bump 12002 → 12123 from the alternating-week mediumLong
     # forcing — Cmp 42K build picks 90-100min ML on even weeks where
     # selector previously picked 80min easy. 2026-06-16: 12123→11809,
@@ -913,24 +975,96 @@ for header, fil, t5k, dist, is_cmp in PACE_QUALITY_PLANS:
               all(abs(p - goal) <= TOL for p in mp),
               f"goal={_mm(goal)} out={[_mm(p) for p in mp if abs(p - goal) > TOL][:3]}",
               full=True)
-    # (2) Core invariant: every quality pace sits in [5K pace .. ~HM pace] -
-    #     5K-speed anchored with easing slack, NEVER as slow as marathon pace.
+    # (2) Core invariant: every quality pace is 5K-SPEED anchored and REP-LENGTH
+    #     aware. Fastest = short-rep VO2 / hills at ~0.88×5K (faster than 5K pace);
+    #     slowest = week-1 threshold at ~1.06×5K (true LT). Never as slow as MP.
     if qual:
-        lo, hi = speed5k - TOL, int(speed5k * 1.16) + TOL
+        lo, hi = int(speed5k * 0.85) - TOL, int(speed5k * 1.07) + TOL
         bad = [p for p in qual if not (lo <= p <= hi)]
-        check(f"{short} quality in [5K {_mm(speed5k)} .. ~HM {_mm(int(speed5k * 1.16))}] (5K-anchored)",
+        check(f"{short} quality in [{_mm(int(speed5k*0.85))} .. {_mm(int(speed5k*1.07))}] (5K-speed anchored, rep-length-aware)",
               not bad, f"out={[_mm(p) for p in bad[:4]]}", full=True)
-    # (3) The fix in one line: on the marathon, fastest quality reaches ~10K
-    #     pace - far faster than goal MP - proving it is decoupled from goal.
+    # (3) On the marathon, fastest quality is far faster than goal MP - decoupled.
     if qual and dist >= 42195 and 'Beg' not in short:
         check(f"{short} fastest quality reaches >= 10K pace, not goal MP (decoupled)",
               min(qual) <= p10k + TOL,
               f"fastest={_mm(min(qual))} 10K={_mm(p10k)} goal(MP)={_mm(goal)}", full=True)
-    # (4) Adv / Cmp fully sharpen: fastest quality reaches ~5K pace.
+    # (4) Adv / Cmp fully sharpen: fastest quality is AT or BELOW 5K pace (the
+    #     short-rep VO2 now runs faster than 5K — R/I-pace, rep-length-aware).
     if qual and ('Adv' in short or is_cmp):
-        check(f"{short} fastest quality reaches ~5K pace +/-{TOL}s (Adv/Cmp sharpen)",
+        check(f"{short} fastest quality at/below 5K pace (sharp short-rep VO2)",
               min(qual) <= speed5k + TOL,
               f"fastest={_mm(min(qual))} 5K={_mm(speed5k)}", full=True)
+
+section("5K/10K ladders are true VO2 (faster than race, not Z4 LT inversion)")
+# Some ladderIntervals templates are Z4-only (LT cruise intervals). On 5K/10K
+# (race ≈ 5K speed) a Z4 ladder slotted as the VO2 session renders SLOWER than
+# race — an inversion. The engine drops Z4-only ladders on 5K/10K (keeps them on
+# half/marathon). Every ladder's WORK (fastest rung) must be faster than race.
+for header, fil, t5k, dist in [
+    ("Int 5K (long, 10w)",  "Int 5K (long, 10w)",  1320, 5000),
+    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  1080, 5000),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 1320, 10000),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 1080, 10000),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    vo2 = [parse_pace_secs_first(pp) for wk in (w or {}) for s, _, pp in w[wk]
+           if s in ('ladderIntervals', 'intervals', 'pyramidIntervals')]
+    vo2 = [v for v in vo2 if v is not None]
+    if vo2:
+        check(f"{short} VO2-family (intervals/ladders) faster than race (no Z4 inversion)",
+              max(vo2) < race,
+              f"slowest-VO2-work={_mm(max(vo2))} race={_mm(race)}", full=True)
+
+section("10K easy anchors to stated easy + progresses (not gap-blended fast)")
+# The 10K tier (easy ~19% slower than race) used to fall into the gap-blend and
+# render easy FASTER than the stated easy (6:04 vs 6:11) with only ~5s progression.
+# Now all non-competitive easy anchors to the stated easy + ~4% (~13s) progression.
+for header, fil, t5k, dist in [
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 1320, 10000),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 1080, 10000),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    easies = [parse_pace_secs_first(pp) for wk in (w or {}) for s, _, pp in w[wk] if s == 'easy']
+    easies = [e for e in easies if e]
+    if easies:
+        check(f"{short} W1 easy ~ stated easy, not gap-blended faster",
+              max(easies) >= easy - 4,
+              f"slowest easy={_mm(max(easies))} stated={_mm(easy)}", full=True)
+        check(f"{short} easy progresses >=10s over block (anchored + ~4%)",
+              max(easies) - min(easies) >= 10,
+              f"range={_mm(min(easies))}..{_mm(max(easies))}", full=True)
+
+section("ACWR volume ramp cap — no back-loaded single-week spike")
+# A build week's volume may not exceed ~1.35x the max of the prior 3 weeks (the
+# 1.25 target cap + placement overshoot). Kills the 5K peak-finish spike (Adv 5K
+# W9 was 359min, +44% off a ~250min plateau). Taper/race excluded (they drop).
+def _weekly_mins(header):
+    text = run_dump(header)
+    if f'=== {header}' not in text:
+        return []
+    sec = text.split(f'=== {header}')[1].split('=== ')[0]
+    out = []
+    for line in sec.splitlines():
+        m = re.match(r'^W ?\d+ \[(\w+)[^\]]*\]\s+\d+wkts\s+load=\s*\d+\s+(\d+)min', line)
+        if m:
+            out.append((m.group(1), int(m.group(2))))
+    return out
+
+for header in ["Adv 5K (long, 10w)", "Adv 10K (long, 12w)", "Adv 21K (long, 18w)"]:
+    build = [(ph, m) for ph, m in _weekly_mins(header) if ph not in ('taper', 'race')]
+    short = header.split(' (')[0]
+    spikes = [f"wk{i+1} {build[i][1]}min vs prior-3-max {max(m for _, m in build[i-3:i])}"
+              for i in range(3, len(build))
+              if build[i][1] > max(m for _, m in build[i-3:i]) * 1.35]
+    if len(build) >= 4:
+        check(f"{short} no build week spikes >35% over prior-3-week max (ACWR cap)",
+              not spikes, f"spikes: {spikes}", full=True)
 
 section("Distance-aware threshold + aerobic floor (slow runner = teeth)")
 # Half/marathon: threshold (~1hr effort) must be FASTER than goal race pace —
@@ -1016,6 +1150,65 @@ for header, fil, t5k, dist in [
         check(f"{short} every VO2 (fivekPace) work <= race pace (Z5 floor)",
               max(z5) <= race + 3,
               f"slowest_vo2={_mm(max(z5))} race={_mm(race)}", full=True)
+
+section("10K-pace floor — '10K Pace'/race-rehearsal work never slower than race (slow 10K)")
+# On a 10K plan race ≈ 10K pace, so tenkPace (1.04×speed5k) and raceRehearsal10K
+# WORK must pin AT race, never ease in slower. A slow 10K (VDOT ~30, where race
+# is close to threshold) is the teeth: before the 10K-pace floor the ease-in
+# started this work 16-21s slower than race. parse_pace_secs_first takes the
+# FASTEST segment (the work), so the legit slow recovery jog is ignored.
+for header, fil, t5k in [
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 2160),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 2160),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(10000, vd) / 10.0); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    if not w:
+        check(f"{short} 10K-pace parse", False, "no plan", full=True); continue
+    tk = [parse_pace_secs_first(pp) for wk in w for s, _, pp in w[wk]
+          if s in ('tenkPace', 'raceRehearsal10K')]
+    tk = [v for v in tk if v is not None]
+    if tk:
+        check(f"{short} every 10K-pace/rehearsal WORK <= race pace (10K-pace floor)",
+              max(tk) <= race + 3,
+              f"slowest={_mm(max(tk))} race={_mm(race)}", full=True)
+
+section("Strides — rep pace or faster, FLAT (no ease-in)")
+# Strides are short (≤30s) neuromuscular accelerations with full recovery — form
+# / leg-speed work, not a progressive VO2 stimulus. They must render at REP pace
+# (faster than 5K) and stay FLAT across the block. The old bug tagged them HR-Z5
+# with no special handling → priced at 5K pace AND run through the quality ease-in
+# (W1 ≈ threshold pace, W-last ≈ 5K pace). parse_pace_secs_first returns the
+# FASTEST segment (the stride itself), ignoring the easy-jog portion.
+def _rep_pace(dist, time):
+    """Engine's repetition pace (sec/km) for a race result, via vdotpaces mode."""
+    r = subprocess.run([PLAN_DEBUG, "vdotpaces"], capture_output=True, text=True,
+                       env={**os.environ, "DIST": str(dist), "TIME": str(time)})
+    m = re.search(r'rep=(\d+):(\d+)', r.stdout)
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+for header, fil, dist, time in [
+    ("Adv 21K (long, 18w)", "Adv 21K (long", 21097, 7200),    # 2:00 half
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 42195, 14400),   # 4:00 marathon
+]:
+    vd = _vf(dist, time)
+    speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    rep = _rep_pace(dist, time)
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    strides = [parse_pace_secs_first(pp) for wk in (w or {}) for s, _, pp in w[wk]
+               if s == 'strides']
+    strides = [v for v in strides if v is not None]
+    if strides and rep:
+        check(f"{short} strides FLAT across block (no ease-in, <=3s spread)",
+              max(strides) - min(strides) <= 3,
+              f"spread={max(strides)-min(strides)}s, paces={sorted(set(strides))}", full=True)
+        check(f"{short} strides <= rep pace (rep-pace floor, not eased 5K/threshold)",
+              max(strides) <= rep + 2,
+              f"slowest_stride={_mm(max(strides))} rep={_mm(rep)}", full=True)
 
 section("Progression direction — easy zones blend, quality stays flat")
 
@@ -1877,7 +2070,7 @@ SHORT_RACE_KM_BANDS = [
     # (honest race-pace naming) runs quality a few s/km faster, so the same
     # time covers slightly more ground. 66 km is still inside the 55-70 ref.
     ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 48, 66, "Pfitz Int 10K ~ 55-70 km"),
-    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 75, 95, "Daniels Adv 5K ~ 70-85 km"),
+    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 72, 95, "Daniels Adv 5K ~ 70-85 km; easy-pace anchor (stated easy, slower) trims km a touch at same time-volume"),
     ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 65, 85, "Daniels Adv 10K ~ 70-90 km"),
 ]
 for header, fil, rp, ep, lo, hi, ref in SHORT_RACE_KM_BANDS:
@@ -2433,6 +2626,57 @@ for header in ["Int 5K (long, 10w)", "Int 10K (long, 12w)", "VO2 Int (8w)"]:
         check(f"{short} hills don't park on one variant (>={min(3, len(hills))} distinct)",
               distinct >= min(3, len(hills)),
               f"{len(hills)} hills, {distinct} distinct: {variants}", full=True)
+
+section("Competitive/advanced BASE quality variety (not just hill+ladder)")
+# BASE used to be 16 weeks of ladder/hill only (the load selector parks on
+# ladders; true VO2 is blocked in BASE). Now every other off-week runs an LT/MP
+# (threshold-pool) session, and ladders ramp like hills — so BASE carries >=3
+# distinct quality types AND at least one LT/MP session.
+def _base_quality(header):
+    """[(subtype, role, load)] for quality sessions in BASE weeks of `header`."""
+    text = run_dump(header)
+    if f'=== {header}' not in text:
+        return []
+    sec = text.split(f'=== {header}')[1].split('=== ')[0]
+    QUAL = {'intervals','ladderIntervals','pyramidIntervals','hillRepeats',
+            'threshold','mileRepeats','marathonPace','yasso800','timeTrial'}
+    out = []; ph = None
+    for line in sec.splitlines():
+        m = re.match(r'^W ?\d+ \[(\w+)', line)
+        if m:
+            ph = m.group(1); continue
+        if ph != 'base':
+            continue
+        mm = re.search(r'l=\s*(\d+)\s+\[(\w+)/(\w+)\]', line)
+        if mm and mm.group(2) in QUAL:
+            out.append((mm.group(2), mm.group(3), int(mm.group(1))))
+    return out
+
+for header in ["Cmp 42K (max", "Cmp 21K (max"]:
+    bq = _base_quality(header)
+    short = header.replace('(', '').strip()
+    subs = [s for s, _, _ in bq]
+    distinct = len(set(subs))
+    check(f"{short} BASE uses >=3 distinct quality types (not just hill+ladder)",
+          distinct >= 3,
+          f"{len(bq)} quality, {distinct} distinct: {sorted(set(subs))}", full=True)
+    # role=='threshold' = the injected LT/MP session (marathonPace/threshold/
+    # mileRepeats all render with the threshold role). Teeth on the injection.
+    check(f"{short} BASE includes an LT/MP (threshold-pool) session",
+          any(role == 'threshold' for _, role, _ in bq),
+          f"base roles: {sorted({r for _, r, _ in bq})}", full=True)
+
+# Ladder ramp: where ladders appear >=4x (intermediate base+speed — no LT
+# injection there, so ladders stay frequent), they climb by load like hills.
+for header in ["Int 21K (long, 18w)", "Int 42K (long, 22w)"]:
+    bq = _base_quality(header)  # base only; ladders here are the ramped pool
+    short = header.split(' (')[0]
+    lad = [l for s, _, l in bq if s == 'ladderIntervals']
+    if len(lad) >= 4:
+        h = len(lad) // 2
+        check(f"{short} BASE ladders climb by load (ramp, back half heavier)",
+              sum(lad[h:]) / len(lad[h:]) > sum(lad[:h]) / len(lad[:h]),
+              f"ladder loads in week order: {lad}", full=True)
 
 # --- report ----------------------------------------------------------
 

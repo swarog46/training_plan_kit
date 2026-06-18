@@ -218,7 +218,19 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("Acc Adv 42K (rec, 18w)",.accessibleAdvanced42Default,    18),
 ]
 
-let filtered = cases.filter { filter.isEmpty || $0.label.lowercased().contains(filter.lowercased()) }
+// WEEKS env overrides the duration for matched cases, so a plan can be
+// generated at the iOS app's real recommended weeks (5K 6-8, 10K 8-10,
+// 21K 12-16, 42K 14-20) instead of this sample list's debug durations.
+let weeksOverride = ProcessInfo.processInfo.environment["WEEKS"].flatMap { Int($0) }
+let filtered: [(label: String, config: PlanConfiguration, weeks: Int)] = {
+    let base = cases.filter { filter.isEmpty || $0.label.lowercased().contains(filter.lowercased()) }
+    guard let w = weeksOverride else { return base }
+    return base.map { c in
+        var label = c.label
+        if let r = label.range(of: " (", options: .backwards) { label = String(label[..<r.lowerBound]) }
+        return (label: "\(label) (\(w)w)", config: c.config, weeks: w)
+    }
+}()
 
 print("\n========== PLAN GENERATION SUMMARY ==========")
 print("(E=easy, L=long, H=hard, P=progression, F=fartlek)")
@@ -668,6 +680,13 @@ if mode == "vdotpaces" {
     print("EASY_PACE=\(v.easyPaceSecondsPerKm)   # \(f(v.easyPaceSecondsPerKm))/km  (raw 72%: \(f(v.paceAtVO2Fraction(0.72)))/km)")
     print("SPEED_PACE=\(v.fiveKPaceSecondsPerKm)   # \(f(v.fiveKPaceSecondsPerKm))/km")
     print("threshold=\(f(v.thresholdPaceSecondsPerKm))  interval=\(f(v.intervalPaceSecondsPerKm))  rep=\(f(v.repetitionPaceSecondsPerKm))")
+    // Per-distance race pace at this VDOT — what the app picks as the goal pace
+    // for each target distance from one recent-race result. EASY/SPEED(5K) are
+    // VDOT constants (fitness), only RACE_PACE varies by target distance.
+    print("RACE_5K=\(v.fiveKPaceSecondsPerKm)")
+    print("RACE_10K=\(v.tenKPaceSecondsPerKm)")
+    print("RACE_21K=\(v.halfMarathonPaceSecondsPerKm)")
+    print("RACE_42K=\(v.marathonPaceSecondsPerKm)")
 }
 
 // phases: for each filtered plan, print the phase split + per-week load target

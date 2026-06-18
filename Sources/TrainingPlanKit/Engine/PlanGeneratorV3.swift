@@ -678,6 +678,8 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         w.subtype != .strides && hasZone5(w)
     }
     var lastWeekHadZ5 = false
+    // ACWR ramp-cap state: rolling window of the last 3 weeks' (capped) durations.
+    var recentDur: [Double] = []
 
     for week in 0..<actualWeeksToGenerate {
         let phaseInfo = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
@@ -700,7 +702,24 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         prevPhase = phase
         
         // Calculate targets
-        let targets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
+        let rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
+        // ACWR ramp cap (DURATION): a week's volume may not exceed 1.25× the
+        // highest of the last 3 weeks — kills back-loaded single-week spikes
+        // (e.g. the 5K peak-finish week leaping +44% off a ~250min plateau) while
+        // letting post-deload weeks rebound to the recent high. Load scales with
+        // the cut so intensity/min is preserved. Caps VOLUME only, so load-
+        // balanced builds (marathon) with no duration spike are untouched.
+        let targets: WeeklyTargets = {
+            guard let maxDur = recentDur.max() else { return rawTargets }
+            let capDur = maxDur * 1.25
+            guard rawTargets.duration > capDur, rawTargets.duration > 0 else { return rawTargets }
+            let scale = capDur / rawTargets.duration
+            return WeeklyTargets(load: rawTargets.load * scale,
+                                 duration: capDur,
+                                 isDeloading: rawTargets.isDeloading,
+                                 phaseProgression: rawTargets.phaseProgression)
+        }()
+        recentDur.append(targets.duration); if recentDur.count > 3 { recentDur.removeFirst() }
         let isDeloading = targets.isDeloading
         
         var weekWorkouts: [(type: String, workout: Workout)] = []
@@ -742,17 +761,18 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         let yassoWeek = phase == .peak && config.runnerLevel != .beginner && (weekInPhase % milestoneCadence) == 0
         let ttWeek    = phase == .peak && (weekInPhase % milestoneCadence) == milestoneCadence / 2
 
-        // Hills climb one variant per ~2 plan weeks (load-sorted) across BASE+
-        // SPEED, so the load-target selector can't park on the cheapest 8×60s.
-        // Absolute week (not weekInPhase) so the ramp continues base → speed.
-        func rampHillsByPlanWeek(_ hills: [Workout]) -> [Workout] {
+        // Climb one variant per ~2 plan weeks (load-sorted) across BASE+SPEED so
+        // the load-target selector can't park on the cheapest template. Absolute
+        // week (not weekInPhase) so the ramp continues base → speed. Applied to
+        // BOTH hills and ladders — both have many same-subtype catalog variants.
+        func rampVariantsByPlanWeek(_ pool: [Workout]) -> [Workout] {
             var byTitle: [String: Workout] = [:]
-            for w in hills where byTitle[w.title] == nil { byTitle[w.title] = w }
+            for w in pool where byTitle[w.title] == nil { byTitle[w.title] = w }
             let variants = byTitle.values.sorted { $0.trainingLoad < $1.trainingLoad }
-            guard variants.count >= 2 else { return hills }
+            guard variants.count >= 2 else { return pool }
             let idx = min(week / 2, variants.count - 1)
             let titles = Set(variants[idx...min(idx + 1, variants.count - 1)].map { $0.title })
-            return hills.filter { titles.contains($0.title) }
+            return pool.filter { titles.contains($0.title) }
         }
 
         let intervalPool: [Workout] = {
@@ -806,10 +826,28 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             // floor excluded everything (catalog gap, not the user's
             // problem).
             var result = filtered.isEmpty ? pool : filtered
-            let hills = result.filter { $0.subtype == .hillRepeats }
-            if hills.count > 1 {
-                let ramped = rampHillsByPlanWeek(hills)
-                if !ramped.isEmpty { result = result.filter { $0.subtype != .hillRepeats } + ramped }
+            // 5K/10K: the lead SPEED/VO2 session must be true VO2 (Z5). The catalog
+            // tags ~half of intervals/ladderIntervals templates Z4 (LT cruise work)
+            // — correct on half/marathon (LT-dominant BY DESIGN) but on 5K/10K,
+            // where race ≈ 5K speed, a Z4 "VO2" session renders SLOWER than race
+            // (inversion: the "fast" work reads as threshold/race-pace cruise).
+            // Drop the Z4-only VO2-family templates when true-Z5 ones exist; hills
+            // / mile-reps (strength / LT) are left untouched for variety.
+            if config.distance < 21000 {
+                for vsub in [WorkoutSubtype.intervals, .ladderIntervals, .pyramidIntervals] {
+                    if result.contains(where: { $0.subtype == vsub && isRealZ5($0) }) {
+                        result = result.filter { !($0.subtype == vsub && !isRealZ5($0)) }
+                    }
+                }
+            }
+            for rampSub in [WorkoutSubtype.hillRepeats, .ladderIntervals] {
+                let variants = result.filter { $0.subtype == rampSub }
+                if variants.count > 1 {
+                    let ramped = rampVariantsByPlanWeek(variants)
+                    if !ramped.isEmpty {
+                        result = result.filter { $0.subtype != rampSub } + ramped
+                    }
+                }
             }
             return result
         }()
@@ -1185,7 +1223,21 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                     || (config.distance >= 21000 && lastWeekHadZ5))
                 if z5Blocked {
                     let noZ5 = preferredPool.filter { !isRealZ5($0) }
-                    if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
+                    // Competitive/advanced BASE otherwise collapses to all-ladders
+                    // on the hill off-weeks (the load selector parks on ladders;
+                    // intervals/pyramids are real-Z5 and blocked in BASE). Rotate
+                    // an LT (threshold) session into every other off-week so BASE
+                    // carries 3 quality types (hill / ladder / LT) instead of 2.
+                    // Daniels' base quality IS the LT run — the fallback below
+                    // already allows it; this just makes it deliberate. Off-weeks
+                    // are even weekInPhase; %4==2 picks 2,6,10,… (skip wk-0).
+                    let baseLTWeek = phase == .base && weekInPhase % 4 == 2
+                        && (config.runnerLevel == .competitive || config.runnerLevel == .advanced)
+                    if baseLTWeek,
+                       let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
+                        weekWorkouts.append(("threshold", threshold))
+                        prevThreshold = threshold
+                    } else if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
                         weekWorkouts.append(("interval", interval))
                         prevInterval = interval
                     } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
@@ -1685,7 +1737,17 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             if let p = progression {
                 switch phase {
                 case .base:
-                    targetLongRunMins = p.base
+                    // Ramp the long run UP across BASE toward p.base instead of
+                    // holding it flat. Anchored at the LAST base week (= p.base),
+                    // stepping down 2min/week earlier, floored at 0.80×base.
+                    // Short plans (base ≤ 4w) don't reach the floor so they're
+                    // unchanged; long builds (36w marathon, base = 16w) get a real
+                    // progressive build instead of a 16-week plateau at p.base.
+                    // The 0.80 floor matches where the unconstrained week-1 pick
+                    // lands, so the run never descends out of the gate.
+                    let weeksFromBaseEnd = max(0, baseDur - 1 - week)
+                    let floorMins = Int(Double(p.base) * 0.80)
+                    targetLongRunMins = max(floorMins, p.base - 2 * weeksFromBaseEnd)
                 case .speed:
                     let speedWeekIndex = week - baseDur
                     let speedProgress = Double(speedWeekIndex) / Double(max(speedDur - 1, 1))
@@ -1748,7 +1810,14 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             if prevLongRunMins > 0 {
                 let monotonicPool: [Workout]
                 switch phase {
-                case .base, .speed, .peak:
+                case .base:
+                    // Strict non-decreasing in BASE. The early-base ramp sets a
+                    // gently rising target, but the load selector (which favours
+                    // shorter runs while early targetLoad is low) would otherwise
+                    // drift the long run DOWN within the 5min slack — a visible
+                    // backward step at plan start. No slack here.
+                    monotonicPool = pool.filter { Int($0.duration / 60) >= prevLongRunMins }
+                case .speed, .peak:
                     let floor = max(0, prevLongRunMins - 5)
                     monotonicPool = pool.filter { Int($0.duration / 60) >= floor }
                 case .taper, .race:

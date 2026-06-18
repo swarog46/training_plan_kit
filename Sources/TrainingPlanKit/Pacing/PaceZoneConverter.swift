@@ -202,14 +202,23 @@ public struct PaceZoneConverter {
         // e.g., 370/300 = 1.233 → 23% gap
         let gapRatio = Double(convPace) / Double(racePace)
 
-        // Easy-pace freeze fix: when the runner's REAL easy is faster than the
-        // generic 1.15×race base, max(base, gapRatio) used to freeze easy at base
-        // and discard their input — over-slowing slow runners (whose race pace is
-        // already near their easy, e.g. an 8:05 easy rendered 8:59) and elite goal
-        // paces alike. Anchor to their real easy (floored at race). Slower-easy
-        // runners (gapRatio >= base) keep the gap-blend below. (Quality Z>=3 above.)
-        if gapRatio < base {
-            return max(1.0, gapRatio) * (base / 1.15)
+        // Easy/recovery pace: anchor to the runner's stated (VDOT-derived) easy +
+        // a gentle ~4% progression — NEVER blend it toward the generic 1.15×race.
+        // The old gap-blend ran easy FASTER than the stated easy for slower-easy
+        // runners (the 10K tier: 6:11 stated rendered 6:04, only ~5s progression);
+        // the freeze-fix already did the right thing for faster-easy runners, so
+        // apply it to ALL easy/recovery zones — EXCEPT competitive/build-band
+        // (qualityZonesAlwaysAtTarget), whose easy intentionally CONVERGES toward
+        // goal pace via the gap-blend below (they keep the gapRatio<base guard).
+        // Floored at race; recovery (Z1) scaled by base/1.15.
+        if base > 1.0, (!config.qualityZonesAlwaysAtTarget || gapRatio < base) {
+            let flat = max(1.0, gapRatio) * (base / 1.15)
+            // Easy/long PROGRESSION: ~6.5% (≈20-30s) faster over the WHOLE plan
+            // (a modeled slice of the projected fitness gain — same effort, the
+            // pace drifts down as the runner adapts). Quantized to 5s ticks at the
+            // pace-target layer so it steps cleanly. Guardrail, not a target.
+            let p = max(0, min(1.0, progressionFactor))
+            return flat * (1.0 - 0.065 * p)
         }
 
         let gapFactor = max(0, min(1.0, (gapRatio - 1.0) / 0.20))
@@ -260,13 +269,31 @@ public struct PaceZoneConverter {
         for zone: Int,
         progressionFactor: Double,
         config: PaceProgressionConfig,
-        tenK: Bool = false
+        tenK: Bool = false,
+        z5Target: Double? = nil
     ) -> Double {
-        // 10K-pace work sits between 5K pace (Z5 1.00) and threshold (Z4 1.06).
-        let target: Double = tenK ? 1.04 : ((zone >= 5) ? 1.00 : 1.06)   // 5K / 10K / threshold
-        // Competitive/build-band lock quality at goal pace from day 1 (no easing).
+        // Anchored to 5K SPEED, all PROGRESSING toward a sharper target over the
+        // block (depth per level via initialAdjustment), never sagging to race:
+        //   • Z5 VO2 — rep-length-aware (z5Target): short reps run I/R-pace
+        //     (faster than 5K), long reps ~I-pace. Eases over a 0.06 band.
+        //   • Z4 threshold — eases 1.06 (true LT, wk 1) → 1.02 (10K tempo, race wk).
+        //   • 10K work — between.
+        // Z4 THRESHOLD progresses true LT (wk 1, 1.07) → sharp 10K tempo (race wk,
+        // 1.02) over a FULL ~15s span for EVERY level — the sharpening IS the
+        // point, not a level-gated ease-in (initialAdjustment<1 made it nearly
+        // flat, ~5s, on advanced). The caller's Z4 race floor keeps the true-LT
+        // end from dropping 10K threshold below race.
+        if zone == 4, !tenK {
+            let sharp = 1.02, trueLT = 1.07
+            if config.qualityZonesAlwaysAtTarget { return sharp }
+            return trueLT + (sharp - trueLT) * max(0, min(1.0, progressionFactor))
+        }
+        // Z5 VO2 (rep-length-aware) + 10K-pace work ease in over a small band,
+        // depth per level via initialAdjustment.
+        let target: Double = tenK ? 1.01 : (z5Target ?? 0.96)
+        let band: Double = 0.06
         if config.qualityZonesAlwaysAtTarget { return target }
-        let slow: Double   = tenK ? 1.14 : ((zone >= 5) ? 1.12 : 1.16)   // conservative start
+        let slow: Double = target + band
         let p = max(0, min(1.0, progressionFactor))
         let adjustment = config.initialAdjustment +
             (config.finalAdjustment - config.initialAdjustment) * p
@@ -286,7 +313,8 @@ public struct PaceZoneConverter {
         config: PaceProgressionConfig = .intermediate,
         subtype: WorkoutSubtype? = nil
     ) -> WorkoutInterval {
-        let newTarget: TargetRange
+        var newTarget: TargetRange
+        var roundToFive = true   // quantize pace to 5s; OFF for Z3 (exact goal pace)
         switch interval.target {
         case .heartRateZone(let zone):
             if let speedPace = speedPace, zone >= 4 {
@@ -295,29 +323,55 @@ public struct PaceZoneConverter {
                 // 15K-HM pace and an interval is 5K pace whether the goal is a 5K
                 // or a marathon (Daniels/Pfitzinger). Anchoring these to goal pace
                 // made marathon "intervals" run at marathon pace.
-                var relative = qualitySpeedMultiplier(
-                    for: zone, progressionFactor: progressionFactor, config: config,
-                    tenK: subtype == .tenkPace)
-                // Threshold floor (half/marathon only): clamp the eased threshold
-                // to TRUE threshold (1.06×speed), which is faster than race for
-                // these distances — so every threshold week is a real LT stimulus,
-                // not race effort (beginners otherwise pin AT race the whole plan).
-                // The ease-in lives in VOLUME (rep length grows), not pace. 5K/10K
-                // (threshold correctly slower than race) fail the guard, untouched.
-                if subtype == .threshold, Double(speedPace) * 1.06 < Double(racePace) {
-                    relative = min(relative, 1.06)
-                }
-                // Z5 (VO2/5K-pace) floor: 5K pace is ≤ race at every distance, so
-                // a VO2 interval must never ease in slower than race. On 5K/10K
-                // (speed ≈ race) the 1.12 ease-in start otherwise lands W1 work
-                // 30-47s/km slower than race. Caps the ease-in at race; half/
-                // marathon keep easing down toward true 5K pace.
-                if zone >= 5 {
-                    relative = min(relative, Double(racePace) / Double(speedPace))
+                let relative: Double
+                if subtype == .strides {
+                    // Strides: short (≤30s) neuromuscular accelerations run with
+                    // full recovery — pure leg-speed / form work, NOT a progressive
+                    // VO2 stimulus. Price at ~0.85× 5K speed (≈ 800m–mile effort —
+                    // clearly faster than REP pace, which is only the floor) and
+                    // FLAT — no ease-in. The Z5 tag means "fast turnover", not
+                    // "5K-pace aerobic"; running them through the quality ease-in
+                    // renders early-plan strides at ~threshold pace, far too slow.
+                    relative = 0.85
+                } else {
+                    let isTenK = subtype == .tenkPace || subtype == .raceRehearsal10K
+                    // Z5 VO2 is REP-LENGTH-AWARE: short reps run R/I-pace (faster),
+                    // long reps ~I-pace — you can't hold 1km reps at 400m pace.
+                    //   ≤90s → 0.88 (1500/800m), ≤3min → 0.92 (3K), longer → 0.96 (I).
+                    let z5Target: Double? = (zone >= 5 && !isTenK)
+                        ? (interval.duration <= 90 ? 0.88
+                            : (interval.duration <= 180 ? 0.92 : 0.96))
+                        : nil
+                    var r = qualitySpeedMultiplier(
+                        for: zone, progressionFactor: progressionFactor, config: config,
+                        tenK: isTenK, z5Target: z5Target)
+                    // 10K-pace floor: "10K Pace" / 10K race-rehearsal work must not ease
+                    // in slower than race. On a 10K plan (race ≈ 10K pace) it pins at
+                    // race; half/marathon (10K pace faster than race) stay untouched.
+                    if isTenK {
+                        r = min(r, Double(racePace) / Double(speedPace))
+                    }
+                    // Z5 VO2 never sags slower than race pace (5K/10K, where speed ≈
+                    // race).
+                    if zone >= 5 {
+                        r = min(r, Double(racePace) / Double(speedPace))
+                    }
+                    // Z4 threshold race floor for 10K-and-longer (racePace slower
+                    // than 5K speed): the true-LT (1.07) end of the progression
+                    // would otherwise render early 10K threshold/hills/mile-reps
+                    // AT or below the 10K race pace. No-op on 5K (race == 5K speed,
+                    // so threshold stays correctly slower than the 5K race) and on
+                    // half/marathon (Z4 is already well faster than race).
+                    if zone == 4, racePace > speedPace {
+                        r = min(r, Double(racePace) / Double(speedPace))
+                    }
+                    relative = r
                 }
                 newTarget = .paceTarget(basePace: speedPace, relative: relative)
             } else {
                 // Z1/Z2 (easy) and Z3 (marathon pace) stay anchored to race pace.
+                // Z3 = the EXACT race-day goal pace; keep it exact (don't 5s-round).
+                if zone == 3 { roundToFive = false }
                 let relative = progressiveMultiplier(
                     for: zone,
                     racePace: racePace,
@@ -339,6 +393,17 @@ public struct PaceZoneConverter {
             newTarget = .paceTarget(basePace: racePace, relative: easyRelative)
         default:
             newTarget = interval.target
+        }
+
+        // Quantize the displayed pace to the nearest 5s so every progressing target
+        // steps cleanly (6:25→6:20→…, 5:18→5:20) instead of drifting 1s/week.
+        // Nearest (not strict round-up) keeps 5K/10K VO2 from rounding ONTO race
+        // pace. Z3 goal pace and non-pace (HR) targets pass through untouched.
+        if roundToFive, case let .paceTarget(basePace, relative) = newTarget, basePace > 0 {
+            let rounded = (Double(basePace) * relative / 5.0).rounded() * 5.0
+            // +0.5 so the downstream Int(basePace × relative) floors back to the
+            // exact 5s multiple instead of one second under (380 → 6:20, not 6:19).
+            newTarget = .paceTarget(basePace: basePace, relative: (rounded + 0.5) / Double(basePace))
         }
 
         return WorkoutInterval(
