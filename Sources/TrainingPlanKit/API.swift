@@ -28,7 +28,7 @@ public func generatePlan(config: PlanConfiguration,
                          totalWeeks: Int,
                          catalog: [Workout],
                          adaptive: Bool = true) -> [Int: [GeneratedWorkout]] {
-    let weeks = simulatePlanV3(config: config,
+    let weeks = generatePlanV3(config: config,
                                totalWeeks: totalWeeks,
                                allWorkouts: catalog,
                                adaptive: adaptive)

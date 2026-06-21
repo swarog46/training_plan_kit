@@ -138,95 +138,20 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
     let safePhasePhase = max(1, phaseDuration)
     let phaseProgression = min(1.0, Double(weekInPhase) / Double(safePhasePhase))
     
-    // Base values
-    var baseLoad: Double
-    switch config.runnerLevel {
-    case .beginner: baseLoad = 4500
-    case .intermediate: baseLoad = 8000
-    case .advanced: baseLoad = 14000
-    case .competitive: baseLoad = 20000  // sub-3h / sub-1:30 starting weekly load
-    }
+    // Starting weekly load + duration come straight from the plan's config — the
+    // generator no longer switches on level/distance to shape them (each plan
+    // declares its own baseLoad, with all the level×distance shaping folded in).
+    var baseLoad = config.baseLoad
     var duration = Double(config.initialWeeklyDuration)
 
-    // Int/Adv 10K: extra +20% baseLoad on top of the 5K/10K base 1.15×
-    // bump (compound effective ~1.38) so the 10K plan visibly out-volumes
-    // the 5K plan. Without this, 5K's faster easy pace (sub-20 5K runner
-    // at 4:50/km) gives it higher km/wk than 10K (sub-44 10K runner at
-    // 5:09/km) at similar training time. The extra bump aligns with user
-    // mental model "longer race = more training", and lands Adv 10K at
-    // ~92 km/wk (top of Daniels Phase II Adv 10K range = 70-90 km).
-    if config.distance == 10000 {
-        switch config.runnerLevel {
-        case .intermediate: baseLoad *= 1.20
-        case .advanced: baseLoad *= 1.20
-        default: break
-        }
-    }
-
-    // Int/Adv 5K/10K: bump baseLoad 15% toward Daniels/Pfitz references.
-    // Previous values (Int=8000, Adv=14000) left Int 5K at 36 km/wk
-    // (Pfitz/Daniels Int = 50-65 km, ~30% under) and Adv 5K at 63 km
-    // (Daniels Adv = 70-85 km, ~15% under). 1.15× lifts Int 5K to ~42
-    // and Adv 5K to ~72 — closer to Pfitz/Daniels without overshooting
-    // the day-count ceiling (5K runs 3-4 days/wk). Same lift applied to
-    // 10K plans (Int 10K from 47→~54 km, Adv 10K from 58→~67). Gated
-    // by distance >= 5000 && < 21000 to scope to 5K/10K only.
-    if config.distance >= 5000 && config.distance < 21000 {
-        switch config.runnerLevel {
-        case .intermediate: baseLoad *= 1.15
-        case .advanced: baseLoad *= 1.15
-        default: break
-        }
-    }
-
-    // Int/Adv 42K: bump baseLoad 25% toward Pfitz prescriptions. Previous
-    // values (8000 / 14000) left marathon plans at 65 km/wk (Int, 26%
-    // under Pfitz 18/55's 88 km) and 87 km/wk (Adv, 23% under Pfitz
-    // 18/70's 113 km). 1.20× closed half the gap; 1.25× lands Int ~76 km
-    // (14% under) and Adv ~106 km (6% under) — Adv comfortably inside
-    // Pfitz 18/70 range, Int still distinct from Cmp's 126 km. The bump
-    // alone would kill marathonPace selection (selector preferred bigger
-    // threshold workouts at higher loads); solved by the MP-forcing in
-    // the threshold slot above — MP is now guaranteed on alternating
-    // PEAK weeks regardless of the bump. 42K-gated to preserve the half
-    // plans which are at or above their Pfitz half references.
-    if config.distance >= 30000 {
-        switch config.runnerLevel {
-        case .intermediate: baseLoad *= 1.25
-        case .advanced: baseLoad *= 1.25
-        default: break
-        }
-    }
-
-    // Sub-1:30 half: trim 25% off both baseLoad AND initial duration. The
-    // .competitive baseLoad (20000) is calibrated for sub-3 marathon volume
-    // (Pfitz 18/85 ≈ 137 km/wk peak). Applied unchanged to the half it ran
-    // 119 km/wk peak — well above Pfitz's competitive half-marathon range
-    // (82-101 km/wk).
-    //
-    // Two cuts together because the selector compensates for either alone:
-    // when only baseLoad drops, the selector picks similar-duration workouts
-    // (overshooting load slightly to hit duration target). When only duration
-    // drops, it picks shorter quality workouts (overshooting load). Cutting
-    // both anchors the selector to genuinely lower per-week targets. 0.75×
-    // lands ~100 km/wk peak (top of Pfitz band), 6 days/wk preserved.
-    // Marathon untouched.
-    if config.runnerLevel == .competitive && config.distance == 21097 {
-        baseLoad *= 0.75
-        duration *= 0.75
-    }
-
-    // Competitive plans only: longer plans start LOWER and ramp up, not at
-    // peak-fitness starting volume from W1. A runner who needs 28 weeks to
-    // reach sub-3 is by definition LESS fit at W1 than someone doing 18w
-    // (otherwise the longer plan wouldn't be necessary). Scale down both
-    // initial duration and base load proportionally to plan length above
-    // an 18w baseline.
-    if config.runnerLevel == .competitive {
+    // The one runtime piece: plans that opt into length-scaling (config-declared
+    // loadScaleBaselineWeeks, e.g. competitive) start proportionally LOWER when
+    // longer than the baseline — a longer plan means a less-fit week 1. Driven by
+    // the config flag, not a "which plan is this?" check.
+    if let baselineWeeks = config.loadScaleBaselineWeeks {
         let totalPlanWeeks = phaseDurations.values.reduce(0, +)
-        let baselinePlanLength = 18
-        if totalPlanWeeks > baselinePlanLength {
-            let scale = Double(baselinePlanLength) / Double(totalPlanWeeks)
+        if totalPlanWeeks > baselineWeeks {
+            let scale = Double(baselineWeeks) / Double(totalPlanWeeks)
             duration *= scale
             baseLoad *= scale
         }
@@ -331,7 +256,7 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         // cutback weeks actually deliver.
         let increasePercent = (config.weeklyLoadIncreasePercent.lowerBound + config.weeklyLoadIncreasePercent.upperBound) / 2
         let progressionFactor = 1.0 + (phaseProgression * increasePercent / 100 * 5)
-        let recoveryMult = config.runnerLevel == .competitive ? 0.75 : 0.85
+        let recoveryMult = config.profile.recoveryWeekLoadMultiplier
         load = baseLoad * phaseBoost * progressionFactor * recoveryMult
         duration = duration * phaseBoost * progressionFactor * recoveryMult
     } else if phase == .taper {
@@ -496,7 +421,7 @@ func filterWorkoutsBySubtypeV3(workouts: [Workout], subtypes: [WorkoutSubtype]) 
 /// state once StoreKit lands. Per-distance eligibility (e.g. yasso 800s only
 /// in marathon plans) applies regardless of this flag — see WorkoutSubtype
 /// .eligibleDistances.
-public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkouts: [Workout], adaptive: Bool = true) -> [Int: [(type: String, workout: Workout)]] {
+public func generatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkouts: [Workout], adaptive: Bool = true) -> [Int: [(type: String, workout: Workout)]] {
     // Calculate minimum required weeks
     let minRequiredWeeks = config.minBasePhaseWeeks + config.minSpeedPhaseWeeks + config.minPeakPhaseWeeks + config.minTaperPhaseWeeks
     
@@ -590,48 +515,10 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         return false
     }
     
-    var filteredIntervals = intervals
-    var filteredThresholds = thresholds
-    if isBeginner {
-        if config.isVO2Max {
-            // VO2 max fitness block — the entire point is the Z5 stimulus,
-            // so the regular Beg "no Z5" rule is wrong here. Allow the
-            // VO2-flavored subtypes (hillRepeats for strength/power,
-            // fivekPace for short I-pace reps) through plus timeTrial as
-            // a periodic benchmark. Threshold pool stays — it's the
-            // aerobic foundation that VO2 work sits on. Plain `.intervals`
-            // (3-5min I-pace reps) stay excluded; those are too punishing
-            // without an aerobic base.
-            let vo2BegIntervals: Set<WorkoutSubtype> = [.hillRepeats, .timeTrial, .fivekPace]
-            filteredIntervals = intervals.filter { vo2BegIntervals.contains($0.subtype) }
-            let vo2BegThresholds: Set<WorkoutSubtype> = [.threshold]
-            filteredThresholds = thresholds.filter { vo2BegThresholds.contains($0.subtype) }
-        } else {
-            // Beginners avoid Z5 work in general (too anaerobic, injury-prone)
-            // — but Time Trials are an exception: a sustained race effort over
-            // 15-30min is conceptually a tune-up race, which beginners CAN
-            // and should do. Exempt timeTrial from this filter.
-            filteredIntervals = intervals.filter { $0.subtype == .timeTrial || !hasZone5($0) }
-            filteredThresholds = thresholds.filter { !hasZone5($0) }
-            // Higdon Novice 1 has ZERO quality workouts. Pfitz Just Finish has
-            // marathon-pace work only. Our Beg plans were also pulling in
-            // intervals, mile repeats, yasso 800s, 5K/10K pace work — that's
-            // intermediate-level quality. For Beg, keep only hillRepeats and
-            // timeTrial in the interval pool (hills build strength, TT is a
-            // tune-up race), and threshold + marathonPace in the threshold pool
-            // (the two pillars of marathon-specific quality).
-            // Beginner speed work = strides (neuromuscular, low-injury — the
-            // canonical novice speed intro, Daniels/Higdon) + hills + time-trial.
-            // Strides aren't in `intervalSubtypes`, and the catalog's hills/TT are
-            // all 40min+ (too long for short 5K/10K SPEED targets), so without
-            // pulling strides in directly the beginner quality collapses to
-            // threshold-only — and a 5K is a speed race that needs fast running.
-            let begAllowedThresholds: Set<WorkoutSubtype> = [.threshold, .marathonPace]
-            filteredIntervals = filterWorkoutsBySubtypeV3(
-                workouts: allWorkouts, subtypes: [.hillRepeats, .timeTrial, .strides])
-            filteredThresholds = filteredThresholds.filter { begAllowedThresholds.contains($0.subtype) }
-        }
-    }
+    // Each plan type narrows its own quality pools (default: keep everything).
+    let (filteredIntervals, filteredThresholds) = config.profile.qualityPools(
+        intervals: intervals, thresholds: thresholds, allWorkouts: allWorkouts,
+        isVO2Max: config.isVO2Max, hasZone5: hasZone5)
     
     var workoutsByWeek: [Int: [(type: String, workout: Workout)]] = [:]
     var usedIds: [String: Int] = [:]
@@ -655,7 +542,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
     
     let totalSpeedPeakWeeks = speedDur + peakDur
     var surpriseWeeks: Set<Int> = []
-    if totalSpeedPeakWeeks > 0 && !isBeginner {
+    if totalSpeedPeakWeeks > 0 && config.profile.hasSurpriseProgressiveWeeks {
         let intervalSize = max(1, totalSpeedPeakWeeks / (surpriseProgressiveCount + 1))
         let speedStart = baseDur
         for i in 1...surpriseProgressiveCount {
@@ -735,7 +622,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         // yasso 800s, mile repeats, and time trials are designed with long
         // recoveries by construction — exempt them from this filter or they
         // get excluded for advanced runners (60s rest cap).
-        let maxRestPerInterval = isBeginner ? 75 : 60
+        let maxRestPerInterval = config.profile.intervalRestCapSeconds
         let restGatedSubtypes: Set<WorkoutSubtype> = [.intervals, .pyramidIntervals, .ladderIntervals]
         func filterIntervalsByMaxRest(_ workouts: [Workout], maxRest: Int) -> [Workout] {
             workouts.filter { workout in
@@ -759,7 +646,38 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         // pool gate AND the per-level selection logic below can read it.
         let milestoneCadence = max(3, peakDur / 2)
         let yassoWeek = phase == .peak && config.runnerLevel != .beginner && (weekInPhase % milestoneCadence) == 0
-        let ttWeek    = phase == .peak && (weekInPhase % milestoneCadence) == milestoneCadence / 2
+        // Time trials: a recalibration checkpoint mid-plan (SPEED phase) so the
+        // runner re-measures fitness with most of the plan still ahead to act on
+        // it, PLUS the original late PEAK tune-up (also breaks up PEAK ladder/
+        // interval repetition and holds peak load). Was PEAK-only, which buried
+        // the sole TT near ~80% of the plan. Recalib falls back to the last BASE
+        // week if a plan has no SPEED phase.
+        let recalibTTWeek = (speedDur > 0)
+            ? (phase == .speed && weekInPhase == speedDur / 2)
+            : (phase == .base && weekInPhase == baseDur - 1)
+        // Late PEAK tune-up TT only for the longer plans (half+, 12-20 wk), which
+        // benefit from a periodic ~4-week TT cadence and where it also breaks PEAK
+        // ladder repetition. 5K/10K (6-10 wk) keep just the single mid-plan
+        // recalibration TT — one race-effort check is plenty for a short block.
+        // Skip the PEAK week the beginner half/marathon forces a race rehearsal
+        // onto (see long-run section) so a TT + a race-pace rehearsal don't stack
+        // into one brutal week — they sit in separate weeks instead.
+        let rehearsalWeekInPhase = (config.runnerLevel == .beginner && config.distance >= 21000 && peakDur >= 2)
+            ? max(1, (peakDur - 1) / 2) : -1
+        // Competitive forces a race rehearsal onto even (and the last) PEAK weeks
+        // (mirrors the long-run section's isMPSegmentWeek). Don't also drop a PEAK
+        // time-trial there: the rehearsal already IS the race-effort check, so a
+        // TT + a race-pace rehearsal would stack into one brutal week. Keep the
+        // TT and the rehearsal in separate weeks (the rehearsal is the learning
+        // point; the mid-plan recalibration TT still satisfies "half has a TT").
+        let peakWeekIndex = week - baseDur - speedDur
+        let competitiveRehearsalWeek = config.runnerLevel == .competitive && peakDur >= 3
+            && (peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1)
+        let peakTTWeek = config.distance >= 21000 && phase == .peak
+            && (weekInPhase % milestoneCadence) == milestoneCadence / 2
+            && weekInPhase != rehearsalWeekInPhase
+            && !competitiveRehearsalWeek
+        let ttWeek = recalibTTWeek || peakTTWeek
 
         // Climb one variant per ~2 plan weeks (load-sorted) across BASE+SPEED so
         // the load-target selector can't park on the cheapest template. Absolute
@@ -805,21 +723,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             let minIntervalMinutes: Int = {
                 if isMaintenance { return 20 }
                 if isOnboarding { return 22 }
-                switch (config.runnerLevel, phase) {
-                case (.beginner, .base):    return 23
-                case (.beginner, .speed):   return 28
-                case (.beginner, .peak):    return 30
-                case (.beginner, .taper):   return 25
-                case (.intermediate, .base):  return 25
-                case (.intermediate, .speed): return 32
-                case (.intermediate, .peak):  return 38
-                case (.intermediate, .taper): return 28
-                case (.advanced, .base):    return 28
-                case (.advanced, .speed):   return 38
-                case (.advanced, .peak):    return 45
-                case (.advanced, .taper):   return 30
-                default: return 22
-                }
+                return config.profile.minIntervalMinutes(phase: phase)
             }()
             let filtered = pool.filter { $0.duration >= minIntervalMinutes * 60 }
             // Don't return an empty pool — fall back to full pool if the
@@ -852,31 +756,12 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             return result
         }()
         
-        // MAINTENANCE plan: dedicated gentle progression
-        // Phases: Routine Setup → Base Building → Intensity Mix → Stability & Habit
-        // Rules:
-        //   - Easy runs start at 25min
-        //   - No long runs first 4 weeks, no progression first 2 weeks
-        //   - Long runs capped at 60min first 8 weeks, then very slowly grow (max ~90min, never 2h)
-        //   - 1-2 easy intervals during first 8 weeks
-        //   - Fewer progression runs overall
-        //   - More interval/threshold variability in later stages
+        // MAINTENANCE: indefinite fitness upkeep, no race target. Safely
+        // handles a post-marathon runner AND preserves fitness long-term.
+        // Cadence: weeks 0-1 easy ramp; every 4th week deload; all other
+        // weeks get 1 long + 1 quality (alternating interval/threshold) +
+        // easy fill, scaled to days/week.
         if isMaintenance {
-            // MAINTENANCE PLAN STRUCTURE
-            //
-            // Designed to (a) safely handle a runner coming off a marathon
-            // block (post-race recovery) and (b) preserve race fitness
-            // long-term (not just 2 easy runs/week).
-            //
-            // Weekly cadence:
-            //   - Weeks 0-1: pure easy (recovery ramp from marathon, or
-            //     "settle in" for fresh starts — harmless either way)
-            //   - Every 4th week (weeks 5, 9, 13, ...): deload — easy only
-            //   - All other weeks: 1 long + 1 quality (alternating
-            //     interval/threshold) + easy fill, scaled to days/week
-            //
-            // Quality density: was 2-3 sessions per 12 weeks, now ~6-8
-            // (every non-deload, non-recovery week gets quality + long).
             let isRecoveryRamp = week < 2
             let isDeloadWeek = week >= 4 && week % 4 == 1  // weeks 5, 9, 13, ...
 
@@ -885,9 +770,8 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             let progTargetMin = min(50, 30 + week / 4)
             let progMaxMin = min(55, progTargetMin + 10)
 
-            // Long run cap grows over time. Floor is 60min because the engine
-            // enforces a 60min minimum on long runs catalog-wide; below that
-            // we'd be filtering to an empty pool.
+            // Long-run cap grows over time; floor 60min (engine enforces a
+            // catalog-wide 60min long-run minimum — below it the pool is empty).
             let longRunMaxMinutes: Int
             if week < 4 {
                 longRunMaxMinutes = 60
@@ -906,8 +790,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             let longPool = longRuns.filter { $0.duration >= 60 * 60 && $0.duration <= longRunMaxMinutes * 60 }
 
             if isRecoveryRamp {
-                // Weeks 0-1: pure easy. Short durations. This doubles as
-                // post-marathon recovery for runners coming off race blocks.
+                // Weeks 0-1: pure easy — doubles as post-marathon recovery.
                 for _ in 0..<maxWorkoutsPerWeek {
                     if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.4, targetDuration: 25, usedIds: &usedIds, isMaintenance: true) {
                         weekWorkouts.append(("easy_recovery", easy))
@@ -1074,8 +957,8 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
 
         // INTERVALS & THRESHOLD
         var shouldAddIntervals = phase == .speed || phase == .peak || phase == .taper
-        if !isBeginner && phase == .base {
-            shouldAddIntervals = true // Intermediate/Advanced start intervals in Base
+        if config.profile.startsIntervalsInBase && phase == .base {
+            shouldAddIntervals = true // fitter tiers start intervals in Base
         }
         // TAPER: Still add intervals/threshold but at reduced intensity (handled by targetLoad)
 
@@ -1108,12 +991,13 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
         if shouldAddIntervals {
             if isBeginner {
                 // Alternate: even weeks = intervals, odd = threshold.
-                // On PEAK Time Trial weeks, prefer the TT subtype so the
-                // selector doesn't lose it to standard intervals (Yasso
-                // is gated out entirely for beginners).
-                if week % 2 == 0 && !intervalPool.isEmpty {
+                // On a Time Trial week, take the interval branch (even if it would
+                // otherwise be a threshold/odd week) and prefer the TT subtype so
+                // the recalibration checkpoint isn't lost to standard intervals
+                // (Yasso is gated out entirely for beginners).
+                if (week % 2 == 0 || ttWeek) && !intervalPool.isEmpty {
                     let begPool: [Workout] = {
-                        if phase == .peak && ttWeek {
+                        if ttWeek {
                             let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
                             if !ttOnly.isEmpty { return ttOnly }
                         }
@@ -1163,12 +1047,8 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 //   Beg:             no hills.
                 let preferHillsThisWeek: Bool = {
                     guard phase == .base, weekInPhase >= 1 else { return false }
-                    switch config.runnerLevel {
-                    case .advanced, .competitive, .intermediate:
-                        return weekInPhase % 2 == 1  // alternating
-                    case .beginner:
-                        return false
-                    }
+                    // fitter tiers alternate a milestone subtype in BASE; beginners stay plain
+                    return config.profile.alternatesMilestoneInBase && weekInPhase % 2 == 1
                 }()
                 let preferredPool: [Workout] = {
                     // PEAK milestone weeks: if the pool has the milestone
@@ -1187,7 +1067,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                         let yassosOnly = intervalPool.filter { $0.subtype == .yasso800 }
                         if !yassosOnly.isEmpty { return yassosOnly }
                     }
-                    if phase == .peak && ttWeek {
+                    if ttWeek {
                         let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
                         if !ttOnly.isEmpty { return ttOnly }
                     }
@@ -1564,7 +1444,14 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 // midpoint is conservative — Pfitz Just Finish has more.
                 let rehearsalWeekIdx = max(1, (peakDur - 1) / 2)
                 if peakWeekIndex == rehearsalWeekIdx {
-                    longRunTypes.removeAll { $0 == .steadyLong || $0 == .long || $0 == .progressiveLong }
+                    // Also drop fastFinish: at the half's shorter peak-LR target it
+                    // out-matches raceRehearsalHM on load/duration and wins every
+                    // time, so the half never got a rehearsal (the marathon's longer
+                    // LR picks raceRehearsalM regardless). Removing it forces the
+                    // race-pace rehearsal for both distances.
+                    longRunTypes.removeAll {
+                        $0 == .steadyLong || $0 == .long || $0 == .progressiveLong || $0 == .fastFinish
+                    }
                 }
             }
         }
@@ -1588,55 +1475,9 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
 
             // Duration caps. Marathon/Half caps scale with level — Pfitzinger
             // 18/55 peaks at 22mi long runs; Higdon Int 1 marathon at 20mi.
-            var maxDurationMins: Int
-            switch config.distance {
-            case 0: maxDurationMins = 90       // Maintenance: cap at 1h30m
-            case 5000:
-                // Adv 5K only — Beg/Int don't get LRs at all so cap is moot.
-                // Daniels Phase II Adv 5K: ~75min Sunday long run.
-                maxDurationMins = 75
-            case 10000:
-                // Per-tier 10K LR caps. Higdon Novice 10K LR ≈ 4 miles
-                // (40-50 min); Higdon Int 10K ≈ 6 miles (~55-65 min);
-                // Daniels/Pfitz Adv 10K ≈ 8-9 miles (~75-85 min).
-                // Previous flat 80min was Higdon-Adv level for everyone —
-                // way too long for a beginner (160% of Higdon Novice prescription).
-                switch config.runnerLevel {
-                // 60 is the floor — catalog's shortest long-run workout is
-                // 60min. Below that the pool empties and the runner gets
-                // zero LRs (breaks the "long run every build week" invariant).
-                case .beginner: maxDurationMins = 70   // Higdon Novice 10K peaks ~5-6mi (~60-72min). A flat 60 cap froze the long run and fought the 60→70→80 progression table; 70 lets it grow 60→70 while staying under Int's 75.
-                case .intermediate: maxDurationMins = 75  // Higdon Int 10K
-                case .advanced: maxDurationMins = 90   // Daniels/Pfitz Adv 10K (bumped to give visible step over 5K)
-                case .competitive: maxDurationMins = 90
-                }
-            case 21097:
-                // Pfitz half-specific LR caps. Half-marathoners don't need
-                // 25-30km long runs (that's marathon-distance Daniels/Canova
-                // endurance base). Pfitz tops each tier at:
-                //   Just Finish (Beg):  10mi  = 16km = ~90min
-                //   12-wk Int:          12mi  = 19km = ~100min
-                //   12/47 high-mile:    13mi  = 21km = ~105min
-                //   sub-1:30 elite:     14-15mi = 22-24km = ~110-115min
-                switch config.runnerLevel {
-                case .beginner: maxDurationMins = 90   // Pfitz Just Finish HM
-                case .intermediate: maxDurationMins = 100  // Pfitz 12-wk HM
-                case .advanced: maxDurationMins = 105  // Pfitz 12/47 HM
-                case .competitive: maxDurationMins = 115  // Pfitz sub-1:30 HM
-                }
-            default:
-                // Marathon long-run pool caps — keyed off the progression
-                // peak targets (180/185/195/220) with ~10min slack to absorb
-                // selector tolerance. Higdon Novice 1 peaks at 20mi (~180min),
-                // Pfitz 18/55 at 22mi (~195min), Pfitz 18/70 at 22mi+,
-                // Pfitz 18/85 (sub-3h) at 22mi (~220min).
-                switch config.runnerLevel {
-                case .beginner: maxDurationMins = 190
-                case .intermediate: maxDurationMins = 200
-                case .advanced: maxDurationMins = 210
-                case .competitive: maxDurationMins = 220  // sub-3h: peak LR 32-36km (Pfitz 22-mile)
-                }
-            }
+            // Longest-run cap is declared per-plan on the config as one readable
+            // (distance, level) table — see PlanConfiguration.maxLongRunMinutes.
+            var maxDurationMins = config.maxLongRunMinutes
             // Marathon surprise weeks: shorten the long run instead of skipping
             // it (5d). 90min keeps the aerobic stimulus without the recovery cost.
             if isSurpriseWeek && isMarathon {
@@ -1693,46 +1534,9 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
 
             // (basePhaseStart, speedPhaseEnd, peakPhaseEnd, taperVal)
             // nil = use initialLongRunDuration / non-progressive logic
-            let progression: (base: Int, speed: Int, peak: Int, taper: Int)?
-            if config.distance >= 30000 {
-                // Marathon long-run peaks (per level):
-                //   Higdon Novice 1 peaks at 20mi → ~180min for Beg
-                //   Pfitz 18/55 peaks at 22mi    → ~195min for Int
-                //   Pfitz 18/70 peaks at 22mi+   → ~210min for Adv
-                //   Pfitz 18/85 (sub-3h)         → ~220min for Cmp (≈ Pfitz 22mi LR)
-                // Earlier caps (150/165/180) were below Daniels' 150min novice
-                // ceiling-style guidance but undershot Higdon/Pfitz references
-                // we explicitly cite. Bumped to match: Beg→180, Int→185,
-                // Adv→195, Cmp unchanged at 210.
-                switch config.runnerLevel {
-                case .beginner:     progression = (80, 120, 180, 90)
-                case .intermediate: progression = (85, 130, 185, 95)
-                case .advanced:     progression = (90, 140, 195, 105)
-                case .competitive:  progression = (100, 160, 210, 110)  // sub-3h: peak 210min ≈ 22mi Pfitz LR
-                }
-            } else if config.distance >= 21000 {
-                // Half marathon
-                switch config.runnerLevel {
-                case .beginner:     progression = (60, 90, 120, 60)
-                case .intermediate: progression = (70, 100, 135, 70)
-                case .advanced:     progression = (80, 110, 145, 80)
-                // sub-1:30 HM: peak 145min — matches catalog ceiling for
-                // raceRehearsalHM / progressiveLong (both max ~145m). 160m
-                // was over Pfitz 12/47 peak (14mi ≈ 115m) anyway, just
-                // produced a 15m monotonic regression at last PEAK week.
-                case .competitive:  progression = (85, 125, 145, 90)
-                }
-            } else if config.distance >= 10000 {
-                // 10K — competitive not offered, falls through to advanced.
-                switch config.runnerLevel {
-                case .beginner:     progression = (60, 70, 80, 60)
-                case .intermediate: progression = (60, 70, 80, 60)
-                case .advanced, .competitive: progression = (70, 75, 80, 70)
-                }
-            } else {
-                // 5K and maintenance: keep prior behavior
-                progression = nil
-            }
+            // Long-run duration ramp is declared per-plan — see
+            // PlanConfiguration.longRunProgression (nil for 5K / maintenance).
+            let progression = config.longRunProgression
 
             if let p = progression {
                 switch phase {
@@ -1770,7 +1574,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                 // run at the minimum (Beg 10K stuck at 60). Snap to the nearest-
                 // target AEROBIC run. (Half/marathon clear it — left alone, so
                 // their MP-segment peak runs stay intact.)
-                let snapLoadMult: Double = config.runnerLevel == .competitive ? 0.50 : 0.35
+                let snapLoadMult = config.profile.longRunSnapLoadFraction
                 let snapMinLoad = pool.map { Double($0.trainingLoad) }.min() ?? 0
                 if config.distance < 21000,
                    Double(targetLoad) * snapLoadMult < snapMinLoad {
@@ -1802,7 +1606,7 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
             // default 0.35 multiplier. Without this, a 85min fastFinish
             // (load ~10700) wins against a 150min steadyLong (load ~14500)
             // even when the duration target is 160min.
-            let lrLoadMult: Double = config.runnerLevel == .competitive ? 0.50 : 0.35
+            let lrLoadMult = config.profile.longRunSnapLoadFraction
             // Monotonic enforcement. BASE/SPEED/PEAK: this week's LR may not
             // be meaningfully shorter than last week's (5min slack absorbs
             // selector noise / phase-target movement). TAPER + RACE: must
@@ -1884,52 +1688,31 @@ public func simulatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
                     }
                 }
             } else if !easyRuns.isEmpty {
-                // Intermediate / Beginner: easy by default. Intermediates get
-                // an occasional progression in SPEED/PEAK for variety.
-                if config.runnerLevel == .intermediate && (phase == .speed || phase == .peak) && progressionWeek {
-                    var progressivePool = filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.progression])
-                        .filter { $0.duration >= 40 * 60 }
-                    if config.distance < 42000 {
-                        progressivePool = progressivePool.filter { $0.duration <= 70 * 60 }
-                    }
-                    if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.18, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                        weekWorkouts.append(("progressive_variety", progressive))
-                    } else if !addedEasySurprise, let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                        weekWorkouts.append(("easy", easy))
-                    }
-                } else if config.distance >= 10000 && isBeginner && progressionWeek {
-                    // 10K+ beginner: progression every 3rd week with growing
-                    // duration — non-progression weeks fall through to easy.
+                // BEGINNER 5K/10K/21K + INTERMEDIATE: the 3rd slot is ALWAYS pure
+                // easy. On a 2-3 day week (long + quality + maybe a 3rd) a progression
+                // in the last slot leaves zero recovery whenever the quality slot is
+                // hard — audit: Beg 10K W4 and Beg 21K rehearsal weeks ran threshold +
+                // race-rehearsal-long + progression (3 hard, no easy). At 4 days/wk
+                // Int already carries 2 quality + a race-pace long, same problem.
+                // Variety comes from the rotating long-run type + quality slots.
+                // ONLY Beginner 42K (4 days) gets an occasional 3rd-slot progression —
+                // its 4th slot stays easy, preserving a recovery day (TT weeks too).
+                if config.distance >= 42000 && isBeginner && progressionWeek && !ttWeek {
+                    // 21K+: Progress from 40 → 90 mins (can go up to 3 hours)
                     let progressionTargetMins: Int
-                    if config.distance >= 21000 {
-                        // 21K+: Progress from 40 → 90 mins (can go up to 3 hours)
-                        switch phase {
-                        case .base:
-                            progressionTargetMins = 40
-                        case .speed:
-                            let speedWeekIndex = week - baseDur
-                            let speedProgress = Double(speedWeekIndex) / Double(max(speedDur - 1, 1))
-                            progressionTargetMins = 40 + Int(25.0 * speedProgress)  // 40→65
-                        case .peak:
-                            let peakWeekIndex = week - baseDur - speedDur
-                            let peakProgress = Double(peakWeekIndex) / Double(max(peakDur - 1, 1))
-                            progressionTargetMins = 65 + Int(25.0 * peakProgress)  // 65→90
-                        case .taper, .race:
-                            progressionTargetMins = 40
-                        }
-                    } else {
-                        // 10K: Progress from 40 → 50 mins
-                        switch phase {
-                        case .base:
-                            progressionTargetMins = 40
-                        case .speed, .peak:
-                            let progressWeek = week - baseDur
-                            let totalProgressWeeks = speedDur + peakDur
-                            let progress = Double(progressWeek) / Double(max(totalProgressWeeks - 1, 1))
-                            progressionTargetMins = 40 + Int(10.0 * progress)
-                        case .taper, .race:
-                            progressionTargetMins = 40
-                        }
+                    switch phase {
+                    case .base:
+                        progressionTargetMins = 40
+                    case .speed:
+                        let speedWeekIndex = week - baseDur
+                        let speedProgress = Double(speedWeekIndex) / Double(max(speedDur - 1, 1))
+                        progressionTargetMins = 40 + Int(25.0 * speedProgress)  // 40→65
+                    case .peak:
+                        let peakWeekIndex = week - baseDur - speedDur
+                        let peakProgress = Double(peakWeekIndex) / Double(max(peakDur - 1, 1))
+                        progressionTargetMins = 65 + Int(25.0 * peakProgress)  // 65→90
+                    case .taper, .race:
+                        progressionTargetMins = 40
                     }
 
                     // Filter for progression runs within ±10 mins of target, minimum 40 mins
@@ -2256,7 +2039,7 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
     let totalWeeks = Int(max(1, ceil(Double(days) / 7)))
     
     // Generate plan using Python-ported logic
-    let planByWeek = simulatePlanV3(config: config, totalWeeks: totalWeeks, allWorkouts: workouts)
+    let planByWeek = generatePlanV3(config: config, totalWeeks: totalWeeks, allWorkouts: workouts)
     
     var events: [WorkoutEvent] = []
     

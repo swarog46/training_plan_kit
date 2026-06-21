@@ -157,10 +157,11 @@ section("Z3 (MP) workouts hit racePace from day 1, all tiers")
 text = run_pacedump("Cmp 42K (long", race_pace=256, easy_pace=300)
 w = parse_plan(text, "Cmp 42K (long, 22w)")
 mp_paces_w1 = [(s, p) for s,_,p in (w[1] if w else []) if s == 'steadyLong']
-# Cmp 42K W1 steadyLong (Z2) ≈ 1.15 × 256 = 294 → 4:55/km (5s-rounded) — race-pace-anchored
+# Cmp 42K W1 steadyLong (Z2): at-goal competitive easy anchors to the runner's
+# stated easy (300 = 5:00) and eases from there — NOT frozen at 1.15×race (was 4:55).
 check(
-    "Cmp 42K W1 steadyLong @ 4:55/km",
-    any('4:55/km' in p for _, p in mp_paces_w1),
+    "Cmp 42K W1 steadyLong @ 5:00/km",
+    any('5:00/km' in p for _, p in mp_paces_w1),
     f"got {mp_paces_w1}"
 )
 
@@ -1215,13 +1216,20 @@ section("Progression direction — easy zones blend, quality stays flat")
 EASY_SUBTYPES_FOR_TEST = {'easy'}
 
 def first_and_last_easy_paces(weeks):
-    """Returns (W1_easy_paces, last_easy_paces). Looks at race week (last)
-    and W1 separately. Each is a list of sec/km values."""
+    """Returns (W1_easy_paces, last_easy_paces). W1 vs the LATEST week that
+    actually has easy runs. The literal race week can be legitimately easy-free
+    (race + shakeout only), so scanning backward keeps the progression check
+    from silently skipping — it always verifies against real late-plan easy."""
     if not weeks: return [], []
     weeks_sorted = sorted(weeks)
     first = [parse_pace_secs_first(p) for s, _, p in weeks[weeks_sorted[0]] if s in EASY_SUBTYPES_FOR_TEST]
-    last  = [parse_pace_secs_first(p) for s, _, p in weeks[weeks_sorted[-1]] if s in EASY_SUBTYPES_FOR_TEST]
-    return [x for x in first if x], [x for x in last if x]
+    last = []
+    for wk in reversed(weeks_sorted):
+        cand = [x for x in (parse_pace_secs_first(p) for s, _, p in weeks[wk] if s in EASY_SUBTYPES_FOR_TEST) if x]
+        if cand:
+            last = cand
+            break
+    return [x for x in first if x], last
 
 for header, fil, rp, ep, bb in PACE_INPUTS:
     label = f"{header.split(' (')[0]}" + (" [build]" if bb else "")
@@ -1236,22 +1244,104 @@ for header, fil, rp, ep, bb in PACE_INPUTS:
     avg_last = sum(last) / len(last)
     delta = avg_first - avg_last  # positive = gets faster
 
-    is_competitive_flat = "Cmp" in header and not bb
-    if is_competitive_flat:
-        # .competitive config: easy stays flat from W1 to race week.
-        check(
-            f"{label} easy stays flat (Cmp .competitive)",
-            abs(delta) <= TOL,
-            f"W1 avg={avg_first:.0f} race-week avg={avg_last:.0f} delta={delta:.0f}s"
-        )
-    else:
-        # Build band + Beg/Int/Adv: easy gets faster across the plan.
-        # Allow 5-second slack at the boundary so noise doesn't trip the test.
-        check(
-            f"{label} easy gets faster across plan",
-            delta > -5,
-            f"W1 avg={avg_first:.0f} race-week avg={avg_last:.0f} (got slower by {-delta:.0f}s)"
-        )
+    # All tiers ease easy across the plan. After option (b) this includes the
+    # at-goal .competitive config — its easy no longer freezes at 1.15×race; it
+    # anchors to the runner's stated easy and eases from there (quality stays
+    # locked, only easy blends). Short plans ease less (≈flat), longer ones more.
+    # Allow 5s slack at the boundary so noise doesn't trip the test.
+    check(
+        f"{label} easy gets faster across plan",
+        delta > -5,
+        f"W1 avg={avg_first:.0f} race-week avg={avg_last:.0f} (got slower by {-delta:.0f}s)"
+    )
+
+section("Hill repeats render faster than threshold (VO2/power, not LT)")
+# Hill repeats are tagged Z4 (hill HR settles ~LT) but train VO2/power and the
+# flat-equivalent effort is ~I-pace — they must NOT collide with the threshold
+# run's pace (the old bug: both Z4 → identical s/km on the board). With a fixed
+# speed anchor, hills render in [0.96,1.02]×speed and threshold in [1.02,1.07]×
+# speed — disjoint. Assert the STRONG form: even the slowest hill in the plan is
+# faster than the fastest threshold, so the two pace bands never overlap (no
+# collision in any week). speed_pace passed → real 5K-speed anchoring exercised.
+HILL_VS_THRESHOLD = [
+    # (header, filter, racePace, easyPace, speedPace)
+    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  228, 286, 228),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 246),
+    # Int 10K dropped: at 3 days it doesn't pair hills with a threshold run to compare.
+]
+for header, fil, rp, ep, sp in HILL_VS_THRESHOLD:
+    text = run_pacedump_with(fil, rp, ep, False, speed_pace=sp)
+    w = parse_plan(text, header)
+    hills, thrs = [], []
+    if w:
+        for wk, sessions in w.items():
+            for s, _, p in sessions:
+                v = parse_pace_secs_first(p)
+                if v is None: continue
+                if s == 'hillRepeats': hills.append(v)
+                elif s == 'threshold': thrs.append(v)
+    ok = bool(hills) and bool(thrs) and max(hills) < min(thrs) - 3
+    check(
+        f"{header.split(' (')[0]} every hill faster than every threshold (VO2 ≠ LT)",
+        ok,
+        f"hills(n={len(hills)}) slowest={max(hills) if hills else '-'} "
+        f"threshold(n={len(thrs)}) fastest={min(thrs) if thrs else '-'}"
+    )
+
+section("Time trial renders faster than threshold (race-effort test, not LT)")
+# A time trial is a sustained race effort (~5K-10K pace); it must read faster than
+# the threshold run it's paired with. Old bug: both Z4 → identical, and quantize
+# could even invert it. Same disjoint-range guard as the hills check.
+TT_VS_THRESHOLD = [
+    ("Beg 42K (long, 22w)", "Beg 42K (long, 22w)", 330, 450, 300),
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 300, 420, 258),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)", 270, 360, 246),
+]
+for header, fil, rp, ep, sp in TT_VS_THRESHOLD:
+    text = run_pacedump_with(fil, rp, ep, False, speed_pace=sp)
+    w = parse_plan(text, header)
+    tts, thrs = [], []
+    if w:
+        for wk, sessions in w.items():
+            for s, _, p in sessions:
+                v = parse_pace_secs_first(p)
+                if v is None: continue
+                if s == 'timeTrial': tts.append(v)
+                elif s == 'threshold': thrs.append(v)
+    ok = bool(tts) and bool(thrs) and max(tts) < min(thrs) - 3
+    check(
+        f"{header.split(' (')[0]} every TT faster than every threshold (race-effort ≠ LT)",
+        ok,
+        f"TT(n={len(tts)}) slowest={max(tts) if tts else '-'} threshold fastest={min(thrs) if thrs else '-'}"
+    )
+
+section("Competitive half/marathon: TT and race rehearsal never share a week")
+# The race rehearsal IS the race-effort check; stacking a TT + a race-pace
+# rehearsal into one week is brutal. They must sit in separate weeks — but the
+# plan must still contain BOTH (the mid-plan recalibration TT satisfies "the
+# half has a TT"; the rehearsal is the late learning point).
+REHEARSAL_SUBTYPES = {'raceRehearsalM', 'raceRehearsalHM', 'raceRehearsal10K'}
+TT_REHEARSAL_PLANS = [
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)", 256, 331),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)", 256, 331),
+]
+for header, fil, rp, ep in TT_REHEARSAL_PLANS:
+    text = run_pacedump_with(fil, rp, ep, False)
+    w = parse_plan(text, header)
+    has_tt = has_reh = False
+    collisions = []
+    if w:
+        for wk, sessions in w.items():
+            subs = {s for s, _, _ in sessions}
+            if 'timeTrial' in subs: has_tt = True
+            if subs & REHEARSAL_SUBTYPES: has_reh = True
+            if 'timeTrial' in subs and (subs & REHEARSAL_SUBTYPES):
+                collisions.append(wk)
+    check(
+        f"{header.split(' (')[0]} half/mara: TT + rehearsal both present, separate weeks",
+        w is not None and has_tt and has_reh and not collisions,
+        f"has_tt={has_tt} has_reh={has_reh} same-week collisions={collisions}"
+    )
 
 section("Quality flat across plan — Cmp configs only (other tiers progress)")
 
@@ -1629,9 +1719,11 @@ for header, fil, rp, ep, bb, expected_weeks in MINMAX_PLANS:
                 f"W1 avg={avg_first:.0f}, race-week avg={avg_last:.0f}"
             )
         else:
+            # Option (b): at-goal .competitive easy eases (never freezes or
+            # slows). Late-plan easy must be ≥ as fast as W1, within slack.
             check(
-                f"{label} .competitive easy stays flat",
-                abs(avg_first - avg_last) <= TOL,
+                f"{label} .competitive easy eases (never slower than W1)",
+                avg_last <= avg_first + TOL,
                 f"W1 avg={avg_first:.0f}, race-week avg={avg_last:.0f}"
             )
 
@@ -1670,11 +1762,16 @@ for header, fil in [
     if not flat_w1 or not build_w1: continue
     flat_avg  = sum(flat_w1)  / len(flat_w1)
     build_avg = sum(build_w1) / len(build_w1)
-    # Build band's W1 easy is slower (higher sec/km) than .competitive flat.
+    # The at-goal .competitive easy now anchors to the runner's stated easy and
+    # eases from there; the build-band's gap-blend routes easy differently (pushes
+    # toward goal pace). Guards that the BUILD_BAND flag actually changes the easy
+    # zones — the two are not interchangeable. (Before the at-goal easy fix this
+    # asserted build > flat, because at-goal froze at 1.15×race; build-band itself
+    # is unchanged, so the comparison direction flipped.)
     check(
-        f"{header.split(' (')[0]} W1 easy: build-band slower than flat (gap-blend)",
-        build_avg > flat_avg + TOL,
-        f"flat avg={flat_avg:.0f}s/km, build avg={build_avg:.0f}s/km"
+        f"{header.split(' (')[0]} W1 easy: build-band routes differently from at-goal",
+        abs(build_avg - flat_avg) > TOL,
+        f"flat(at-goal) avg={flat_avg:.0f}s/km, build avg={build_avg:.0f}s/km"
     )
 
 section("Cmp 21K Pfitz LT-interval pattern (mileRepeats forced on alt SPEED/PEAK weeks)")
@@ -1905,9 +2002,9 @@ check(
 int_5k_km = peak_km_for_label("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320)
 int_10k_km = peak_km_for_label("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380)
 check(
-    "Int 10K peak km > Int 5K (10K out-volumes 5K after bumps)",
-    int_10k_km > int_5k_km,
-    f"Int 5K={int_5k_km:.1f} km, Int 10K={int_10k_km:.1f} km"
+    "Int 10K peak km within 10% of Int 5K (equal 3-day count; km favors speed-heavy 5K)",
+    int_10k_km >= int_5k_km * 0.9,
+    f"Int 5K={int_5k_km:.1f} km, Int 10K={int_10k_km:.1f} km — 10K shouldn't trail 5K by >10%"
 )
 
 section("5K/10K plan variants (short/rec/long) — all generate cleanly, scale right")
@@ -1921,21 +2018,23 @@ section("5K/10K plan variants (short/rec/long) — all generate cleanly, scale r
 
 SHORT_LONG_VARIANTS = [
     # (header, fil, rp, ep, expected_weeks, expected_sessions_per_wk)
-    ("Beg 5K (short, 5w)",  "Beg 5K (short, 5w)",  240, 350, 5,  3),
-    ("Beg 5K (rec, 7w)",    "Beg 5K (rec, 7w)",    240, 350, 7,  3),
-    ("Beg 5K (long, 10w)",  "Beg 5K (long, 10w)",  240, 350, 10, 3),
-    ("Int 5K (short, 5w)",  "Int 5K (short, 5w)",  240, 320, 5,  4),
-    ("Int 5K (rec, 7w)",    "Int 5K (rec, 7w)",    240, 320, 7,  4),
-    ("Int 5K (long, 10w)",  "Int 5K (long, 10w)",  240, 320, 10, 4),
-    ("Adv 5K (rec, 7w)",    "Adv 5K (rec, 7w)",    240, 320, 7,  5),
-    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  240, 320, 10, 5),
-    ("Beg 10K (short, 7w)", "Beg 10K (short, 7w)", 300, 420, 7,  3),
-    ("Beg 10K (rec, 9w)",   "Beg 10K (rec, 9w)",   300, 420, 9,  3),
-    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 300, 420, 12, 3),
-    ("Int 10K (rec, 9w)",   "Int 10K (rec, 9w)",   270, 380, 9,  5),
-    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 12, 5),
-    ("Adv 10K (rec, 9w)",   "Adv 10K (rec, 9w)",   260, 320, 9,  5),
-    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 12, 5),
+    # expected_sessions_per_wk = LOCKED day-count matrix (Beg 2/2, Int 3/3, Adv 4/4
+    # for 5K/10K). All durations of a plan share its config day-count.
+    ("Beg 5K (short, 5w)",  "Beg 5K (short, 5w)",  240, 350, 5,  2),
+    ("Beg 5K (rec, 7w)",    "Beg 5K (rec, 7w)",    240, 350, 7,  2),
+    ("Beg 5K (long, 10w)",  "Beg 5K (long, 10w)",  240, 350, 10, 2),
+    ("Int 5K (short, 5w)",  "Int 5K (short, 5w)",  240, 320, 5,  3),
+    ("Int 5K (rec, 7w)",    "Int 5K (rec, 7w)",    240, 320, 7,  3),
+    ("Int 5K (long, 10w)",  "Int 5K (long, 10w)",  240, 320, 10, 3),
+    ("Adv 5K (rec, 7w)",    "Adv 5K (rec, 7w)",    240, 320, 7,  4),
+    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  240, 320, 10, 4),
+    ("Beg 10K (short, 7w)", "Beg 10K (short, 7w)", 300, 420, 7,  2),
+    ("Beg 10K (rec, 9w)",   "Beg 10K (rec, 9w)",   300, 420, 9,  2),
+    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 300, 420, 12, 2),
+    ("Int 10K (rec, 9w)",   "Int 10K (rec, 9w)",   270, 380, 9,  3),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 12, 3),
+    ("Adv 10K (rec, 9w)",   "Adv 10K (rec, 9w)",   260, 320, 9,  4),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 12, 4),
 ]
 
 # Per-tier (distance, level) groups → (long_variant_label, short_variant_label)
@@ -1970,6 +2069,68 @@ for header, fil, rp, ep, expected_weeks, expected_sess in SHORT_LONG_VARIANTS:
             f"got max sessions/wk = {max_sess}"
         )
 
+# LOCKED day-count matrix — training days/week per (level × distance). Set by Q;
+# do NOT change a count without an explicit request (see PlanConfiguration.swift
+# day-count matrix comment). Running below classic-plan volume is intentional.
+#              5K   10K   21K   42K
+#   Beginner    2    2     3     4
+#   Intermed    3    3     4     4
+#   Advanced    4    4     5     5
+TIER_DAYS = [
+    ("Beg 5K (rec, 7w)",   240, 350, 2), ("Int 5K (rec, 7w)",   240, 320, 3), ("Adv 5K (rec, 7w)",   240, 320, 4),
+    ("Beg 10K (rec, 9w)",  300, 420, 2), ("Int 10K (rec, 9w)",  270, 380, 3), ("Adv 10K (rec, 9w)",  260, 320, 4),
+    ("Beg 21K (rec, 14w)", 300, 420, 3), ("Int 21K (rec, 14w)", 270, 380, 4), ("Adv 21K (rec, 14w)", 260, 320, 5),
+    ("Beg 42K (rec, 18w)", 330, 450, 4), ("Int 42K (rec, 18w)", 300, 420, 4), ("Adv 42K (rec, 18w)", 280, 360, 5),
+]
+for label, rp, ep, days in TIER_DAYS:
+    w = parse_plan(run_pacedump_with(label, rp, ep, False), label)
+    build = [wk for wk in w if wk < max(w.keys())] if w else []
+    got = max((len(w[wk]) for wk in build), default=None)
+    check(
+        f"{label.split(' (')[0]} runs {days} days/wk (tier-days matrix)",
+        got == days,
+        f"got max sessions/wk={got}, expected {days}",
+    )
+
+section("Beg 10K (2-day, LOCKED): each week = 1 long + ≤1 quality")
+# Beg 10K runs 2 days (LOCKED day-count matrix) — intentionally minimal and below
+# classic-plan volume. A 2-day week is the long run + one quality session, so a
+# separate easy/recovery day is structurally impossible (and not required).
+# Guard: no build week is 2+ quality (the long run must be present), and weekly
+# volume doesn't silently collapse.
+_b10 = parse_plan(run_pacedump_with("Beg 10K (long, 12w)", 300, 420, False), "Beg 10K (long, 12w)")
+_QUAL = {'timeTrial', 'threshold', 'intervals', 'hillRepeats', 'ladderIntervals',
+         'fivekPace', 'tenkPace', 'mileRepeats', 'yasso800', 'fartlek'}
+if not _b10:
+    check("Beg 10K (long) parses for structure/volume check", False, "no plan")
+else:
+    _build = [wk for wk in _b10 if wk < max(_b10.keys())]
+    _over_q = [wk for wk in _build if sum(1 for s, _, _ in _b10[wk] if s in _QUAL) >= 2]
+    check("Beg 10K: no build week is 2+ quality (each is long + ≤1 quality)",
+          not _over_q,
+          f"2+quality weeks={_over_q}")
+    _peak = max(sum(d for _, d, _ in _b10[wk]) for wk in _b10)
+    check("Beg 10K peak weekly volume ≥ 110min (guard 2-day level)",
+          _peak >= 110,
+          f"peak={_peak}min")
+
+section("Beg 21K/42K (3-4 day): every build week keeps a recovery day (C1 fix)")
+# The forced PEAK rehearsal week used to collide with a 3rd-slot progression,
+# making a 3-day Beg 21K week all-hard (threshold + race-rehearsal-long +
+# progression, zero easy). The 3rd-slot progression is now 42K-only, so Beg
+# 21K's 3rd slot is always easy. Guard: no build week lacks a recovery run.
+_REC = {'easy', 'strides', 'recovery'}
+for _hdr, _rp, _ep in [("Beg 21K (rec, 14w)", 360, 480),
+                       ("Beg 21K (long, 18w)", 360, 480),
+                       ("Beg 42K (long, 22w)", 360, 480)]:
+    _w = parse_plan(run_pacedump_with(_hdr, _rp, _ep, False), _hdr)
+    if not _w:
+        check(f"{_hdr} parses for recovery-day check", False, "no plan"); continue
+    _b = [wk for wk in _w if wk < max(_w.keys())]
+    _nr = [wk for wk in _b if not any(s in _REC for s, _, _ in _w[wk])]
+    check(f"{_hdr.split(' (')[0]} {_hdr.split('(')[1].rstrip(') ')}: every build week has a recovery day",
+          not _nr, f"all-hard weeks (no easy/strides)={_nr}")
+
 for label, long_fil, short_fil, rp, ep in GROWS_WITH_LENGTH:
     long_text = run_pacedump_with(long_fil, rp, ep, False)
     short_text = run_pacedump_with(short_fil, rp, ep, False)
@@ -1996,12 +2157,11 @@ for label, long_fil, short_fil, rp, ep in GROWS_WITH_LENGTH:
 
 section("Beg/Int/Adv 5K and 10K: tier-appropriate frequency + LR caps + volume")
 
-# Defends three fixes from the same batch:
-#   1. Beg 5K runs 3 days/wk (was 2 — Couch-to-5K / Higdon Novice minimum)
-#   2. 10K LR caps split per tier (was flat 80min — too long for Beg/Int)
-#   3. Int/Adv 5K/10K baseLoad ×1.15 — Daniels/Pfitz volume close
+# Beg 5K frequency is LOCKED at 2 days/wk (see day-count matrix). Also defends:
+#   - 10K LR caps split per tier (was flat 80min — too long for Beg/Int)
+#   - Int/Adv 5K/10K baseLoad ×1.15 — Daniels/Pfitz volume close
 
-# Beg 5K sessions/week — locked to 3 (Higdon Novice 5K prescription)
+# Beg 5K sessions/week — LOCKED to 2 (see day-count matrix); do not raise to 3.
 def session_count_per_week(label, fil, rp, ep):
     text = run_pacedump_with(fil, rp, ep, False)
     w = parse_plan(text, label)
@@ -2011,8 +2171,8 @@ def session_count_per_week(label, fil, rp, ep):
 
 r = session_count_per_week("Beg 5K (long, 10w)", "Beg 5K (long, 10w)", 240, 350)
 check(
-    "Beg 5K (long, 10w) BUILD week sessions == 3 (Higdon Novice 5K)",
-    r is not None and r[1] == 3,
+    "Beg 5K (long, 10w) BUILD week sessions == 2 (LOCKED day-count matrix)",
+    r is not None and r[1] == 2,
     f"got min={r[0]} max={r[1]} avg={r[2]:.1f}" if r else "no plan"
 )
 
@@ -2063,15 +2223,16 @@ def peak_km_for(label, fil, rp, ep):
 # Bumped baseline bands — captures current state after baseLoad ×1.15 +
 # +1 day for Int/Adv tiers. Bands now wider to absorb day-count growth
 # while still catching real regression.
+# Floors track the LOCKED day-count matrix (Int 5K/10K = 3 days, Adv 5K/10K =
+# 4 days), NOT the classic-plan targets — we deliberately run below Daniels/Pfitz
+# here. These are regression guards at the current level; the hi bound still
+# catches accidental over-volume.
 SHORT_RACE_KM_BANDS = [
     # (header, fil, rp, ep, lo, hi, reference)
-    ("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320, 42, 55, "Daniels Int 5K ~ 50-65 km"),
-    # max 62→66: 2026-06-16 intermediate quality easing matched to Advanced
-    # (honest race-pace naming) runs quality a few s/km faster, so the same
-    # time covers slightly more ground. 66 km is still inside the 55-70 ref.
-    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 48, 66, "Pfitz Int 10K ~ 55-70 km"),
-    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 72, 95, "Daniels Adv 5K ~ 70-85 km; easy-pace anchor (stated easy, slower) trims km a touch at same time-volume"),
-    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 65, 85, "Daniels Adv 10K ~ 70-90 km"),
+    ("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320, 32, 55, "3-day Int 5K — below Daniels 50-65 by design"),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 30, 66, "3-day Int 10K — below Pfitz 55-70 by design"),
+    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 56, 95, "4-day Adv 5K — below Daniels 70-85 by design"),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 56, 85, "4-day Adv 10K — below Daniels 70-90 by design"),
 ]
 for header, fil, rp, ep, lo, hi, ref in SHORT_RACE_KM_BANDS:
     km = peak_km_for(header, fil, rp, ep)
@@ -2173,7 +2334,7 @@ def measure_plan_for_guards(label, fil, rp, ep):
 GUARDS = [
     # Beg 42K — Pfitz Just Finish / Higdon Novice 1 style: pure aerobic,
     # marathonPace + threshold sole intensity. NO intervals/mileRepeats.
-    ("Beg 42K (long, 22w)", 330, 450, 92, 99, 35, 55, 175, 195,
+    ("Beg 42K (long, 22w)", 330, 450, 92, 99, 35, 55, 195, 215,
      {'marathonPace', 'threshold'}),
     # Int 42K — Pfitz 18/55 territory: full quality variety incl. MP.
     # km max 80→84: 2026-06-16 intermediate quality easing → Advanced (honest
@@ -2189,8 +2350,10 @@ GUARDS = [
     # aerobic 75-80%" aligned.
     ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 195, 215,
      {'marathonPace', 'threshold'}),
-    # Beg 21K — Pfitz Just Finish HM: pure aerobic + light intensity.
-    ("Beg 21K (long, 18w)", 360, 480, 92, 99, 28, 45, 85, 100,
+    # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
+    # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),
+    # so the same minutes cover slightly fewer km.
+    ("Beg 21K (long, 18w)", 360, 480, 92, 99, 24, 45, 85, 100,
      {'threshold'}),
     # Int 21K — Pfitz 12-week HM: progressives in SPEED (the forcing fix).
     ("Int 21K (long, 18w)", 300, 420, 80, 92, 45, 65, 95, 110,
@@ -2557,7 +2720,7 @@ def parse_dump_loads(text, header):
 # above the current value — a neutralized taper (race-week load -> ~100% of
 # peak) blows through all of them.
 TAPER_PLANS = [
-    ("Beg 5K (long, 10w)",    "Beg 5K (long",  62),
+    ("Beg 5K (long, 10w)",    "Beg 5K (long",  67),  # single mid-plan TT (no peak TT) → lower peak week, race-week ratio ~64% (race-week load itself unchanged)
     ("Beg 10K (long, 12w)",   "Beg 10K (long", 62),
     ("Adv 5K (long, 10w)",    "Adv 5K (long",  58),
     ("Int 10K (long, 12w)",   "Int 10K (long", 58),

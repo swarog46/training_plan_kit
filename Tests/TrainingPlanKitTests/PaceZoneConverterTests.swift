@@ -10,6 +10,9 @@ import XCTest
 ///   • 10K work — 1.01 (between VO2 and threshold).
 ///   • competitive/build-band lock at target from day 1 (no easing).
 ///   • easy/long ease ~6.5% FASTER over the whole plan (≈20-25s), 5s-quantized.
+///   • VDOT mode (`vdotAnchored`): the easy multiplier is FLAT — progression comes
+///     from the anchor interpolating current→projected VDOT upstream (the app /
+///     plan_debug integration path); these unit tests exercise the legacy path.
 final class PaceZoneConverterTests: XCTestCase {
 
     private func mult(_ zone: Int, _ p: Double, _ c: PaceProgressionConfig,
@@ -86,6 +89,25 @@ final class PaceZoneConverterTests: XCTestCase {
         XCTAssertLessThan(raceWk, w1, "easy gets faster over the block (progression, not flat)")
         XCTAssertEqual(w1 - raceWk, 385.0 * 0.065, accuracy: 3, "~6.5% (≈25s) faster by race week")
         XCTAssertGreaterThanOrEqual(raceWk, 341, "easy never faster than race")
+    }
+
+    // MARK: - VDOT mode: easy multiplier is flat (anchor carries the progression)
+
+    func testVDOTAnchoredEasyIsFlatVsLegacyEasing() {
+        let c = PaceProgressionConfig.advanced
+        func mult(_ p: Double, vdot: Bool) -> Double {
+            PaceZoneConverter.progressiveMultiplier(
+                for: 2, racePace: 341, conversationalPace: 385,
+                progressionFactor: p, config: c, vdotAnchored: vdot)
+        }
+        // Legacy: the multiplier itself eases ~6.5% (race week faster than wk 1).
+        XCTAssertGreaterThan(mult(0.0, vdot: false), mult(1.0, vdot: false),
+                             "legacy multiplier eases over the block")
+        // VDOT-anchored: multiplier is FLAT across the block — progression comes from
+        // the anchor (conversationalPace) interpolating current→projected VDOT
+        // upstream in applyPaceProgression, not from the multiplier.
+        XCTAssertEqual(mult(0.0, vdot: true), mult(1.0, vdot: true), accuracy: 0.0001,
+                       "vdot-anchored easy multiplier is flat (anchor carries progression)")
     }
 
     // MARK: - Competitive easy anchors to the runner's real easy (build-band)

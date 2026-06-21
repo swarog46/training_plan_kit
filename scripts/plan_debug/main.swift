@@ -14,7 +14,7 @@ import Foundation
 // MARK: - Pretty-printer
 
 func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
-    let plan = simulatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
+    let plan = generatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
     // Mirror the engine's front-trim: short plans are generated at
     // recommended length and trimmed from the start, so phase labels must
     // be computed against the generated length and offset by the trim.
@@ -62,7 +62,7 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
 }
 
 func summary(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
-    let plan = simulatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
+    let plan = generatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
     let all = plan.values.flatMap { $0 }
     let easy = all.filter { $0.workout.subtype == .easy }.count
     let long = all.filter {
@@ -261,7 +261,7 @@ if mode == "pace" {
     print("=====================================")
 
     for c in filtered {
-        let plan = simulatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let hrEvents = plan.flatMap { _, ws in ws.map { $0.workout } }
 
         // Build a fake events array so PaceZoneConverter has dates to use
@@ -332,6 +332,11 @@ if mode == "pacedump" {
     let easyPace = Int(ProcessInfo.processInfo.environment["EASY_PACE"] ?? "390") ?? 390
     // 5K speed anchor for quality zones (Z4/Z5). nil → legacy race-pace anchoring.
     let speedPace = ProcessInfo.processInfo.environment["SPEED_PACE"].flatMap { Int($0) }
+    // Projected (race-week) anchors → VDOT progression. When set, paces interpolate
+    // current→projected across the plan. Unset → legacy fixed-anchor easing.
+    let racePaceEnd = ProcessInfo.processInfo.environment["RACE_PACE_END"].flatMap { Int($0) }
+    let easyPaceEnd = ProcessInfo.processInfo.environment["EASY_PACE_END"].flatMap { Int($0) }
+    let speedPaceEnd = ProcessInfo.processInfo.environment["SPEED_PACE_END"].flatMap { Int($0) }
 
     func fmtPace(_ secPerKm: Int) -> String {
         return String(format: "%d:%02d/km", secPerKm / 60, secPerKm % 60)
@@ -342,7 +347,7 @@ if mode == "pacedump" {
     print("================================\n")
 
     for c in filtered {
-        let plan = simulatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let startDate = Date()
         let endDate = Calendar.current.date(byAdding: .weekOfYear, value: c.weeks, to: startDate)!
 
@@ -374,7 +379,8 @@ if mode == "pacedump" {
         let paceEvents = PaceZoneConverter.applyPaceProgression(
             to: events, racePace: racePace, conversationalPace: easyPace,
             speedPace: speedPace,
-            config: progression, startDate: startDate, endDate: endDate
+            config: progression, startDate: startDate, endDate: endDate,
+            racePaceEnd: racePaceEnd, conversationalPaceEnd: easyPaceEnd, speedPaceEnd: speedPaceEnd
         )
 
         // Group by week
@@ -430,7 +436,7 @@ if mode == "pacedump" {
 
 // daydump: per-day calendar view via the REAL createMarathonPlanV3. This is
 // the only ground-truth check for the day-scheduler — plan_debug's other
-// modes call simulatePlanV3 which doesn't do day assignment.
+// modes call generatePlanV3 which doesn't do day assignment.
 if mode == "daydump" {
     let calendar = Calendar.current
     // Start on a Monday so weekday math is intuitive. Day 1 = Tue, ..., Day 6 = Sun.
@@ -520,7 +526,7 @@ if mode == "tolerance" {
 if mode == "aerobic" {
     print("\n========== AEROBIC MINUTES ==========")
     for c in filtered {
-        let plan = simulatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         print("=== \(c.label)  (\(c.weeks)w)")
         for (weekIdx, weekWorkouts) in plan.sorted(by: { $0.key < $1.key }) {
             for (_, w) in weekWorkouts {
@@ -687,6 +693,53 @@ if mode == "vdotpaces" {
     print("RACE_10K=\(v.tenKPaceSecondsPerKm)")
     print("RACE_21K=\(v.halfMarathonPaceSecondsPerKm)")
     print("RACE_42K=\(v.marathonPaceSecondsPerKm)")
+}
+
+// progress: VDOT-gain-driven pace progression for one runner+plan. Mirrors the
+// projection engine (newnessBoost + adaptationCeiling + saturating gain) to show
+// week-1 (current VDOT) vs race-week (projected VDOT) paces + the span seconds.
+//   DIST=5000 TIME=1500 LEVEL=beg TARGET=10000 WEEKS=12 ./plan_debug progress
+if mode == "progress" {
+    let dist = Int(ProcessInfo.processInfo.environment["DIST"] ?? "5000") ?? 5000
+    let time = Int(ProcessInfo.processInfo.environment["TIME"] ?? "1500") ?? 1500
+    let level = ProcessInfo.processInfo.environment["LEVEL"] ?? "beg"
+    let target = Int(ProcessInfo.processInfo.environment["TARGET"] ?? "\(dist)") ?? dist
+    let weeks = Int(ProcessInfo.processInfo.environment["WEEKS"] ?? "12") ?? 12
+    guard let v0 = VDOT.from(distanceMeters: dist, timeSeconds: time) else { print("bad DIST/TIME"); exit(1) }
+    func stim(_ lvl: String, _ d: Int) -> (mi: Double, q: Double) {
+        switch d {
+        case 0..<7500:      switch lvl { case "int": return (25,2); case "adv": return (35,3); case "cmp": return (40,3); default: return (15,1) }
+        case 7500..<15000:  switch lvl { case "int": return (35,2); case "adv": return (45,3); case "cmp": return (50,3); default: return (20,1) }
+        case 15000..<30000: switch lvl { case "int": return (40,2); case "adv": return (50,3); case "cmp": return (55,3); default: return (25,1) }
+        default:            switch lvl { case "int": return (45,2); case "adv": return (55,3); case "cmp": return (65,3); default: return (30,1) }
+        }
+    }
+    let baseCap = ["beg":8.0,"int":9.0,"adv":10.0,"cmp":8.0][level] ?? 8.0
+    let ceiling = VDOT.adaptationCeiling(baseCap: baseCap, current: v0)
+    let p = stim(level, target)
+    var perWeek = 0.005*p.mi + 0.04*p.q
+    if level == "cmp" { perWeek *= 0.5 }
+    perWeek *= VDOT.newnessBoost(current: v0)
+    let vdotGain = ceiling * (1.0 - exp(-(Double(weeks) * perWeek) / ceiling))
+    let vEnd = VDOT(value: v0.value + vdotGain)
+    func f(_ s: Int) -> String { String(format: "%d:%02d", s/60, s%60) }
+    func raceP(_ vd: VDOT) -> Int {
+        switch target { case 42195: return vd.marathonPaceSecondsPerKm; case 21097: return vd.halfMarathonPaceSecondsPerKm
+                         case 10000: return vd.tenKPaceSecondsPerKm; default: return vd.fiveKPaceSecondsPerKm }
+    }
+    func row(_ n: String, _ a: Int, _ b: Int) {
+        print("  \(n.padding(toLength: 10, withPad: " ", startingAt: 0)) \(f(a)) -> \(f(b))   (-\(a-b)s)")
+    }
+    print("LEVEL=\(level) TARGET=\(target)m WEEKS=\(weeks)  VDOT \(String(format:"%.1f",v0.value)) -> \(String(format:"%.1f",vEnd.value)) (gain \(String(format:"%.1f",vdotGain)), ceiling \(String(format:"%.1f",ceiling)))")
+    row("easy", v0.easyPaceSecondsPerKm, vEnd.easyPaceSecondsPerKm)
+    row("5K/speed", v0.fiveKPaceSecondsPerKm, vEnd.fiveKPaceSecondsPerKm)
+    row("threshold", v0.thresholdPaceSecondsPerKm, vEnd.thresholdPaceSecondsPerKm)
+    row("race", raceP(v0), raceP(vEnd))
+    // Machine-readable start (current VDOT) + end (projected VDOT) anchors so a
+    // generator can `eval` them straight into a pacedump run.
+    print("RACE_PACE=\(raceP(v0))");  print("EASY_PACE=\(v0.easyPaceSecondsPerKm)");  print("SPEED_PACE=\(v0.fiveKPaceSecondsPerKm)")
+    print("RACE_PACE_END=\(raceP(vEnd))"); print("EASY_PACE_END=\(vEnd.easyPaceSecondsPerKm)"); print("SPEED_PACE_END=\(vEnd.fiveKPaceSecondsPerKm)")
+    print("VDOT_START=\(String(format: "%.1f", v0.value))"); print("VDOT_END=\(String(format: "%.1f", vEnd.value))")
 }
 
 // phases: for each filtered plan, print the phase split + per-week load target
