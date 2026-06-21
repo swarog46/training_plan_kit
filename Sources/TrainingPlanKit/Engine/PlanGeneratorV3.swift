@@ -454,7 +454,6 @@ class PlanGeneratorV3 {
     var peakDur: Int = 0
     var taperDur: Int = 0
     var isMaintenance: Bool = false
-    var isBeginner: Bool = false
     // Progression-filtered catalog pool (the former hoisted local `allWorkouts`).
     // Renamed so it never shadows the ctor-input stored `allWorkouts`.
     var workoutPool: [Workout] = []
@@ -647,7 +646,6 @@ class PlanGeneratorV3 {
             return pool
         }()
 
-        isBeginner = config.runnerLevel == .beginner
 
         // Each plan type narrows its own quality pools (default: keep everything).
         (filteredIntervals, filteredThresholds) = config.profile.qualityPools(
