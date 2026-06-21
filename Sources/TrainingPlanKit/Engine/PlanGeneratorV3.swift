@@ -780,11 +780,8 @@ class PlanGeneratorV3 {
             // benefit from a periodic ~4-week TT cadence and where it also breaks PEAK
             // ladder repetition. 5K/10K (6-10 wk) keep just the single mid-plan
             // recalibration TT — one race-effort check is plenty for a short block.
-            // Skip the PEAK week the beginner half/marathon forces a race rehearsal
-            // onto (see long-run section) so a TT + a race-pace rehearsal don't stack
-            // into one brutal week — they sit in separate weeks instead.
-            let rehearsalWeekInPhase = (config.runnerLevel == .beginner && config.distance >= 21000 && peakDur >= 2)
-                ? max(1, (peakDur - 1) / 2) : -1
+            // (The beginner half/marathon rehearsal-week TT skip is handled in
+            // BeginnerPlanGenerator; here that guard is always inert so it's dropped.)
             // Competitive forces a race rehearsal onto even (and the last) PEAK weeks
             // (mirrors the long-run section's isMPSegmentWeek). Don't also drop a PEAK
             // time-trial there: the rehearsal already IS the race-effort check, so a
@@ -796,7 +793,6 @@ class PlanGeneratorV3 {
                 && (peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1)
             let peakTTWeek = config.distance >= 21000 && phase == .peak
                 && (weekInPhase % milestoneCadence) == milestoneCadence / 2
-                && weekInPhase != rehearsalWeekInPhase
                 && !competitiveRehearsalWeek
             let ttWeek = recalibTTWeek || peakTTWeek
 
@@ -1077,48 +1073,6 @@ class PlanGeneratorV3 {
             // Helper: Filter thresholds by progression (prefer shorter intervals early, longer later)
 
             if shouldAddIntervals {
-                if isBeginner {
-                    // Alternate: even weeks = intervals, odd = threshold.
-                    // On a Time Trial week, take the interval branch (even if it would
-                    // otherwise be a threshold/odd week) and prefer the TT subtype so
-                    // the recalibration checkpoint isn't lost to standard intervals
-                    // (Yasso is gated out entirely for beginners).
-                    if (week % 2 == 0 || ttWeek) && !intervalPool.isEmpty {
-                        let begPool: [Workout] = {
-                            if ttWeek {
-                                let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
-                                if !ttOnly.isEmpty { return ttOnly }
-                            }
-                            // PEAK = race sharpening. Bias 5K/10K beginners toward
-                            // race-specific neuromuscular work (strides @ ~5K pace)
-                            // and the tune-up time-trial; drop hill repeats, which
-                            // are a BASE-phase strength stimulus. Sustained race-pace
-                            // intervals (fivekPace, ~12k load) are intentionally NOT
-                            // in the beginner pool — too heavy for a ~9k-load week,
-                            // and the catalog has no beginner-dosed variant. Strides
-                            // are the injury-safe way a novice rehearses fast running
-                            // (Daniels/Higdon). Other distances keep the full pool.
-                            if phase == .peak && config.distance <= 10000 {
-                                let raceSpecific = intervalPool.filter { $0.subtype != .hillRepeats }
-                                if !raceSpecific.isEmpty { return raceSpecific }
-                            }
-                            return intervalPool
-                        }()
-                        if let interval = selectWorkoutByTargetV3(workouts: begPool, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.3), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("interval", interval))
-                            prevInterval = interval
-                        }
-                    } else if !filteredThresholds.isEmpty {
-                        // Apply progression filter to thresholds
-                        let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
-                        let thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
-
-                        if let threshold = selectWorkoutByTargetV3(workouts: thresholdPool, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.35), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("threshold", threshold))
-                            prevThreshold = threshold
-                        }
-                    }
-                } else {
                     // Intermediate/Advanced: Always add intervals.
                     //
                     // BASE phase prefers hill repeats (Higdon Advanced 1 / Lydiard
@@ -1376,7 +1330,6 @@ class PlanGeneratorV3 {
                     // long-run window — there is no placement that avoids back-
                     // to-back hard days. Pfitz 18/55 and 18/85 both prescribe
                     // 2 quality + LR-with-MP, not 3 + 1. Slot removed.
-                }
             }
 
             // LONG RUN
@@ -1397,27 +1350,13 @@ class PlanGeneratorV3 {
                     shouldAddLong = false
                 }
             } else if config.distance == 10000 {
-                if isBeginner {
-                    // 10K Beginner: weekly long run.
-                    // Older logic alternated (every other week) which reads as
-                    // missing-long-run-this-week noise in the calendar. Pfitz
-                    // and Higdon's beginner 10K plans both have weekly longs —
-                    // just shorter on cutback weeks. We get the cutback effect
-                    // naturally via phaseProgression / surprise weeks, so just
-                    // always schedule a long run in BASE/SPEED/PEAK.
-                    longRunTypes = [.long, .steadyLong]
-                    shouldAddLong = phase == .base || phase == .speed || phase == .peak
-                } else {
-                    // 10K Intermediate/Advanced: regular long runs
-                    longRunTypes = [.long, .steadyLong]
-                    if phase == .base { shouldAddLong = true }
-                }
+                // 10K Intermediate/Advanced: regular long runs (beginner 10K
+                // routes to BeginnerPlanGenerator, never here).
+                longRunTypes = [.long, .steadyLong]
+                if phase == .base { shouldAddLong = true }
             } else if config.distance >= 21000 {
-                // 21K+ Beginner: all long run types, every week
-                if isBeginner {
-                    longRunTypes = [.long, .steadyLong]
-                    shouldAddLong = phase == .base || phase == .speed || phase == .peak
-                }
+                // 21K+ Int/Adv/Cmp: keep the default long-run config (the
+                // beginner-only override is handled in BeginnerPlanGenerator).
             }
 
             // SPEED + PEAK: add progressiveLong to the pool for variety.
@@ -1463,9 +1402,9 @@ class PlanGeneratorV3 {
             // first matching subtype.
             if phase == .peak {
                 for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
-                where rehearsal.eligibleDistances.contains(config.distance)
-                    // 10K-pace rehearsal is a quality session — Int/Adv only.
-                    && !(isBeginner && rehearsal == .raceRehearsal10K) {
+                where rehearsal.eligibleDistances.contains(config.distance) {
+                    // 10K-pace rehearsal is Int/Adv only; beginner 10K never
+                    // reaches the base generator, so no beginner guard needed here.
                     longRunTypes.append(rehearsal)
                 }
                 // fastFinish: universal — long-ish easy + race-pace tail. The
@@ -1522,26 +1461,8 @@ class PlanGeneratorV3 {
                             || $0 == .progressiveLong || $0 == .fastFinish
                         }
                     }
-                } else if isBeginner && config.distance >= 21000 && peakDur >= 2 {
-                    // Beg 21K/42K: schedule one race rehearsal in mid-PEAK.
-                    // Pfitz "Just Finish" prescribes 1-2 race-pace tune-ups in
-                    // PEAK so the runner doesn't arrive at race day having never
-                    // run at goal pace. Without this, the selector picks steady
-                    // aerobic every week (load match dominates) and the runner
-                    // never gets a race-pace exposure. One rehearsal at the
-                    // midpoint is conservative — Pfitz Just Finish has more.
-                    let rehearsalWeekIdx = max(1, (peakDur - 1) / 2)
-                    if peakWeekIndex == rehearsalWeekIdx {
-                        // Also drop fastFinish: at the half's shorter peak-LR target it
-                        // out-matches raceRehearsalHM on load/duration and wins every
-                        // time, so the half never got a rehearsal (the marathon's longer
-                        // LR picks raceRehearsalM regardless). Removing it forces the
-                        // race-pace rehearsal for both distances.
-                        longRunTypes.removeAll {
-                            $0 == .steadyLong || $0 == .long || $0 == .progressiveLong || $0 == .fastFinish
-                        }
-                    }
                 }
+                // (Beg 21K/42K mid-PEAK rehearsal is handled in BeginnerPlanGenerator.)
             }
             
             // Surprise week: for short-race plans (5K/10K/21K) replace the long
@@ -1550,7 +1471,7 @@ class PlanGeneratorV3 {
             // shorten the long run cap so it still happens but lighter.
             var addedEasySurprise = false
             let isMarathon = config.distance >= 30000
-            if isSurpriseWeek && !isBeginner && !isMarathon {
+            if isSurpriseWeek && !isMarathon {
                 if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.12, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: isMaintenance) {
                     weekWorkouts.append(("easy_surprise", easy))
                     addedEasySurprise = true
@@ -1680,12 +1601,8 @@ class PlanGeneratorV3 {
                         }
                     }
                 } else {
-                    // 5K / maintenance: use initial range or weekly duration percentage
-                    if isBeginner {
-                        longRunTargetMins = Int.random(in: config.initialLongRunDuration)
-                    } else {
-                        longRunTargetMins = Int(targetDuration * 0.50)
-                    }
+                    // 5K (Adv, no longRunProgression): weekly-duration percentage.
+                    longRunTargetMins = Int(targetDuration * 0.50)
                 }
 
                 // LR load multiplier — bumped for competitive so the selector
@@ -1776,64 +1693,10 @@ class PlanGeneratorV3 {
                         }
                     }
                 } else if !easyRuns.isEmpty {
-                    // BEGINNER 5K/10K/21K + INTERMEDIATE: the 3rd slot is ALWAYS pure
-                    // easy. On a 2-3 day week (long + quality + maybe a 3rd) a progression
-                    // in the last slot leaves zero recovery whenever the quality slot is
-                    // hard — audit: Beg 10K W4 and Beg 21K rehearsal weeks ran threshold +
-                    // race-rehearsal-long + progression (3 hard, no easy). At 4 days/wk
-                    // Int already carries 2 quality + a race-pace long, same problem.
-                    // Variety comes from the rotating long-run type + quality slots.
-                    // ONLY Beginner 42K (4 days) gets an occasional 3rd-slot progression —
-                    // its 4th slot stays easy, preserving a recovery day (TT weeks too).
-                    if config.distance >= 42000 && isBeginner && progressionWeek && !ttWeek {
-                        // 21K+: Progress from 40 → 90 mins (can go up to 3 hours)
-                        let progressionTargetMins: Int
-                        switch phase {
-                        case .base:
-                            progressionTargetMins = 40
-                        case .speed:
-                            let speedWeekIndex = week - baseDur
-                            let speedProgress = Double(speedWeekIndex) / Double(max(speedDur - 1, 1))
-                            progressionTargetMins = 40 + Int(25.0 * speedProgress)  // 40→65
-                        case .peak:
-                            let peakWeekIndex = week - baseDur - speedDur
-                            let peakProgress = Double(peakWeekIndex) / Double(max(peakDur - 1, 1))
-                            progressionTargetMins = 65 + Int(25.0 * peakProgress)  // 65→90
-                        case .taper, .race:
-                            progressionTargetMins = 40
-                        }
-
-                        // Filter for progression runs within ±10 mins of target, minimum 40 mins
-                        var progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
-                            .filter { $0.duration >= 40 * 60 }  // Minimum 40 mins
-                            .filter { abs(Int($0.duration) / 60 - progressionTargetMins) <= 10 }
-                        if config.distance < 42000 {
-                            progressivePool = progressivePool.filter { $0.duration <= 70 * 60 }  // Cap at 1h10m for <42K
-                        }
-                        if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.18, targetDuration: progressionTargetMins, usedIds: &usedIds, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("progressive_beginner", progressive))
-                        } else if !addedEasySurprise, let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                            weekWorkouts.append(("easy", easy))
-                        }
-                    } else if config.distance == 5000 && isBeginner {
-                        // 5K beginner: Add short progression runs in week 2 and second half
-                        let shouldAddProgression = (week == 1) || (week >= actualWeeksToGenerate / 2 && week % 3 == 0)
-                        if shouldAddProgression {
-                            // Short progression runs (40-50 mins)
-                            let progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
-                                .filter { $0.duration >= 40 * 60 && $0.duration <= 50 * 60 }
-                            if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.15, targetDuration: 45, usedIds: &usedIds, isMaintenance: isMaintenance) {
-                                weekWorkouts.append(("progressive_5k_beginner", progressive))
-                            } else if !addedEasySurprise, let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                                weekWorkouts.append(("easy", easy))
-                            }
-                        } else {
-                            // Regular easy run
-                            if !addedEasySurprise, let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: isMaintenance) {
-                                weekWorkouts.append(("easy", easy))
-                            }
-                        }
-                    } else {
+                    // INTERMEDIATE (beginner routes to BeginnerPlanGenerator): the
+                    // 3rd slot is pure easy. At 4 days/wk Int already carries 2
+                    // quality + a race-pace long, so a progression here would leave
+                    // zero recovery. Variety comes from the rotating long-run type.
                         // Default: easy run (fill remaining slots).
                         // Competitive plans bump the load multiplier from 0.15
                         // to 0.30 so the selector targets ~6000 load (matches
@@ -1895,7 +1758,6 @@ class PlanGeneratorV3 {
                         if let easy = selectWorkoutByTargetV3(workouts: finalPool, targetLoad: targetLoad * easyLoadMult, targetDuration: easyTargetDur, usedIds: &usedIds, isMaintenance: isMaintenance) {
                             weekWorkouts.append(("easy", easy))
                         }
-                    }
                 }
             }
             
