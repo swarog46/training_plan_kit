@@ -41,8 +41,9 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
         let totalLoad = ws.reduce(0) { $0 + Int($1.workout.trainingLoad) }
         let totalMin  = ws.reduce(0) { $0 + Int($1.workout.duration) } / 60
         let phaseLen = phaseLength(phase, base: baseDur, speed: speedDur, peak: peakDur, taper: taperDur)
+        let phaseLabel = phase.displayName(isMaintenance: config.distance == 0)
         print(String(format: "W%2d [%@ %d/%d] %dwkts load=%5d %3dmin",
-                     week + 1, phase.rawValue, weekInPhase + 1, phaseLen,
+                     week + 1, phaseLabel, weekInPhase + 1, phaseLen,
                      ws.count, totalLoad, totalMin))
         for w in ws {
             let dur = Int(w.workout.duration) / 60

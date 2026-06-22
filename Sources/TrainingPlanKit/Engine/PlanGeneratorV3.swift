@@ -251,7 +251,15 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         // training loads a 15% drop is invisible; 25% is what Pfitz's
         // cutback weeks actually deliver.
         let increasePercent = (config.weeklyLoadIncreasePercent.lowerBound + config.weeklyLoadIncreasePercent.upperBound) / 2
-        let progressionFactor = 1.0 + (phaseProgression * increasePercent / 100 * 5)
+        // Anchor the cut to the PRIOR week's progression (not this week's still-
+        // rising one) when the profile asks for an explicit dip — otherwise a
+        // steady ramp climbs straight through the 0.85× cut and the cutback is
+        // invisible. Reference week = weekInPhase-1, so recovery lands clearly
+        // below the prior week. Fitter tiers keep the trajectory-relative cut.
+        let refWeekInPhase = config.profile.cutbackDipsBelowPriorWeek
+            ? Double(max(0, weekInPhase - 1)) : Double(weekInPhase)
+        let refProgression = min(1.0, refWeekInPhase / Double(safePhasePhase))
+        let progressionFactor = 1.0 + (refProgression * increasePercent / 100 * 5)
         let recoveryMult = config.profile.recoveryWeekLoadMultiplier
         load = baseLoad * phaseBoost * progressionFactor * recoveryMult
         duration = duration * phaseBoost * progressionFactor * recoveryMult
@@ -554,6 +562,40 @@ class PlanGeneratorV3 {
                 return numIntervals <= 3 && intervalDuration >= 10
             }
         }
+    }
+
+    // Apply the long-run monotonic constraint, returning the narrowed pool.
+    // BASE/SPEED/PEAK: this week's LR may not be meaningfully shorter than last
+    // week's (5min slack absorbs selector noise / phase-target movement).
+    // TAPER + RACE: must not be longer than last week's.
+    //
+    // When the strict monotonic floor empties the pool (e.g. a mid-block cutback
+    // week whose only ≈peak-length option was a rehearsal that's filtered out of
+    // this week's subtypes), don't fall all the way back to the 60min catalog
+    // floor — that snaps the long run to ~9km mid-marathon. Instead floor a
+    // BUILD-phase cutback long run at ~65% of the surrounding peak (prevLongRun),
+    // so the long-run thread stays continuous through the down-week.
+    func applyLongRunMonotonic(pool: [Workout], phase: TrainingPhase, prevLongRunMins: Int) -> [Workout] {
+        guard prevLongRunMins > 0 else { return pool }
+        let monotonicPool: [Workout]
+        switch phase {
+        case .base:
+            monotonicPool = pool.filter { Int($0.duration / 60) >= prevLongRunMins }
+        case .speed, .peak:
+            let floor = max(0, prevLongRunMins - 5)
+            monotonicPool = pool.filter { Int($0.duration / 60) >= floor }
+        case .taper, .race:
+            let ceiling = prevLongRunMins + 5
+            let capped = pool.filter { Int($0.duration / 60) <= ceiling }
+            return capped.isEmpty ? pool : capped
+        }
+        if !monotonicPool.isEmpty { return monotonicPool }
+        // Strict floor emptied the pool. In BUILD phases keep a continuous long
+        // run by flooring at 65% of the prior (≈peak) long run instead of the
+        // 60min minimum. TAPER/RACE already returned above.
+        let cutbackFloor = Int(Double(prevLongRunMins) * 0.65)
+        let floored = pool.filter { Int($0.duration / 60) >= cutbackFloor }
+        return floored.isEmpty ? pool : floored
     }
 
     func generate() -> [Int: [(type: String, workout: Workout)]] {

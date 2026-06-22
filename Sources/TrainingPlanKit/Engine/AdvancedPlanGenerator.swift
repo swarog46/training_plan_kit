@@ -477,10 +477,14 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 // Longest-run cap is declared per-plan on the config as one readable
                 // (distance, level) table — see PlanConfiguration.maxLongRunMinutes.
                 var maxDurationMins = config.maxLongRunMinutes
-                // Marathon surprise weeks: shorten the long run instead of skipping
-                // it (5d). 90min keeps the aerobic stimulus without the recovery cost.
+                // Marathon surprise/cutback weeks: shorten the long run instead of
+                // skipping it (5d). Cap at 90min for the aerobic stimulus without the
+                // recovery cost — but never below ~65% of the surrounding peak long
+                // run, so a mid-block cutback doesn't collapse to the 60min floor
+                // (~9km) and break the long-run thread.
                 if isSurpriseWeek && isMarathon {
-                    maxDurationMins = min(maxDurationMins, 90)
+                    let cutbackFloor = Int(Double(prevLongRunMins) * 0.65)
+                    maxDurationMins = min(maxDurationMins, max(90, cutbackFloor))
                 }
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
 
@@ -567,31 +571,10 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 // (load ~10700) wins against a 150min steadyLong (load ~14500)
                 // even when the duration target is 160min.
                 let lrLoadMult = config.profile.longRunSnapLoadFraction
-                // Monotonic enforcement. BASE/SPEED/PEAK: this week's LR may not
-                // be meaningfully shorter than last week's (5min slack absorbs
-                // selector noise / phase-target movement). TAPER + RACE: must
-                // not be longer than last week's. First long run of plan skips.
-                if prevLongRunMins > 0 {
-                    let monotonicPool: [Workout]
-                    switch phase {
-                    case .base:
-                        // Strict non-decreasing in BASE. The early-base ramp sets a
-                        // gently rising target, but the load selector (which favours
-                        // shorter runs while early targetLoad is low) would otherwise
-                        // drift the long run DOWN within the 5min slack — a visible
-                        // backward step at plan start. No slack here.
-                        monotonicPool = pool.filter { Int($0.duration / 60) >= prevLongRunMins }
-                    case .speed, .peak:
-                        let floor = max(0, prevLongRunMins - 5)
-                        monotonicPool = pool.filter { Int($0.duration / 60) >= floor }
-                    case .taper, .race:
-                        let ceiling = prevLongRunMins + 5
-                        monotonicPool = pool.filter { Int($0.duration / 60) <= ceiling }
-                    }
-                    // Fall back to the unconstrained pool if the monotonic filter
-                    // empties it (catalog limit / aggressive phase target).
-                    if !monotonicPool.isEmpty { pool = monotonicPool }
-                }
+                // Monotonic enforcement (shared): non-decreasing in BUILD, non-
+                // increasing in TAPER/RACE, with a 65%-of-peak cutback floor so a
+                // down-week long run never collapses to the 60min catalog minimum.
+                pool = applyLongRunMonotonic(pool: pool, phase: phase, prevLongRunMins: prevLongRunMins)
                 if let longRun = selectWorkoutByTargetV3(workouts: pool, targetLoad: targetLoad * lrLoadMult, targetDuration: longRunTargetMins, usedIds: &usedIds, isMaintenance: false) {
                     weekWorkouts.append(("long", longRun))
                     prevLongRunMins = Int(longRun.duration / 60)

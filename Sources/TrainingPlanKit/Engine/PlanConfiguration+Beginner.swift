@@ -95,7 +95,10 @@ extension PlanConfiguration {
             taperDeloadPercent: 35,
             initialWeeklyDuration: 120,
             initialLongRunDuration: 35...40,
-            maxLongRunMinutes: 90,
+            // Raised 90→100 so a beginner half LR reaches ~15km instead of being
+            // clamped to the 60min catalog floor all plan. The 100min
+            // progressiveLong becomes selectable in SPEED/PEAK, so the LR climbs.
+            maxLongRunMinutes: 100,
             longRunProgression: (base: 60, speed: 90, peak: 120, taper: 60),
             baseLoad: 4500
         )
@@ -137,6 +140,10 @@ public struct BeginnerProfile: PlanProfile {
     public init() {}
     public var intervalRestCapSeconds: Int { 75 }   // beginners tolerate longer rests
     public var hasSurpriseProgressiveWeeks: Bool { false }  // steadier ramp
+    // Steadier ramp ⇒ no quality-week sawtooth to make cutbacks visible, so the
+    // mid-phase recovery week must explicitly dip below the prior week (long
+    // beginner 42K/10K builds otherwise climb straight through their cutback).
+    public var cutbackDipsBelowPriorWeek: Bool { true }
     public var startsIntervalsInBase: Bool { false }        // aerobic base first
     public var alternatesMilestoneInBase: Bool { false }    // plain base
     public func minIntervalMinutes(phase: TrainingPhase) -> Int {

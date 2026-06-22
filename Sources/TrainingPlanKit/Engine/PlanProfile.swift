@@ -29,6 +29,13 @@ public protocol PlanProfile {
     var alternatesMilestoneInBase: Bool { get }
     /// Load multiplier applied on recovery/deload weeks (competitive cuts harder).
     var recoveryWeekLoadMultiplier: Double { get }
+    /// Whether a mid-phase recovery week should dip BELOW the prior week (anchored
+    /// to the previous week's progression level, then cut) rather than just cutting
+    /// the current week's still-rising trajectory. The fitter tiers already show a
+    /// week-to-week sawtooth from their quality-week alternation, so their recovery
+    /// stays trajectory-relative; the steadier beginner builds need the explicit
+    /// dip or the cutback is mathematically invisible (climbs right through it).
+    var cutbackDipsBelowPriorWeek: Bool { get }
     /// Load fraction used when snapping a too-light long run to the nearest
     /// aerobic run (competitive uses a higher fraction).
     var longRunSnapLoadFraction: Double { get }
@@ -48,6 +55,7 @@ public extension PlanProfile {
     var startsIntervalsInBase: Bool { true }
     var alternatesMilestoneInBase: Bool { true }
     var recoveryWeekLoadMultiplier: Double { 0.85 }
+    var cutbackDipsBelowPriorWeek: Bool { false }
     var longRunSnapLoadFraction: Double { 0.35 }
     func minIntervalMinutes(phase: TrainingPhase) -> Int { 22 }   // competitive/default
     func qualityPools(intervals: [Workout], thresholds: [Workout],
