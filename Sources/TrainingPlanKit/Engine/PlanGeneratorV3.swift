@@ -2,7 +2,6 @@
 //  PlanGeneratorV3.swift
 //  RunPlan
 //
-//  1:1 Port of Python analyze_plan.py
 //  Created by AI on 28/12/2024.
 //
 
@@ -28,12 +27,9 @@ public struct SeededRandomNumberGenerator: RandomNumberGenerator {
 public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
     // Taper is fixed — longer plans get more training, not more taper
     var taper = config.minTaperPhaseWeeks
-    // Marathon taper floor: a 3-week Pfitzinger ramp-down. The long-run
-    // progression peaks at the last PEAK week and can only step down in taper
-    // (monotonic build), so a 2-week taper lands the longest run just 2 weeks
-    // out — too close to absorb. Floor marathon tapers at 3 so the peak long
-    // run sits ~3 weeks from race day. Half/shorter keep shorter tapers (less
-    // volume to shed); Cmp marathons already ship 3.
+    // Marathon: floor the taper at 3 weeks. Long runs build monotonically and
+    // peak at the last PEAK week, so a 2-week taper lands the longest run only
+    // ~2 weeks out — too close to absorb. (Half/shorter shed less; keep theirs.)
     if config.distance >= 30000 {
         taper = max(taper, 3)
     }
@@ -413,14 +409,8 @@ func filterWorkoutsBySubtypeV3(workouts: [Workout], subtypes: [WorkoutSubtype]) 
     return workouts.filter { subtypes.contains($0.subtype) }
 }
 
-// MARK: - Main Plan Generation (mirrors simulate_plan)
+// MARK: - Plan Generators
 
-/// `adaptive` controls whether paid-tier subtypes (raceRehearsalM/HM/10K,
-/// timeTrial, mileRepeats, yasso800, marathonPace) are eligible for selection. Defaults
-/// to `true` for back-compat — callers will start passing the entitlement
-/// state once StoreKit lands. Per-distance eligibility (e.g. yasso 800s only
-/// in marathon plans) applies regardless of this flag — see WorkoutSubtype
-/// .eligibleDistances.
 /// Base plan generator. Holds the generic skeleton (phase math, pools, the
 /// week loop, finalization) shared by every plan type. Per-type generators
 /// subclass this and override only the parts that differ — no cross-type
@@ -491,21 +481,15 @@ class PlanGeneratorV3 {
 
     // MARK: - Helpers (moved from generate(); read instance/config state)
 
-    // Subtype gating, two axes:
-    //   1. Per-distance eligibility — `WorkoutSubtype.eligibleDistances`
-    //      (marathonPace/yasso800/raceRehearsal: marathon-only; mileRepeats:
-    //      10K+; etc.). Applies regardless of paywall — yasso 800s in a 5K
-    //      plan would be nonsensical even for a paid user.
-    //   2. Adaptive paywall — `WorkoutSubtype.isAdaptiveOnly`. Free plans
-    //      skip the 5 paid-tier subtypes (raceRehearsal, timeTrial,
-    //      mileRepeats, yasso800, marathonPace). Driven by the `adaptive`
-    //      flag passed in, default true today.
+    // Two gates: per-distance eligibility (`eligibleDistances` — e.g.
+    // marathonPace/yasso800 are marathon-only) and the adaptive paywall
+    // (`isAdaptiveOnly` — free plans skip the 5 paid subtypes when !adaptive).
     func isSubtypeEligible(_ subtype: WorkoutSubtype) -> Bool {
         if !adaptive && subtype.isAdaptiveOnly { return false }
         return subtype.eligibleDistances.contains(config.distance)
     }
 
-    // Filter out HR zone 5 for beginners (helper function)
+    // True if any work interval targets HR zone 5.
     func hasZone5(_ workout: Workout) -> Bool {
         for interval in workout.intervals {
             if interval.target == TargetRange.heartRateZone(zone: 5) {
@@ -520,12 +504,9 @@ class PlanGeneratorV3 {
         w.subtype != .strides && hasZone5(w)
     }
 
-    // Filter intervals by max rest per runner level. Only applies to the
-    // VO2max-style subtypes (intervals/pyramidIntervals/ladderIntervals)
-    // that get their stimulus from short-rest density. Hill repeats,
-    // yasso 800s, mile repeats, and time trials are designed with long
-    // recoveries by construction — exempt them from this filter or they
-    // get excluded for advanced runners (60s rest cap).
+    // Rest cap applies only to density-dependent VO2 subtypes (intervals/
+    // pyramid/ladder). Hills/yasso/mile-reps/TTs use long recoveries by
+    // design — exempt, or they'd vanish under the 60s advanced cap.
     func filterIntervalsByMaxRest(_ workouts: [Workout], maxRest: Int) -> [Workout] {
         workouts.filter { workout in
             guard restGatedSubtypes.contains(workout.subtype) else { return true }
@@ -537,10 +518,8 @@ class PlanGeneratorV3 {
         }
     }
 
-    // Climb one variant per ~2 plan weeks (load-sorted) across BASE+SPEED so
-    // the load-target selector can't park on the cheapest template. Absolute
-    // week (not weekInPhase) so the ramp continues base → speed. Applied to
-    // BOTH hills and ladders — both have many same-subtype catalog variants.
+    // Ramp one load-sorted variant per ~2 plan weeks (absolute week, BASE+
+    // SPEED) so the selector can't park on the cheapest hill/ladder template.
     func rampVariantsByPlanWeek(_ pool: [Workout], week: Int) -> [Workout] {
         var byTitle: [String: Workout] = [:]
         for w in pool where byTitle[w.title] == nil { byTitle[w.title] = w }
@@ -621,13 +600,8 @@ class PlanGeneratorV3 {
             .fastFinish,
         ].filter(isSubtypeEligible)
 
-        // Easy pool intentionally includes mediumLong + recovery — these are
-        // semantic splits of what was previously a single `easy` subtype
-        // (recovery for ≤45min, easy for 46-80min, mediumLong for >80min).
-        // The selector still chooses by load+duration target, so the right
-        // bucket gets picked automatically. The split surfaces in UI titles
-        // ("Recovery Run", "Easy Run", "Medium-Long Run") — runners see
-        // the Pfitz/Daniels semantic category, not a generic "Easy Run".
+        // Easy pool spans recovery/easy/mediumLong (semantic splits of `easy`
+        // by duration); the selector picks the right bucket by load+duration.
         easySubtypes = [.easy, .strides, .recovery, .mediumLong].filter(isSubtypeEligible)
 
         isMaintenance = config.distance == 0  // no race target
@@ -708,7 +682,8 @@ class PlanGeneratorV3 {
 }
 
 /// Free-function entry point kept for callers (API, CLI, createMarathonPlanV3).
-/// Delegates to the per-type generator chosen by `make`.
+/// Delegates to the per-type generator chosen by `make`. `adaptive` (default
+/// true) gates the 5 paid-tier subtypes; per-distance eligibility applies regardless.
 public func generatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkouts: [Workout], adaptive: Bool = true) -> [Int: [(type: String, workout: Workout)]] {
     PlanGeneratorV3.make(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive).generate()
 }
