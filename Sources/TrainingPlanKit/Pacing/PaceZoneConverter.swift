@@ -330,7 +330,16 @@ public struct PaceZoneConverter {
                 // or a marathon (Daniels/Pfitzinger). Anchoring these to goal pace
                 // made marathon "intervals" run at marathon pace.
                 let relative: Double
-                if subtype == .strides {
+                if subtype == .fastFinish, interval.type == .work {
+                    // Fast-finish long run: the fast tail is tagged Z4 (HR ≈ LT)
+                    // but the intent is a 5K-effort surge to close — not a
+                    // threshold grind. Render the work segment FLAT at ~5K pace
+                    // (1.00× the 5K-speed anchor) so it reads clearly faster than
+                    // the threshold pace the Z4 tag would otherwise give. The easy
+                    // portion is tagged Z2 and stays easy via the race-anchored
+                    // path below. Anchor still moves current→projected VDOT.
+                    relative = 1.00
+                } else if subtype == .strides {
                     // Strides: short (≤30s) neuromuscular accelerations run with
                     // full recovery — pure leg-speed / form work, NOT a progressive
                     // VO2 stimulus. Price at ~0.85× 5K speed (≈ 800m–mile effort —
@@ -451,7 +460,8 @@ public struct PaceZoneConverter {
         speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
         config: PaceProgressionConfig = .intermediate,
-        vdotAnchored: Bool = false
+        vdotAnchored: Bool = false,
+        raceDistanceMeters: Int? = nil
     ) -> Workout {
         let convertedIntervals = workout.intervals.map { interval in
             convertIntervalToPace(
@@ -466,7 +476,7 @@ public struct PaceZoneConverter {
             )
         }
 
-        return Workout(
+        let converted = Workout(
             id: workout.id,
             title: workout.title,
             type: workout.type,
@@ -481,6 +491,89 @@ public struct PaceZoneConverter {
             workRestRatio: workout.workRestRatio,
             workDuration: workout.workDuration,
             restDuration: workout.restDuration,
+            workDistance: workout.workDistance,
+            restDistance: workout.restDistance
+        )
+
+        return clampLongRunDistance(converted,
+                                    conversationalPace: conversationalPace,
+                                    raceDistanceMeters: raceDistanceMeters)
+    }
+
+    /// Long-run subtypes whose duration is generated pace-blind (in minutes)
+    /// and therefore needs a per-distance KM window applied at render so a fast
+    /// runner's marathon long run doesn't balloon to 45+ km and a slow runner's
+    /// doesn't shrink below the aerobic-development floor.
+    private static let longRunSubtypes: Set<WorkoutSubtype> = [
+        .long, .steadyLong, .progressiveLong,
+        .raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K, .fastFinish
+    ]
+
+    /// Clamps a long run into a per-distance KM window [floorKm, capKm].
+    ///
+    /// Long runs are generated in MINUTES (pace-blind); at render the runner's
+    /// easy pace turns those minutes into distance. A fast runner overshoots the
+    /// useful long-run distance, a slow runner falls short. This trims fast
+    /// runners DOWN to the cap and extends slow runners UP to the floor by
+    /// scaling the workout's (and each interval's) duration uniformly — paces,
+    /// targets and the easy/fast split are preserved. There is NO flat time
+    /// ceiling; the KM window governs.
+    private static func clampLongRunDistance(
+        _ workout: Workout,
+        conversationalPace: Int?,
+        raceDistanceMeters: Int?
+    ) -> Workout {
+        guard longRunSubtypes.contains(workout.subtype) else { return workout }
+        // Easy pace anchors the minutes→km conversion. No easy pace → can't
+        // know the distance, so leave the (minutes-based) workout untouched.
+        guard let easyPace = conversationalPace, easyPace > 0 else { return workout }
+
+        // Per-distance window [floorKm, capKm]. Marathon/half floor brings slow
+        // runners up to race-relevant distance; 10K/5K are cap-only (their long
+        // run wasn't short, and a floor would inflate it past Higdon norms).
+        let floorKm: Double, capKm: Double
+        switch raceDistanceMeters {
+        case 42195: (floorKm, capKm) = (30, 34)
+        case 21097: (floorKm, capKm) = (16, 21)
+        case 10000: (floorKm, capKm) = (0, 16)
+        case 5000:  (floorKm, capKm) = (0, 12)
+        default:    (floorKm, capKm) = (0, 34)
+        }
+
+        let km = Double(workout.duration) / Double(easyPace)
+        let targetKm = min(max(km, floorKm), capKm)
+        guard abs(targetKm - km) >= 0.1 else { return workout }
+
+        let newDurationSec = Int(targetKm * Double(easyPace))
+        let factor = Double(newDurationSec) / Double(workout.duration)
+
+        func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
+        let scaledIntervals = workout.intervals.map { iv in
+            WorkoutInterval(
+                id: iv.id,
+                type: iv.type,
+                duration: iv.duration * factor,
+                distance: iv.distance,
+                targetType: iv.targetType,
+                target: iv.target
+            )
+        }
+
+        return Workout(
+            id: workout.id,
+            title: workout.title,
+            type: workout.type,
+            subtype: workout.subtype,
+            trainingType: workout.trainingType,
+            targetType: workout.targetType,
+            duration: Int64(newDurationSec),
+            distance: workout.distance,
+            key: workout.key,
+            trainingLoad: scale(workout.trainingLoad),
+            intervals: scaledIntervals,
+            workRestRatio: workout.workRestRatio,
+            workDuration: scale(workout.workDuration),
+            restDuration: scale(workout.restDuration),
             workDistance: workout.workDistance,
             restDistance: workout.restDistance
         )
@@ -515,7 +608,8 @@ public struct PaceZoneConverter {
         endDate: Date,
         racePaceEnd: Int? = nil,
         conversationalPaceEnd: Int? = nil,
-        speedPaceEnd: Int? = nil
+        speedPaceEnd: Int? = nil,
+        raceDistanceMeters: Int? = nil
     ) -> [WorkoutEvent] {
         let totalDuration = endDate.timeIntervalSince(startDate)
 
@@ -550,7 +644,8 @@ public struct PaceZoneConverter {
                 speedPace: speedPaceNow,
                 progressionFactor: progressionFactor,
                 config: config,
-                vdotAnchored: vdotAnchored
+                vdotAnchored: vdotAnchored,
+                raceDistanceMeters: raceDistanceMeters
             )
 
             // Create updated event
