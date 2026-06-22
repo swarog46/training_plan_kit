@@ -11,11 +11,9 @@ import Foundation
 
 final class MaintenancePlanGenerator: PlanGeneratorV3 {
     override func buildWeek(week: Int) {
-        // `repeat { … } while false` preserves the former for-loop's `continue`
-        // semantics now that the per-week body is a standalone method: a
-        // `continue` (maintenance / race week) skips the rest of the body and
-        // falls through to the (false) while-check, exactly as it skipped to the
-        // next loop iteration before. Behavior is byte-identical.
+        // `repeat { … } while false` lets `continue` (end of the maintenance block)
+        // skip the rest of the body and fall through, as it did in the former
+        // per-week for-loop.
         repeat {
             let phaseInfo = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
             let phase = phaseInfo.phase
@@ -24,14 +22,10 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
             // Detect phase transition
             let phaseJustStarted = prevPhase != nil && phase != prevPhase!
             if phaseJustStarted {
-                // Reset variety tracking at phase boundaries — encourages reuse
-                // of pool workouts within each phase. Previously tried persisting
-                // across phases for competitive to push variety harder, but
-                // that interacted badly with the cumulative penalty: heavily-
-                // penalized "good match" workouts gave way to short easies that
-                // dragged total volume down (~5% drop for Cmp 42K rec). Keep
-                // the per-phase reset; cumulative penalty within a phase is
-                // enough.
+                // Reset variety tracking at phase boundaries — encourages reuse of
+                // pool workouts within each phase. Persisting across phases interacts
+                // badly with the cumulative penalty (good matches give way to short
+                // easies, dragging volume down), so keep the per-phase reset.
                 usedIds.removeAll()
             }
             prevPhase = phase
@@ -86,8 +80,6 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
             // benefit from a periodic ~4-week TT cadence and where it also breaks PEAK
             // ladder repetition. 5K/10K (6-10 wk) keep just the single mid-plan
             // recalibration TT — one race-effort check is plenty for a short block.
-            // (The beginner half/marathon rehearsal-week TT skip is handled in
-            // BeginnerPlanGenerator; here that guard is always inert so it's dropped.)
             // Competitive forces a race rehearsal onto even (and the last) PEAK weeks
             // (mirrors the long-run section's isMPSegmentWeek). Don't also drop a PEAK
             // time-trial there: the rehearsal already IS the race-effort check, so a
@@ -276,7 +268,7 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                     }
                 }
 
-                // Cap strides at 1/week (same logic applied to race plans below)
+                // Cap strides at 1/week
                 let stridesIdx = weekWorkouts.indices.filter { weekWorkouts[$0].workout.subtype == .strides }
                 if stridesIdx.count > 1 {
                     let plainEasy = easyRuns.filter { $0.subtype == .easy }

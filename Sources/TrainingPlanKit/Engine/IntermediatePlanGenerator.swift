@@ -11,11 +11,8 @@ import Foundation
 
 final class IntermediatePlanGenerator: PlanGeneratorV3 {
     override func buildWeek(week: Int) {
-        // `repeat { … } while false` preserves the former for-loop's `continue`
-        // semantics now that the per-week body is a standalone method: a
-        // `continue` (maintenance / race week) skips the rest of the body and
-        // falls through to the (false) while-check, exactly as it skipped to the
-        // next loop iteration before. Behavior is byte-identical.
+        // `repeat { … } while false` lets `continue` (race week) skip the rest
+        // of the body and fall through, as it did in the former per-week for-loop.
         repeat {
             let phaseInfo = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
             let phase = phaseInfo.phase
@@ -24,14 +21,10 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             // Detect phase transition
             let phaseJustStarted = prevPhase != nil && phase != prevPhase!
             if phaseJustStarted {
-                // Reset variety tracking at phase boundaries — encourages reuse
-                // of pool workouts within each phase. Previously tried persisting
-                // across phases for competitive to push variety harder, but
-                // that interacted badly with the cumulative penalty: heavily-
-                // penalized "good match" workouts gave way to short easies that
-                // dragged total volume down (~5% drop for Cmp 42K rec). Keep
-                // the per-phase reset; cumulative penalty within a phase is
-                // enough.
+                // Reset variety tracking at phase boundaries — encourages reuse of
+                // pool workouts within each phase. Persisting across phases interacts
+                // badly with the cumulative penalty (good matches give way to short
+                // easies, dragging volume down), so keep the per-phase reset.
                 usedIds.removeAll()
             }
             prevPhase = phase
@@ -177,13 +170,9 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             let isRaceWeek = phase == .race
                 || (phase == .taper && isLastWeekOfPlan)
             if isRaceWeek {
-                // Pfitz race week: 3-4 short sessions before race day, not 2.
-                // 18/55 sub-3:00 race week: Tue 7mi tune-up, Wed 5mi w/MP repeats,
-                // Thu 4mi easy, Fri 3mi easy, Sat 2mi shakeout, Sun RACE. That's
-                // 4-5 sessions of running not counting the race. We compromise at
-                // 3 sessions: 1 progression (tune-up), 1 easy + strides (Pfitz's
-                // "MP repeats" idea), 1 short shakeout. Total ~120min — matches
-                // Pfitz's ~25km race-week mileage at light pace.
+                // Pfitz-style race week: 3 short sessions before race day — a
+                // progression tune-up, an easy + strides, and a short shakeout.
+                // Total ~120min, matching Pfitz's ~25km race-week mileage at light pace.
                 let numWorkouts = min(3, maxWorkoutsPerWeek)
                 for i in 0..<numWorkouts {
                     if i == 0 {
@@ -202,26 +191,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                             weekWorkouts.append(("shakeout_race", shakeout))
                         }
                     } else {
-                        // Second workout: easy run, hard-capped at 50min duration.
-                        //
-                        // The unbounded `targetDuration * 0.30` math works fine
-                        // for shorter plans but for competitive 42K it lands
-                        // around 90min — a 22km shake-out three days before a
-                        // sub-3:00 marathon, which would crater the race itself.
-                        // Pfitz 18/70 race week tops out at ~40min on its longest
-                        // easy day.
-                        //
-                        // Two changes from a normal-week easy:
-                        //   1. Pool: bypass the global competitive
-                        //      `duration >= 60min` filter (which exists to enforce
-                        //      the Pfitz MLR pattern in normal weeks). Race week
-                        //      is the one place that filter is wrong.
-                        //   2. Hard-filter the pool to `duration <= 50min` before
-                        //      we hand it to the selector. Without this filter
-                        //      the selector picks the 90-110min options because
-                        //      they score better against the (still elevated)
-                        //      race-week targetLoad — the duration target alone
-                        //      doesn't win against load.
+                        // Second workout: easy run, hard-capped at 50min. The unbounded
+                        // `targetDuration * 0.30` lands ~90min for competitive 42K — too
+                        // long 3 days pre-race. So bypass the global >= 60min easy filter
+                        // AND hard-filter the pool to <= 50min before the selector, or
+                        // load scoring picks the 90-110min options over the duration target.
                         let raceEasyPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                             .filter { $0.duration <= 50 * 60 }
                         let raceEasyTarget = min(Int(targetDuration * 0.30), 40 * 60)
@@ -245,20 +219,10 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             // Helper: Filter thresholds by progression (prefer shorter intervals early, longer later)
 
             if shouldAddIntervals {
-                    // Intermediate/Advanced: Always add intervals.
-                    //
-                    // BASE phase prefers hill repeats (Higdon Advanced 1 / Lydiard
-                    // strength foundation): hills build leg strength + power
-                    // without VO2max stress. Falls back to plain intervals if
-                    // no hills available. Hills alternate with other interval
-                    // work across BASE weeks for all non-beginner tiers — five
-                    // consecutive weeks of the same hill template reads as a
-                    // single workout on rotate, regardless of which methodology
-                    // we cite. The methodology citations (Higdon for Adv,
-                    // Pfitz for Cmp) survive at the level of "hills are in the
-                    // mix"; they do not require every BASE week to be hills.
-                    //   Int / Adv / Cmp: alternating BASE weeks.
-                    //   Beg:             no hills.
+                    // Always add intervals. BASE prefers hill repeats (Higdon/Lydiard
+                    // strength foundation), alternating with other interval work
+                    // week-to-week so five straight weeks of one hill template don't
+                    // read as a single repeated workout. Falls back to plain intervals.
                     let preferHillsThisWeek: Bool = {
                         guard phase == .base, weekInPhase >= 1 else { return false }
                         // fitter tiers alternate a milestone subtype in BASE; beginners stay plain
@@ -266,17 +230,9 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     }()
                     let preferredPool: [Workout] = {
                         // PEAK milestone weeks: if the pool has the milestone
-                        // subtype, prefer it so it doesn't lose the load
-                        // competition to ladders/hills and get under-picked.
-                        //
-                        // Time Trials: ALL LEVELS. A race-effort fitness check
-                        // is something beginners can absolutely do (tune-up
-                        // 5K is standard advice).
-                        //
-                        // Yasso 800s: Int/Adv ONLY. 10×800m at I-pace with
-                        // full recovery is hard interval work — Higdon Novice
-                        // plans don't prescribe it because at beginner fitness
-                        // the recovery between reps is brutal.
+                        // subtype (Yasso 800s / time trial), prefer it so it
+                        // doesn't lose the load competition to ladders/hills and
+                        // get under-picked.
                         if phase == .peak && yassoWeek {
                             let yassosOnly = intervalPool.filter { $0.subtype == .yasso800 }
                             if !yassosOnly.isEmpty { return yassosOnly }
@@ -289,13 +245,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                             let hillsOnly = intervalPool.filter { $0.subtype == .hillRepeats }
                             return hillsOnly.isEmpty ? intervalPool : hillsOnly
                         }
-                        // BASE off-weeks (Int / Adv / Cmp): actively exclude
-                        // hill repeats so the load-target selector doesn't keep
-                        // picking them out of the unfiltered pool. Without
-                        // exclusion hills win the off-weeks too (they score
-                        // cleanly against BASE load targets), and the
-                        // "alternating" rule is meaningless. This is what
-                        // actually forces variety on the off-weeks.
+                        // BASE off-weeks: actively exclude hill repeats so the
+                        // load-target selector doesn't keep picking them out of the
+                        // unfiltered pool (they score cleanly against BASE load
+                        // targets and would win the off-weeks too, making the
+                        // "alternating" rule meaningless). This is what forces variety.
                         let excludesHillsOnOffWeek = phase == .base
                         if excludesHillsOnOffWeek {
                             let withoutHills = intervalPool.filter { $0.subtype != .hillRepeats }
@@ -335,17 +289,10 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         }
                     }
                     
-                    // Threshold in SPEED/PEAK only (not BASE).
-                    //
-                    // Quality cap for low-day plans: a 2nd quality session here
-                    // (slot-1 already placed one) is right for 4+ day weeks, but on
-                    // a 3-day week it leaves zero easy days (quality + quality +
-                    // long). The accessible 3-day plans are meant to be the GENTLER
-                    // option, not the same load crammed into fewer days — so cap
-                    // them at one quality/week and let the freed day fill with easy/
-                    // long aerobic running. Textbook non-beginner plans are all 4+
-                    // days, so this only relaxes the accessible 3-day tier; the
-                    // Pfitz MP/mile forcing below (42K/Cmp, all 5+ days) is untouched.
+                    // Threshold in SPEED/PEAK only (not BASE). Gated to 4+ day plans:
+                    // a 2nd quality session would leave a 3-day week zero easy days
+                    // (quality + quality + long), so the accessible 3-day tier caps at
+                    // one quality/week and fills the freed day with aerobic running.
                     if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
@@ -398,21 +345,13 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                             let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
                             var thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
 
-                            // Int/Adv 42K Pfitz MP-volume preference: on alternating
-                            // PEAK weeks, force marathonPace in the threshold slot.
-                            // Pfitz 18/55 and 18/70 prescribe two MP exposures per
-                            // PEAK week — one LR-with-MP, one dedicated MP run.
-                            // Default selector at Int's baseLoad (8000) picked
-                            // bigger threshold/mileRepeats over marathonPace
-                            // (which has Z3 load values below threshold workouts).
-                            // Adv: same issue — the dedicated "12mi @ MP" Pfitz
-                            // workout never appeared, only the LR-with-MP carried
-                            // MP volume. Forcing alternation gives Pfitz's two-MP-
-                            // per-week pattern in PEAK without inventing a 3rd
-                            // quality slot (back-to-back hard days problem). MP
-                            // catalog entries are continuous (1 work interval) so
-                            // they fail the progression filter — bypass that by
-                            // pulling from `filteredThresholds`.
+                            // 42K Pfitz MP-volume preference: force marathonPace in the
+                            // threshold slot on alternating PEAK weeks (Pfitz prescribes
+                            // two MP exposures — one LR-with-MP, one dedicated MP run).
+                            // The default selector picks bigger thresholds over MP
+                            // (whose Z3 load sits below threshold workouts). MP entries
+                            // are continuous so they fail the progression filter —
+                            // bypass it by pulling from `filteredThresholds`.
                             let preferMP = config.distance == 42195
                                 && phase == .peak
                                 && (week % 2 == 0)
@@ -428,15 +367,9 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         }
                     }
 
-                    // Competitive marathon PEAK previously added a 3rd "mp_quality"
-                    // slot for dedicated 60-100min MP volume on top of the LR-
-                    // with-MP. With the PEAK MP-segment alternation (raceRehearsalM
-                    // every other week, lines ~1140-1170) the LR already carries
-                    // that MP volume on alternating weeks. Stacking a 3rd hard
-                    // session on top forces 3 quality workouts into a 5-day non-
-                    // long-run window — there is no placement that avoids back-
-                    // to-back hard days. Pfitz 18/55 and 18/85 both prescribe
-                    // 2 quality + LR-with-MP, not 3 + 1. Slot removed.
+                    // No dedicated 3rd MP slot: the LR already carries MP volume, and
+                    // a 3rd hard session would force back-to-back hard days in a 5-day
+                    // non-LR window (Pfitz prescribes 2 quality + LR-with-MP, not 3 + 1).
             }
 
             // LONG RUN
@@ -458,29 +391,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 // beginner-only override is handled in BeginnerPlanGenerator).
             }
 
-            // SPEED + PEAK: add progressiveLong to the pool for variety.
-            // progressiveLong workouts start at Z2 (aerobic) and finish at Z3 (MP)
-            // — Pfitz's standard "progressive long run" prescription. Mixed into
-            // the normal long-run rotation, they break up the wall-of-aerobic
-            // pattern that pure steadyLong selection creates. BASE stays pure
-            // aerobic per polarized-base methodology.
-            //
-            // Intermediate/Advanced/Competitive SPEED: on EVERY OTHER SPEED week
-            // (even speedWeekIndex) force progressiveLong selection by removing
-            // steadyLong/long from the pool. Three failure modes this prevents:
-            //   1. Int half plans: at Int's low baseLoad (8000), the selector
-            //      preferred light steadyLong workouts over progressives EVERY
-            //      week. Result was 100% aerobic long runs — Int half runner
-            //      never did any HMP work, ever. Pfitz Int half explicitly
-            //      prescribes progressive long runs / tune-up races.
-            //   2. Cmp build-band plans (eg. max, 36w): baseLoad scaled by
-            //      18/totalWeeks dropped SPEED targets below where progressives
-            //      match. Same symptom as Int.
-            //   3. Any plan where SPEED target load happens to fall between
-            //      catalog steadyLong and progressiveLong loads — selector
-            //      defaults to steady.
-            // Beg gets no forcing — Pfitz Beg "Just Finish" half IS pure-aerobic
-            // by design (the runner can't yet handle race-pace volume).
+            // SPEED + PEAK: add progressiveLong (Z2→Z3/MP) to break up the wall of
+            // aerobic that pure steadyLong selection creates. BASE stays pure aerobic.
+            // On even SPEED weeks, force progressiveLong by removing steadyLong/long:
+            // at Int's low baseLoad the selector otherwise picks light steadyLong every
+            // week, so the half runner never does any HMP work.
             if phase == .speed || phase == .peak {
                 longRunTypes.append(.progressiveLong)
                 if phase == .speed {
@@ -503,31 +418,18 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     // reaches the base generator, so no beginner guard needed here.
                     longRunTypes.append(rehearsal)
                 }
-                // fastFinish: universal — long-ish easy + race-pace tail. The
-                // catalog mixes 5K/10K/MP tails; load+duration matching picks
-                // the right one for each plan. Skipped for competitive plans:
-                // fastFinish caps at 100min, which is way short of the 160-200min
-                // peak LR target competitive needs. Letting it into the pool
-                // means the selector picks it as the "LR" because its load
-                // matches better than a true 150-200min steadyLong, undercutting
-                // peak volume — Pfitz never uses sub-100min LRs in marathon peak.
+                // fastFinish: long-ish easy + race-pace tail. The catalog mixes
+                // 5K/10K/MP tails; load+duration matching picks the right one.
                 if WorkoutSubtype.fastFinish.eligibleDistances.contains(config.distance) {
                     longRunTypes.append(.fastFinish)
                 }
                 let peakWeekIndex = week - baseDur - speedDur
                 if config.distance == 10000 && peakDur >= 2 {
-                    // Int/Adv 10K: alternate raceRehearsal10K (tune-up race
-                    // simulation) with plain steady in PEAK. Daniels and Pfitz
-                    // both prescribe a 5K tune-up race during 10K Phase II /
-                    // peak training. raceRehearsal10K exists in the catalog but
-                    // selector at default Int/Adv loads picks plain steadyLong
-                    // (or fastFinish — both have closer load matches) every
-                    // week. Forcing alternation guarantees the tune-up exposure.
-                    // First PEAK week is always tune-up; alternates thereafter.
-                    // Must also remove fastFinish from the pool on MP-segment
-                    // weeks — otherwise selector picks it over raceRehearsal10K
-                    // (similar load values, fastFinish has duration closer to
-                    // a typical 10K LR target).
+                    // 10K: alternate raceRehearsal10K (5K tune-up simulation) with
+                    // plain steady in PEAK. The selector picks steadyLong/fastFinish
+                    // at default loads every week, so force the alternation to guarantee
+                    // the tune-up exposure. On MP-segment weeks also drop fastFinish, or
+                    // it out-scores raceRehearsal10K (closer 10K-LR duration).
                     let isMPSegmentWeek = peakWeekIndex % 2 == 0
                     if isMPSegmentWeek {
                         longRunTypes.removeAll {
@@ -572,14 +474,9 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     return workout.duration >= minLongRunMins * 60
                 }
 
-                // Progressive long-run target by distance + level + phase.
-                //
-                // Higdon Novice 1 marathon peaks at 20mi (~200min). Higdon Intermediate 1
-                // marathon: 8→20mi. Pfitzinger 18/55: 16→22mi. We mirror this with
-                // (start, peak) anchors per level — Beg/Int top out at 180/200, Adv at
-                // 200 (catalog cap). Without explicit per-level targets, the load-
-                // dominated workout selector picks short LRs even when targetDuration
-                // is high (load match overrides duration match in selectWorkoutByTargetV3).
+                // Progressive long-run target by distance + level + phase, from the
+                // config's (start, peak) anchors. Without explicit targets the load-
+                // dominated selector picks short LRs even when targetDuration is high.
                 let longRunTargetMins: Int
                 let targetLongRunMins: Int
 
@@ -685,47 +582,21 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 }
             }
 
-            // EASY RUN (fills remaining slots)
-            //
-            // Daniels' rule of thumb: 70-80% of weekly volume should be easy. With
-            // a 3-day/wk beginner plan that means 1 hard + 1 long + 1 EASY. The
-            // previous logic defaulted this third slot to a progression run for
-            // most level/distance combos, which collapsed the easy share to ~10%
-            // empirically (per PLAN_GENERATION_ANALYSIS_2026.md). Flipped to
-            // easy-by-default; progression is the occasional ~30% variant.
+            // EASY RUN (fills remaining slots). Daniels: 70-80% of weekly volume
+            // should be easy, so this slot is easy by default.
             if weekWorkouts.count < maxWorkoutsPerWeek {
                 if !easyRuns.isEmpty {
-                    // INTERMEDIATE (beginner routes to BeginnerPlanGenerator): the
-                    // 3rd slot is pure easy. At 4 days/wk Int already carries 2
+                    // The 3rd slot is pure easy: at 4 days/wk Int already carries 2
                     // quality + a race-pace long, so a progression here would leave
                     // zero recovery. Variety comes from the rotating long-run type.
-                        // Default: easy run (fill remaining slots).
-                        // Competitive plans bump the load multiplier from 0.15
-                        // to 0.30 so the selector targets ~6000 load (matches
-                        // 80-90min easies) instead of ~3000 (matches the now-
-                        // filtered-out 60min easies). Without this, every
-                        // competitive PEAK week was picking the same 60min
-                        // easy 5+ times despite having longer options.
-                        //
-                        // TAPER + RACE override: competitive plans should drop
-                        // to short easy runs (30-50min) — Pfitz tapers easy-day
-                        // duration along with everything else. Without this
-                        // override, the >= 60min filter forces 80-110min easies
-                        // through to race week, blowing past the taper target
-                        // (W17 was landing at ~510min vs ~370min target).
                         let easyLoadMult = 0.15
                         let easyPool = easyRuns
                         let easyTargetDur = Int(targetDuration * 0.30)
 
-                        // Force mediumLong on alternating midweek slots for Pfitz-
-                        // style plans. Without this, the generator picks generic
-                        // `easy` (60-80min) over `mediumLong` (85-110min) because
-                        // of duration matching at lower target loads. Pfitz 18/55
-                        // (marathon) and the HM 47-63 / 63-77 mi/wk plans both
-                        // explicitly prescribe a Wed/Thu Medium-Long Run; we
-                        // guarantee at least one per fortnight in serious plans.
-                        // Marathon + half-marathon, Int/Adv/Cmp tiers. Beg plans
-                        // excluded (Higdon Novice doesn't prescribe MLR). 10K/5K
+                        // Force mediumLong on alternating midweek slots (marathon/HM):
+                        // without this the selector picks generic `easy` (60-80min) over
+                        // `mediumLong` (85-110min) on duration matching at lower target
+                        // loads, and Pfitz prescribes a weekday Medium-Long Run. 10K/5K
                         // excluded (pool is 85+min, too long for those targets).
                         let isMarathonOrHM = (config.distance == 42195 || config.distance == 21097)
                         let prefersMediumLong = isMarathonOrHM
@@ -755,14 +626,8 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
 
             // Fill remaining slots (4 workouts; 5 for 21K+).
             while weekWorkouts.count < maxWorkoutsPerWeek {
-                // Intermediate (beginner routes to BeginnerPlanGenerator): fill
-                // remaining trainingDays with easy runs. Used to bail here, leaving
-                // days unscheduled — major reason marathon plans were ~30% under
-                // Higdon volume.
-                //
-                // For 21K+ we prefer a longer easy ("medium-long" Pfitz-style)
-                // for the first fill slot so weekly volume actually grows
-                // when trainingDays.count is 4+.
+                // Fill remaining trainingDays with easy runs. For 21K+ prefer a longer
+                // "medium-long" (Pfitz-style) first fill so weekly volume grows at 4+ days.
                 let isLongRace = config.distance >= 21000
                 let isFirstFill = !weekWorkouts.contains { $0.type.contains("fill") }
                 let easyTargetMin: Int = {
