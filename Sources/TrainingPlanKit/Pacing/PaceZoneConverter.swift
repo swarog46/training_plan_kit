@@ -461,7 +461,8 @@ public struct PaceZoneConverter {
         progressionFactor: Double = 0.5,
         config: PaceProgressionConfig = .intermediate,
         vdotAnchored: Bool = false,
-        raceDistanceMeters: Int? = nil
+        raceDistanceMeters: Int? = nil,
+        isCompetitive: Bool = false
     ) -> Workout {
         let convertedIntervals = workout.intervals.map { interval in
             convertIntervalToPace(
@@ -497,7 +498,8 @@ public struct PaceZoneConverter {
 
         return clampLongRunDistance(converted,
                                     conversationalPace: conversationalPace,
-                                    raceDistanceMeters: raceDistanceMeters)
+                                    raceDistanceMeters: raceDistanceMeters,
+                                    isCompetitive: isCompetitive)
     }
 
     /// Long-run subtypes whose duration is generated pace-blind (in minutes)
@@ -521,7 +523,8 @@ public struct PaceZoneConverter {
     private static func clampLongRunDistance(
         _ workout: Workout,
         conversationalPace: Int?,
-        raceDistanceMeters: Int?
+        raceDistanceMeters: Int?,
+        isCompetitive: Bool
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
         // Easy pace anchors the minutes→km conversion. No easy pace → can't
@@ -533,7 +536,8 @@ public struct PaceZoneConverter {
         // run wasn't short, and a floor would inflate it past Higdon norms).
         let floorKm: Double, capKm: Double
         switch raceDistanceMeters {
-        case 42195: (floorKm, capKm) = (30, 34)
+        // Competitive marathoners train longer long runs (Pfitz 18/85 ~35-38km).
+        case 42195: (floorKm, capKm) = isCompetitive ? (32, 38) : (30, 34)
         case 21097: (floorKm, capKm) = (16, 21)
         case 10000: (floorKm, capKm) = (0, 16)
         case 5000:  (floorKm, capKm) = (0, 12)
@@ -609,7 +613,8 @@ public struct PaceZoneConverter {
         racePaceEnd: Int? = nil,
         conversationalPaceEnd: Int? = nil,
         speedPaceEnd: Int? = nil,
-        raceDistanceMeters: Int? = nil
+        raceDistanceMeters: Int? = nil,
+        isCompetitive: Bool = false
     ) -> [WorkoutEvent] {
         let totalDuration = endDate.timeIntervalSince(startDate)
 
@@ -645,7 +650,8 @@ public struct PaceZoneConverter {
                 progressionFactor: progressionFactor,
                 config: config,
                 vdotAnchored: vdotAnchored,
-                raceDistanceMeters: raceDistanceMeters
+                raceDistanceMeters: raceDistanceMeters,
+                isCompetitive: isCompetitive
             )
 
             // Create updated event

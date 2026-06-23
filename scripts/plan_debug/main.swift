@@ -382,7 +382,8 @@ if mode == "pacedump" {
             speedPace: speedPace,
             config: progression, startDate: startDate, endDate: endDate,
             racePaceEnd: racePaceEnd, conversationalPaceEnd: easyPaceEnd, speedPaceEnd: speedPaceEnd,
-            raceDistanceMeters: Int(c.config.distance)
+            raceDistanceMeters: Int(c.config.distance),
+            isCompetitive: c.config.runnerLevel == .competitive
         )
 
         // Group by week
