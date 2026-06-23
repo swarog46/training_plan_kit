@@ -499,7 +499,8 @@ public struct PaceZoneConverter {
         return clampLongRunDistance(converted,
                                     conversationalPace: conversationalPace,
                                     raceDistanceMeters: raceDistanceMeters,
-                                    isCompetitive: isCompetitive)
+                                    isCompetitive: isCompetitive,
+                                    progressionFactor: progressionFactor)
     }
 
     /// Long-run subtypes whose duration is generated pace-blind (in minutes)
@@ -524,7 +525,8 @@ public struct PaceZoneConverter {
         _ workout: Workout,
         conversationalPace: Int?,
         raceDistanceMeters: Int?,
-        isCompetitive: Bool
+        isCompetitive: Bool,
+        progressionFactor: Double
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
         // Easy pace anchors the minutes→km conversion. No easy pace → can't
@@ -544,8 +546,11 @@ public struct PaceZoneConverter {
         default:    (floorKm, capKm) = (0, 34)
         }
 
+        // Floor applies only in build phases — extending a taper/race-week long
+        // run up to the floor would flatten the taper (it's meant to be short).
+        let effectiveFloor = progressionFactor < 0.85 ? floorKm : 0
         let km = Double(workout.duration) / Double(easyPace)
-        let targetKm = min(max(km, floorKm), capKm)
+        let targetKm = min(max(km, effectiveFloor), capKm)
         guard abs(targetKm - km) >= 0.1 else { return workout }
 
         let newDurationSec = Int(targetKm * Double(easyPace))
