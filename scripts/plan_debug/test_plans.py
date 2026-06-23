@@ -302,7 +302,10 @@ ref = [
     ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 175, "Higdon Novice 1: 180"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
     ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 190, "Pfitz 18/70: 210"),
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 200, "Pfitz 18/85 sub-3: 210"),
+    # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
+    # run at 38km — at 5:00/km easy that's ~190min, which already exceeds Pfitz
+    # 18/85's 22mi (~35km/177min). Old 200min floor was pace-blind. Govern by km.
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 185, "Pfitz 18/85 ~35km; km-capped 38km"),
 ]
 for header, fil, rp, ep, expected_min, ref_str in ref:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)
