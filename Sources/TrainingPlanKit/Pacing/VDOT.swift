@@ -230,18 +230,3 @@ extension VDOT {
     }
 }
 
-// MARK: - Race result storage
-
-/// A user's recent race result, used to compute VDOT.
-public struct RaceResult: Equatable, Codable {
-    public let distanceMeters: Int
-    public let timeSeconds: Int
-    /// When the race happened — used to discount stale results
-    /// (VDOT fades 1-2 points per month without specific training).
-    public let date: Date
-
-    /// Computed VDOT from this result, nil if invalid.
-    public var vdot: VDOT? {
-        VDOT.from(distanceMeters: distanceMeters, timeSeconds: timeSeconds)
-    }
-}

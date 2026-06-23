@@ -448,11 +448,6 @@ public struct PaceConversion {
         return secondsPerKm * kmPerMile
     }
 
-    /// Convert pace from seconds/mile to seconds/km
-    public static func mileToKm(_ secondsPerMile: Int) -> Int {
-        return Int(Double(secondsPerMile) / kmPerMile)
-    }
-
     /// Convert pace to user's preferred unit system
     public static func convert(_ secondsPerKm: Int, to unit: PaceUnit) -> Int {
         switch unit {

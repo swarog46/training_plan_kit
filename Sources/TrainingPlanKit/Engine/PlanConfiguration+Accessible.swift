@@ -22,13 +22,8 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 2,
         minPeakPhaseWeeks: 1,
         minTaperPhaseWeeks: 1,
-        // Higdon Novice 5K / Couch-to-5K both prescribe 3 days/wk minimum
-        // (often with optional cross-training on top). Previous [2, 6]
-        // (Wed/Sun) was 2 days, which left adaptation frequency too low
-        // for true beginners: each session had to carry too much, and
-        // missing one of the two reset the rhythm. Tue/Thu/Sun spaces
-        // training across the week and matches Int 5K's pattern for a
-        // clean tier ladder.
+        // 2 days/wk — the locked beginner-5K day-count (below-textbook
+        // frequency is intentional; accessible tier matches standard Beg 5K here).
         trainingDays: [2, 6], // accessible tier
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: false,

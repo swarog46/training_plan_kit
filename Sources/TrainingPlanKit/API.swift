@@ -37,12 +37,6 @@ public func generatePlan(config: PlanConfiguration,
     }
 }
 
-/// Decode a catalog from a JSON file (an array of `Workout`).
-public func loadCatalog(atPath path: String) throws -> [Workout] {
-    let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    return try JSONDecoder().decode([Workout].self, from: data)
-}
-
 /// The bundled sample catalog — enough variety to generate real plans across
 /// every distance and level, but not RunPlan's full tuned library.
 public func loadSampleCatalog() -> [Workout] {

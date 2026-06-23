@@ -103,21 +103,6 @@ enum SelectorWeights {
     static let restModerateBonus = -0.5
 }
 
-// MARK: - Seeded Random Number Generator
-
-public struct SeededRandomNumberGenerator: RandomNumberGenerator {
-    private var state: UInt64
-
-    public init(seed: UInt64) {
-        self.state = seed
-    }
-
-    public mutating func next() -> UInt64 {
-        state = state &* 6364136223846793005 &+ 1442695040888963407
-        return state
-    }
-}
-
 // MARK: - Phase Duration Calculation (mirrors calculate_phase_durations)
 
 public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {

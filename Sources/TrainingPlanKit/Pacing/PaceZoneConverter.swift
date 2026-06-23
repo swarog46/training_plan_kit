@@ -481,8 +481,9 @@ public struct PaceZoneConverter {
         progressionFactor: Double
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
-        // Easy pace anchors the minutes→km conversion. No easy pace → can't
-        // know the distance, so leave the (minutes-based) workout untouched.
+        // Easy pace anchors the minutes→km conversion for any interval that
+        // somehow lacks a rendered pace. No easy pace → can't know the
+        // distance, so leave the (minutes-based) workout untouched.
         guard let easyPace = conversationalPace, easyPace > 0 else { return workout }
 
         // Per-distance window [floorKm, capKm]. Marathon/half floor brings slow
@@ -501,12 +502,31 @@ public struct PaceZoneConverter {
         // Floor applies only in build phases — extending a taper/race-week long
         // run up to the floor would flatten the taper (it's meant to be short).
         let effectiveFloor = progressionFactor < 0.85 ? floorKm : 0
-        let km = Double(workout.duration) / Double(easyPace)
+        // Size off the CONVERTED workout's rendered pace, not raw easy pace: a
+        // long run renders ~15s/km faster (and MP/fast-finish segments faster
+        // still), so duration/easyPace under-measures and the run overshoots
+        // the window. Sum each interval's km = duration ÷ its rendered pace.
+        let km = workout.intervals.reduce(0.0) { acc, iv in
+            let paceSec: Double
+            if case .paceTarget(let base, let rel) = iv.target {
+                paceSec = Double(base) * rel
+            } else {
+                paceSec = Double(easyPace)
+            }
+            return paceSec > 0 ? acc + iv.duration / paceSec : acc
+        }
+        guard km > 0 else { return workout }
         let targetKm = min(max(km, effectiveFloor), capKm)
         guard abs(targetKm - km) >= 0.1 else { return workout }
 
-        let newDurationSec = Int(targetKm * Double(easyPace))
-        let factor = Double(newDurationSec) / Double(workout.duration)
+        // Scaling every interval's duration by this factor scales rendered km by
+        // the same factor (paces are unchanged), landing the run on targetKm.
+        // Floor the factor so the run never drops below the engine's 60min
+        // long-run minimum (a fast 5K runner's >12km run would otherwise scale
+        // under 60min and violate the long-run floor).
+        let minSec = Double(min(Int(workout.duration), 60 * 60))
+        let factor = max(targetKm / km, minSec / Double(workout.duration))
+        let newDurationSec = Int((Double(workout.duration) * factor).rounded())
 
         func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
         let scaledIntervals = workout.intervals.map { iv in
@@ -538,11 +558,6 @@ public struct PaceZoneConverter {
             workDistance: workout.workDistance,
             restDistance: workout.restDistance
         )
-    }
-
-    /// Batch convert all workouts (no progression - for backward compatibility)
-    public static func convertWorkoutsArrayToPace(workouts: [Workout], racePace: Int, conversationalPace: Int? = nil) -> [Workout] {
-        return workouts.map { convertHRWorkoutToPace(workout: $0, racePace: racePace, conversationalPace: conversationalPace) }
     }
 
     // MARK: - Plan Post-Processing (Progressive Conversion)
