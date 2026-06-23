@@ -463,11 +463,12 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 var maxDurationMins = config.maxLongRunMinutes
                 // Marathon surprise/cutback weeks: shorten the long run instead of
                 // skipping it (5d). Cap at 90min for the aerobic stimulus without the
-                // recovery cost — but never below ~65% of the surrounding peak long
-                // run, so a mid-block cutback doesn't collapse to the 60min floor
-                // (~9km) and break the long-run thread.
+                // recovery cost — but never below ~70% of the surrounding peak
+                // long run, so a mid-block cutback doesn't collapse to the 60min
+                // floor (~9km). 0.72 (not 0.65) so a peak cutback (prev ~145min)
+                // clears the catalog's 100min rung instead of falling back to 60.
                 if isSurpriseWeek && isMarathon {
-                    let cutbackFloor = Int(Double(prevLongRunMins) * 0.65)
+                    let cutbackFloor = Int(Double(prevLongRunMins) * 0.72)
                     maxDurationMins = min(maxDurationMins, max(90, cutbackFloor))
                 }
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
