@@ -9,17 +9,9 @@ import Foundation
 
 // MARK: - Workout Pace Tolerance
 //
-// The "on target" pace window shown on the Apple Watch during a workout.
-// Single source of truth — referenced by:
-//   * the watch tracker view (paints green/red pace zones around target)
-//   * the plan detail view (displays target ± tolerance to the runner)
-//   * the engine regression tests (asserts generated paces land inside
-//     the same window the runner would see as on-target on race day)
-//
-// Tolerance is symmetric in seconds-per-km, not a percentage — runners
-// at 4:00/km and 7:00/km both get the same ±15s window because that is
-// what a wrist-worn pace display can resolve in real time regardless of
-// absolute pace.
+// The "on target" pace window shown during a workout. Symmetric in
+// seconds-per-km (not a percentage) — a wrist-worn display resolves the
+// same ±15s regardless of absolute pace.
 public enum WorkoutPaceTolerance {
     public static let seconds: Double = 15.0
 }
@@ -144,16 +136,8 @@ public struct PaceZoneConverter {
 
     // MARK: - Standard HR Zone to Pace Multiplier Mapping
 
-    /// Returns the standard (unadjusted) pace multiplier for a given HR zone
-    /// - Parameter zone: Heart rate zone (1-5)
-    /// - Returns: Base multiplier to apply to race pace
-    ///
-    /// Zone mappings:
-    /// - Zone 1 (50-60% max HR): Easy recovery - 1.25x race pace (slower)
-    /// - Zone 2 (60-70% max HR): Conversational - 1.15x race pace
-    /// - Zone 3 (70-80% max HR): Marathon pace - 1.0x race pace
-    /// - Zone 4 (80-90% max HR): Tempo - 0.93x race pace (faster)
-    /// - Zone 5 (90-100% max HR): Intervals - 0.85x race pace (much faster)
+    /// Standard (unadjusted) pace multiplier for an HR zone (1-5), applied to
+    /// race pace. Z1 recovery (slowest) → Z5 intervals (fastest); see values.
     public static func baseMultiplier(for zone: Int) -> Double {
         switch zone {
         case 1: return 1.25    // Easy recovery
@@ -203,16 +187,12 @@ public struct PaceZoneConverter {
         // e.g., 370/300 = 1.233 → 23% gap
         let gapRatio = Double(convPace) / Double(racePace)
 
-        // Easy/recovery pace: anchor to the runner's stated (VDOT-derived) easy +
-        // gentle easing — NEVER blend toward the generic 1.15×race. Take the
-        // freeze-fix when (a) non-competitive, (b) the runner's easy is at/under
-        // base (gapRatio < base), OR (c) the AT-GOAL competitive config
-        // (initialAdjustment == 0): its gap-blend has zero movement, so a gapRatio
-        // just over base (a sub-1:30 half at 1.157) would otherwise freeze easy
-        // flat at 1.15×race all block — while the marathon (under base) eased.
-        // The build-band (initialAdjustment 0.5) is the exception: it keeps the
-        // gap-blend so its easy converges from the runner's easy toward goal as
-        // fitness builds. Floored at race; recovery (Z1) scaled by base/1.15.
+        // Easy/recovery: anchor to the runner's VDOT-derived easy (never the
+        // generic 1.15×race). Take this path for non-competitive, or when easy
+        // is at/under base, or for the AT-GOAL competitive config (its gap-blend
+        // has zero movement and would otherwise freeze easy flat). The build-band
+        // (initialAdjustment 0.5) keeps the gap-blend so easy converges toward
+        // goal as fitness builds. Floored at race; recovery (Z1) scaled by base/1.15.
         if base > 1.0, (!config.qualityZonesAlwaysAtTarget || gapRatio < base || config.initialAdjustment == 0) {
             let flat = max(1.0, gapRatio) * (base / 1.15)
             // VDOT mode: the easy anchor (conversationalPace) is already interpolated
@@ -277,17 +257,11 @@ public struct PaceZoneConverter {
         tenK: Bool = false,
         z5Target: Double? = nil
     ) -> Double {
-        // Anchored to 5K SPEED, all PROGRESSING toward a sharper target over the
-        // block (depth per level via initialAdjustment), never sagging to race:
-        //   • Z5 VO2 — rep-length-aware (z5Target): short reps run I/R-pace
-        //     (faster than 5K), long reps ~I-pace. Eases over a 0.06 band.
-        //   • Z4 threshold — eases 1.06 (true LT, wk 1) → 1.02 (10K tempo, race wk).
-        //   • 10K work — between.
-        // Z4 THRESHOLD progresses true LT (wk 1, 1.07) → sharp 10K tempo (race wk,
-        // 1.02) over a FULL ~15s span for EVERY level — the sharpening IS the
-        // point, not a level-gated ease-in (initialAdjustment<1 made it nearly
-        // flat, ~5s, on advanced). The caller's Z4 race floor keeps the true-LT
-        // end from dropping 10K threshold below race.
+        // Anchored to 5K SPEED, progressing toward a sharper target over the
+        // block, never sagging to race. Z4 threshold progresses true LT (wk 1,
+        // 1.07) → sharp 10K tempo (race wk, 1.02) over a FULL span for EVERY
+        // level — the sharpening IS the point, not a level-gated ease-in. The
+        // caller's Z4 race floor keeps the true-LT end from dropping below race.
         if zone == 4, !tenK {
             let sharp = 1.02, trueLT = 1.07
             if config.qualityZonesAlwaysAtTarget { return sharp }
@@ -331,43 +305,29 @@ public struct PaceZoneConverter {
                 // made marathon "intervals" run at marathon pace.
                 let relative: Double
                 if subtype == .fastFinish, interval.type == .work {
-                    // Fast-finish long run: the fast tail is tagged Z4 (HR ≈ LT)
-                    // but the intent is a 5K-effort surge to close — not a
-                    // threshold grind. Render the work segment FLAT at ~5K pace
-                    // (1.00× the 5K-speed anchor) so it reads clearly faster than
-                    // the threshold pace the Z4 tag would otherwise give. The easy
-                    // portion is tagged Z2 and stays easy via the race-anchored
-                    // path below. Anchor still moves current→projected VDOT.
+                    // Fast-finish tail is tagged Z4 (HR≈LT) but the intent is a
+                    // 5K-effort surge — render FLAT at ~5K pace so it reads faster
+                    // than threshold. The easy portion (Z2) stays easy below.
                     relative = 1.00
                 } else if subtype == .strides {
-                    // Strides: short (≤30s) neuromuscular accelerations run with
-                    // full recovery — pure leg-speed / form work, NOT a progressive
-                    // VO2 stimulus. Price at ~0.85× 5K speed (≈ 800m–mile effort —
-                    // clearly faster than REP pace, which is only the floor) and
-                    // FLAT — no ease-in. The Z5 tag means "fast turnover", not
-                    // "5K-pace aerobic"; running them through the quality ease-in
-                    // renders early-plan strides at ~threshold pace, far too slow.
+                    // Strides are short neuromuscular accelerations (leg-speed/form),
+                    // not a VO2 stimulus — price FLAT at ~0.85× 5K speed (≈800m–mile
+                    // effort). The Z5 tag means "fast turnover", not "5K-pace aerobic".
                     relative = 0.85
                 } else if subtype == .timeTrial {
-                    // A time trial is a sustained race-effort test (15-25min ≈ a 5K-
-                    // 10K race). Render it FLAT at ~5K pace so it always reads faster
-                    // than the threshold run it's paired with (threshold = 1.02-1.07×
-                    // speed) instead of colliding with it at the same Z4 pace. The
-                    // anchor still moves current→projected VDOT, so the TT sharpens.
+                    // A time trial is a sustained race-effort test — render FLAT at
+                    // ~5K pace so it reads faster than its paired threshold run
+                    // instead of colliding at the same Z4 pace.
                     relative = 1.00
                 } else {
                     let isTenK = subtype == .tenkPace || subtype == .raceRehearsal10K
-                    // Hill repeats are tagged Z4 (hill HR ≈ LT) but the training
-                    // effect is VO2/power and the flat-equivalent effort is ~I-pace.
-                    // Route them through the Z5 path at I-pace (0.96) so they render
-                    // clearly FASTER than a threshold run instead of colliding with
-                    // it at the same Z4 pace. Still progresses (the speed anchor
-                    // moves) and still pins for competitive (qualityZonesAlwaysAtTarget).
+                    // Hill repeats are tagged Z4 (hill HR≈LT) but the effect is
+                    // VO2/power — route through the Z5 path at I-pace (0.96) so they
+                    // read faster than threshold instead of colliding with it.
                     let isHills = subtype == .hillRepeats
                     let effZone = isHills ? 5 : zone
                     // Z5 VO2 is REP-LENGTH-AWARE: short reps run R/I-pace (faster),
-                    // long reps ~I-pace — you can't hold 1km reps at 400m pace.
-                    //   ≤90s → 0.88 (1500/800m), ≤3min → 0.92 (3K), longer → 0.96 (I).
+                    // long reps ~I-pace. ≤90s→0.88, ≤3min→0.92, longer→0.96 (I).
                     let z5Target: Double? = isHills ? 0.96
                         : ((zone >= 5 && !isTenK)
                             ? (interval.duration <= 90 ? 0.88
@@ -388,12 +348,9 @@ public struct PaceZoneConverter {
                         r = min(r, Double(racePace) / Double(speedPace))
                     }
                     // Z4 threshold race floor for 10K-and-longer (racePace slower
-                    // than 5K speed): the true-LT (1.07) end of the progression
-                    // would otherwise render early 10K threshold/mile-reps AT or
-                    // below the 10K race pace. No-op on 5K (race == 5K speed, so
-                    // threshold stays correctly slower than the 5K race) and on
-                    // half/marathon (Z4 is already well faster than race). Hills
-                    // excluded — rendered through the Z5 path above.
+                    // than 5K speed): the true-LT (1.07) end would otherwise render
+                    // early 10K threshold/mile-reps at/below 10K race pace. No-op on
+                    // 5K (race==speed) and half/marathon (Z4 already faster than race).
                     if zone == 4, !isHills, racePace > speedPace {
                         r = min(r, Double(racePace) / Double(speedPace))
                     }
@@ -513,14 +470,9 @@ public struct PaceZoneConverter {
     ]
 
     /// Clamps a long run into a per-distance KM window [floorKm, capKm].
-    ///
-    /// Long runs are generated in MINUTES (pace-blind); at render the runner's
-    /// easy pace turns those minutes into distance. A fast runner overshoots the
-    /// useful long-run distance, a slow runner falls short. This trims fast
-    /// runners DOWN to the cap and extends slow runners UP to the floor by
-    /// scaling the workout's (and each interval's) duration uniformly — paces,
-    /// targets and the easy/fast split are preserved. There is NO flat time
-    /// ceiling; the KM window governs.
+    /// Long runs are generated pace-blind in minutes; at render a fast runner
+    /// overshoots and a slow runner falls short, so scale duration uniformly to
+    /// fit the window (paces, targets and the easy/fast split are preserved).
     private static func clampLongRunDistance(
         _ workout: Workout,
         conversationalPace: Int?,
@@ -626,11 +578,9 @@ public struct PaceZoneConverter {
         guard totalDuration > 0 else { return events }
 
         // VDOT-progression mode: when projected (race-week) paces are supplied the
-        // anchors interpolate from current-VDOT (week 1) to projected-VDOT (race
-        // week) across the plan. The projected fitness gain IS the progression —
-        // bigger for longer plans and lower-fitness runners, flat near the ceiling.
-        // Easy rides the moving anchor; quality keeps its sharpening on top of the
-        // moving 5K-speed anchor. No end-paces → legacy fixed-anchor behavior.
+        // anchors interpolate current-VDOT (wk 1) → projected-VDOT (race wk) across
+        // the plan — the projected fitness gain IS the progression. No end-paces →
+        // legacy fixed-anchor behavior.
         let vdotAnchored = racePaceEnd != nil
 
         return events.map { event in

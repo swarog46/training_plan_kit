@@ -161,12 +161,10 @@ public struct PlanConfiguration {
         var peakWeeks = max(idealPeakWeeks, minPeakPhaseWeeks)
         var taperWeeks = max(idealTaperWeeks, minTaperPhaseWeeks)
 
-        // Marathon taper floor: a 3-week ramp-down (Pfitzinger). The long-run
-        // progression peaks at the last PEAK week and can only step down in
-        // taper (monotonic build), so a 2-week taper lands the longest run
-        // just 2 weeks out — too close to absorb. Floor marathon tapers at 3
-        // so the peak long run sits ~3 weeks from race day. Half/shorter keep
-        // their shorter tapers (less volume to shed). Cmp already ships 3.
+        // Marathon taper floor: 3-week ramp-down (Pfitzinger). The long run
+        // peaks at the last PEAK week and only steps down in taper, so a 2-week
+        // taper lands the peak long run too close (2 weeks out) to absorb.
+        // Half/shorter keep shorter tapers (less volume to shed).
         if distance >= 30000 {
             taperWeeks = max(taperWeeks, 3)
         }
@@ -240,17 +238,10 @@ extension PlanConfiguration {
 
 extension PlanConfiguration {
     /// Master switch: which non-competitive plan set the app generates.
-    ///
-    /// `true`  → the **accessible** tier (fewer days/week, gentler beginners,
-    ///           ~72-90% of textbook load) — what RunPlan ships today.
-    /// `false` → the **textbook** tier (Higdon / Pfitzinger / Daniels
-    ///           day-counts and volumes).
-    ///
-    /// Flip this one value to switch the whole app. Both of the app's config
-    /// selectors resolve through `raceConfig(level:distanceMeters:)` below, so
-    /// they can never drift apart. Competitive (Pro), maintenance, and VO2
-    /// plans are unaffected — they're routed to their own configs by the
-    /// caller before reaching here.
+    /// `true` → accessible tier (fewer days/week, ~72-90% textbook load, ships
+    /// today); `false` → textbook tier (Higdon / Pfitzinger / Daniels). Flip
+    /// this one value to switch the whole app — both selectors resolve through
+    /// `raceConfig` below. Competitive/maintenance/VO2 are routed separately.
     public static var shipAccessibleTier = true
 
     /// Resolve the non-competitive (5K / 10K / 21K / 42K) config for a runner

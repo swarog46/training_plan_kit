@@ -566,8 +566,6 @@ func selectWorkoutByTarget(workoutType: WorkoutType, weekIndex: Int, workouts: [
             score = loadDiffPercent * 0.8 + durationDiffPercent * 0.2
         case WorkoutType.thresholdRun.name:
             score = loadDiffPercent * 0.6 + durationDiffPercent * 0.4
-//        case WorkoutType.intervalRun.name:
-//            score = loadDiffPercent * 0.7 + durationDiffPercent * 0.3
         case WorkoutType.longRun.name:
             score = loadDiffPercent * 0.4 + durationDiffPercent * 0.6
         default:
@@ -729,7 +727,6 @@ func createWeekPlan(
     switch phase {
     case .base, .speed, .peak, .taper, .race:
         // Add long run if we have days
-//        if daysCount > 0 && runCounts.longRunsCount > 0 {
         for _ in 0..<runCounts.longRunsCount {
             // For 5K beginner/intermediate: only select progressive long runs
             let onlyProgressiveLong = (config.distance == 5000 &&
@@ -751,9 +748,7 @@ func createWeekPlan(
         
         // Add interval workouts with variety based on week
         for _ in 0..<runCounts.intervalRunsCount {
-            // Add random variation to target load (±10%)
-//            let variationFactor = 1.0 + Double.random(in: -0.1...0.1)
-            let adjustedLoad = intervalRunLoad // * variationFactor
+            let adjustedLoad = intervalRunLoad
             
             let intervalWorkout = selectWorkoutByTarget(
                 workoutType: .intervalRun,
@@ -857,29 +852,8 @@ func createWeekPlan(
             )
             allWorkouts.append(easyWorkout)
         }
-//    case .race:
-//        // Race week - only include very short and easy workouts
-//        // No more than 3 training days before race
-//        let raceWeekDays = min(sortedTrainingDays.count, 3)
-//        
-//        for _ in 0..<raceWeekDays {
-//            let easyLoad = targets.totalLoad / Double(raceWeekDays)
-//            let easyDuration = targets.totalDuration / raceWeekDays
-//            
-//            let raceWeekWorkout = selectWorkoutByTarget(
-//                workoutType: .easyRun,
-//                weekIndex: weekIndex,
-//                workouts: workouts.easy,
-//                targetLoad: easyLoad * 0.5,
-//                targetDuration: Int(Double(easyDuration) * 0.5),
-//                usedWorkoutIds: &usedWorkoutIds,
-//                previousWeeksWorkouts: &previousWeeksWorkouts,
-//                targets: targets
-//            )
-//            allWorkouts.append(raceWeekWorkout)
-//        }
     }
-    
+
     // Categorize workouts by type
     var workoutsByCategory: [WorkoutCategory: [Workout]] = [:]
     
@@ -899,7 +873,6 @@ func createWeekPlan(
     workoutsByCategory[.longRun]?.sort(by: { $0.duration < $1.duration })
     
     if let longestRun = workoutsByCategory[.longRun]?.first, !availableDays.isEmpty {
-//        let lastDay = availableDays.removeLast() // Get the last training day
         weekPlan.append((longestRun, longestWorkoutDay))
         workoutsByCategory[.longRun]?.removeFirst()
 
@@ -930,10 +903,7 @@ func createWeekPlan(
     // Prepare hard and easy workouts
     var hardWorkouts = (workoutsByCategory[.interval] ?? []) + (workoutsByCategory[.quality] ?? [])
     var easyWorkouts = workoutsByCategory[.easy] ?? []
-    
-    // Sort hard workouts by intensity
-//    hardWorkouts.sort { $0.trainingLoad > $1.trainingLoad }
-    
+
     // Alternate between hard and easy workouts for optimal recovery
     // Use week and phase to vary the pattern
     let patternVariation = (weekIndex + (phase == .speed ? 1 : 0) + (phase == .peak ? 2 : 0)) % 3

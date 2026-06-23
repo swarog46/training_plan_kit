@@ -519,26 +519,4 @@ extension RunCounts {
     public func totalQualityCount() -> Int {
         return intervalRunsCount + qualityRunsCount + progressionRunsCount + fartlekRunsCount + ultraIntervalRunsCount
     }
-    
-    // Helper to randomly select quality workout type
-    mutating func setRandomQualityWorkout() {
-        // Reset all quality workouts
-        intervalRunsCount = 0
-        qualityRunsCount = 0
-        progressionRunsCount = 0
-        fartlekRunsCount = 0
-        
-        // Randomly select one type
-        let random = Int.random(in: 0..<4)
-        switch random {
-        case 0:
-            intervalRunsCount = 1
-        case 1:
-            qualityRunsCount = 1
-        case 2:
-            progressionRunsCount = 1
-        default:
-            fartlekRunsCount = 1
-        }
-    }
 }

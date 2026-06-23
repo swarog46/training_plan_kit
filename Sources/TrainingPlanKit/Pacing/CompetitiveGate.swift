@@ -3,29 +3,16 @@
 //  RunPlan
 //
 //  Single source of truth for "can this runner pick the Sub-3:00 Marathon /
-//  Sub-1:30 Half plan?" Both the iOS plan-setup screen AND the regression
-//  tests (via plan_debug) call into this same function. The earlier failure
-//  mode — Python tests reimplementing UI logic and disagreeing with the
-//  shipped Swift code — does not recur because there is one implementation.
+//  Sub-1:30 Half plan?" — shared by the iOS plan-setup screen and the
+//  regression tests (via plan_debug), so they can't disagree.
 //
-//  Decision policy (locked with the user 2026-06-06, recalibrated 2026-06-07
-//  after my first pass used a wrong reference VDOT):
-//
-//    requiredVDOT = VDOT.from(distance, goalTime)  (true VDOT needed)
-//    gap = requiredVDOT - currentVDOT
-//
-//    gap ≤ 0       →  .clear              (current fitness already meets/exceeds goal)
-//    0 < gap ≤ 4   →  .buildBand(weeks)   (~16 weeks of focused training closes it —
-//                                          one Daniels point per ~4 weeks)
-//    gap > 4       →  .blocked(time)      (more than a 4-VDOT-point gap; this plan
-//                                          is not realistic in the current cycle —
-//                                          point them at the standard Marathon/Half
-//                                          plan with their actual goal time)
-//
-//  The earlier draft used a fixed `VDOT ≥ 58` threshold for sub-3. That was
-//  wrong — VDOT 58 actually predicts a ~2:33 marathon. Sub-3 requires VDOT
-//  ~53. The correct gate compares against the goal-derived requiredVDOT,
-//  not a hardcoded number, and works for any (distance, goalTime) pair.
+//  Decision policy (locked with the user 2026-06-06). Compare to the
+//  goal-DERIVED required VDOT, never a hardcoded number, so it works for any
+//  (distance, goalTime) pair:
+//    gap = VDOT.from(distance, goalTime) - currentVDOT
+//    gap ≤ 0     →  .clear              (fitness already meets/exceeds goal)
+//    0 < gap ≤ 4 →  .buildBand(weeks)   (~4 weeks per Daniels point closes it)
+//    gap > 4     →  .blocked(time)      (not realistic this cycle; use standard plan)
 //
 
 import Foundation
@@ -50,23 +37,12 @@ public enum CompetitiveGateState: Equatable {
 private let buildBandMaxGap: Double = 4.0
 
 /// Compute the gate state for a competitive plan given the runner's VDOT.
-///
-/// Comparison is to the *goal-derived* required VDOT, NOT to a hardcoded
-/// reference value. For a Sub-3:00 Marathon (goalTime 10800s), required
-/// VDOT ≈ 53; a runner at VDOT 55 has negative gap → `.clear`. For a Sub-
-/// 1:30 Half (goalTime 5400s), required VDOT ≈ 54; same runner at VDOT
-/// 55 → still `.clear`. This auto-extends to any future goal-time picker.
-///
-/// Build-band's `recommendedWeeks` defers to `vdot.recommendedPlanWeeks`,
-/// the same function that powers the "use recommended date" button in the
-/// race-date row. Sharing the number means the gate banner and that button
-/// can never disagree — both surface the same target window.
+/// Build-band's `recommendedWeeks` defers to `vdot.recommendedPlanWeeks` (the
+/// same source as the "use recommended date" button) so they can't disagree.
 ///
 /// - Parameters:
-///   - vdot: The runner's VDOT, derived from a recent race result. Pass nil
-///     when the user has not entered a race result yet — returns `.clear`
-///     so the UI lets them through the picker and they can see the
-///     methodology / inputs.
+///   - vdot: The runner's VDOT from a recent race result. Pass nil before the
+///     user enters a result — returns `.clear` to let them through the picker.
 ///   - distanceMeters: The competitive plan's race distance (42195 or 21097).
 /// - Returns: The gate state to surface in the UI.
 public func competitiveGateState(vdot: VDOT?, distanceMeters: Int) -> CompetitiveGateState {

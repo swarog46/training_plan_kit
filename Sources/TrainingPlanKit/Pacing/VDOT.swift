@@ -2,24 +2,10 @@
 //  VDOT.swift
 //  RunPlan
 //
-//  Daniels' VDOT — fitness-anchored pace derivation. Computes a runner's
-//  estimated VO2max equivalent from a recent race result, then derives all
-//  training paces from that physiological reference point.
-//
-//  Why this exists: the default pace flow takes the user's GOAL time and
-//  derives paces from it. If the user wants a sub-3:00 marathon but is fit
-//  for 3:15, every workout pace is too fast — easy runs hit Z3 HR,
-//  thresholds overshoot LT, intervals destroy them. VDOT solves this by
-//  anchoring paces to *actual current fitness* (from a recent race), not to
-//  aspirations. Daniels' Running Formula has used this since 1998 and it's
-//  what serious coaches use.
-//
-//  References:
-//  - Daniels' Running Formula (4th ed.), Ch. 5 — VDOT system + tables
-//  - https://runsmartproject.com/calculator/ — Daniels' published tables
-//
-//  Currently wired into competitive plans only (Sub-3:00 Marathon /
-//  Sub-1:30 Half). Other plan tiers continue to use goal-time-derived paces.
+//  Daniels' VDOT — derives training paces from a recent race result (actual
+//  current fitness) instead of the goal time, so paces stay sane when the goal
+//  outruns fitness. Ref: Daniels' Running Formula (4th ed.), Ch. 5.
+//  Currently wired into competitive plans only; other tiers use goal-derived paces.
 //
 
 import Foundation
@@ -180,12 +166,9 @@ public struct VDOT: Equatable {
 // MARK: - Plan-length recommendation
 
 extension VDOT {
-    /// Recommended plan length (weeks) to reach the given goal from this
-    /// VDOT. Maps VDOT gap → weeks using Daniels' rule of thumb that VDOT
-    /// grows ~1 point per 4 weeks of focused training (with diminishing
-    /// returns at higher VDOT). Adds the gap-driven build-up to a baseline
-    /// race-specific window (14w marathon / 12w half) and clamps to a
-    /// reasonable max (28w marathon / 24w half).
+    /// Recommended plan length (weeks) to reach the goal from this VDOT, mapping
+    /// VDOT gap → weeks (~1 point per 4 weeks). Adds the build-up to a baseline
+    /// race window (14w marathon / 12w half), clamped (28w / 24w max).
     ///
     /// - Parameters:
     ///   - distanceMeters: Goal race distance.
@@ -212,25 +195,11 @@ extension VDOT {
 
     /// Project realistic finish time after `planWeeks` of training.
     ///
-    /// VDOT gain follows an **asymptotic** curve toward the per-block
-    /// adaptation ceiling rather than a hard `min(weeks × perWeek, cap)`:
-    ///
-    ///     gain = ceiling × (1 − exp(−stimulus / ceiling))
-    ///         where stimulus = weeks × perWeek
-    ///
-    /// Why asymptotic:
-    ///   - **Monotonic in weeks** — a 24-week plan always projects a bit
-    ///     more than a 12-week plan, even when both are near saturation.
-    ///     The hard `min()` plateaued identically once the cap bound,
-    ///     which made plan-length pickers feel broken.
-    ///   - **Matches physiology** — real adaptation has diminishing
-    ///     marginal returns as the runner approaches their per-block
-    ///     ceiling, rather than gaining linearly then suddenly stopping.
-    ///
-    /// Ceiling = the asymptote the runner approaches in *this* block.
-    /// Across multiple training cycles a runner climbs through successive
-    /// asymptotes — this function only projects the current block.
-    ///
+    /// VDOT gain follows an asymptotic curve toward the per-block ceiling (not a
+    /// hard `min(weeks × perWeek, cap)`), so it stays monotonic in weeks and
+    /// matches the diminishing returns of real adaptation:
+    ///     gain = ceiling × (1 − exp(−stimulus / ceiling)),  stimulus = weeks × perWeek
+    /// Only projects the current block (a runner climbs successive asymptotes).
     /// - Returns: Predicted finish time in seconds at the projected VDOT.
     public func realisticOutcome(forDistance distanceMeters: Int,
                           planWeeks: Int,
@@ -242,37 +211,20 @@ extension VDOT {
         return projectedVDOT.predictedTime(forDistanceMeters: distanceMeters)
     }
 
-    /// Scale a level-based adaptation ceiling by the runner's proximity
-    /// to genetic ceiling. The decay is **super-linear** (^1.5 of the
-    /// linear gap) — collapses faster than linear but not so fast that
-    /// mid-pack runners get stuck in slow cycle-over-cycle progression:
-    ///   VDOT 30 → factor 1.00 (100% of base, full room to grow)
-    ///   VDOT 40 → factor 0.60
-    ///   VDOT 50 → factor 0.28
-    ///   VDOT 58 → factor 0.10 (floor — even elites can gain a sliver)
-    ///   VDOT 65 → factor 0.10
-    ///
-    /// Linear over-projected elite gains; quadratic under-projected
-    /// cycle-over-cycle progression for serious mid-pack runners
-    /// climbing toward sub-3 / sub-1:30. ^1.5 is the middle ground we
-    /// found by checking realistic cycle drops against coached groups.
-    ///
-    /// Pure-numeric API so test harnesses in plan_debug can exercise the
-    /// growth math without depending on RunnerLevel (which lives in the
-    /// iOS module). Call site computes `baseCap` per level.
+    /// Scale a level-based adaptation ceiling by proximity to genetic ceiling.
+    /// Decay is super-linear (^1.5 of the linear gap, floored at 0.10) — faster
+    /// than linear (which over-projects elite gains) but not so fast mid-pack
+    /// runners stall climbing toward sub-3 / sub-1:30. Pure-numeric API so
+    /// plan_debug can exercise the math without RunnerLevel (iOS-only).
     public static func adaptationCeiling(baseCap: Double, current: VDOT) -> Double {
         let linearFactor = max(0.0, min(1.0, (65.0 - current.value) / 35.0))
         let ceilingFactor = max(0.10, pow(linearFactor, 1.5))
         return baseCap * ceilingFactor
     }
 
-    /// Mild newness multiplier — applied to per-week VDOT growth at the
-    /// bottom of the fitness range. Untrained-to-trained runners gain
-    /// VDOT faster than mid-pack adults at the same training stimulus
-    /// (running economy, capillarization, mitochondrial density all
-    /// front-load). Kept deliberately small so the projection stays on
-    /// the under-promise side — linear ramp from 1.20× at VDOT 30 down
-    /// to 1.00× at VDOT ≥ 38.
+    /// Mild newness multiplier on per-week VDOT growth at the bottom of the
+    /// range — untrained runners adapt faster at the same stimulus. Kept small
+    /// (under-promise): linear ramp 1.20× at VDOT 30 → 1.00× at VDOT ≥ 38.
     public static func newnessBoost(current: VDOT) -> Double {
         return 1.0 + max(0.0, min(0.2, (38.0 - current.value) / 40.0))
     }
