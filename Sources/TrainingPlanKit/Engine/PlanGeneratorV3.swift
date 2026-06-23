@@ -7,6 +7,102 @@
 
 import Foundation
 
+// MARK: - Training Model Constants
+//
+// The periodization model read by `calculateWeeklyTargetsV3`: phase boosts,
+// taper/race shaping, deload thresholds, and the progression amplifier — the
+// numbers that define the *shape* of every plan's weekly load/duration ramp,
+// gathered here so the model is legible in one place. Behavior-preserving:
+// these are the exact values previously inlined as literals.
+enum TrainingModel {
+    /// Per-phase load/duration multiplier over the config baseLoad.
+    /// base = baseline; speed = +35%; peak = +70% above base.
+    /// Single source of truth for BOTH the target boost AND the previous-phase
+    /// boost used by the smooth ramp (they read the same ladder via `phaseBoost`).
+    static let baseBoost = 1.0
+    static let speedBoost = 1.35
+    static let peakBoost = 1.7
+
+    /// Boost for the named phase (base/speed/peak). Taper/race shape off peakBoost
+    /// directly and are handled inline, so they're not part of this ladder.
+    static func phaseBoost(for phase: TrainingPhase) -> Double {
+        switch phase {
+        case .speed: return speedBoost
+        case .peak:  return peakBoost
+        default:     return baseBoost   // base (and any non-ramped phase)
+        }
+    }
+
+    /// Taper reduces peak: 0.7 → 0.5 across the phase, i.e. `taperReductionStart
+    /// - taperReductionSpan * phaseProgression`. Applied as `peakBoost * reduction`.
+    static let taperReductionStart = 0.7
+    static let taperReductionSpan = 0.2
+
+    /// Race week: cut to `peakBoost * raceLoadFraction` load (55% of peak) and
+    /// `raceDurationFraction` duration (60%).
+    static let raceLoadFraction = 0.55
+    static let raceDurationFraction = 0.6
+
+    /// At/after this phase-progression fraction the phase enters its end deload.
+    static let phaseEndDeloadThreshold = 0.8
+
+    /// Phase-end deload growth coefficients: load grows with
+    /// `1 + loadProgressionCoeff * phaseProgression`, duration with
+    /// `1 + durationProgressionCoeff * phaseProgression` (before the deload cut).
+    static let phaseEndDeloadLoadProgressionCoeff = 0.8
+    static let phaseEndDeloadDurationProgressionCoeff = 0.7
+
+    /// Amplifies the per-week % load increase into the progression factor:
+    /// `1 + phaseProgression * increasePercent/100 * progressionAmplifier`.
+    static let progressionAmplifier = 5.0
+}
+
+// MARK: - Selector Weights
+//
+// Scoring policy for `selectWorkoutByTargetV3`. Lower score = better pick.
+// Intended hierarchy: variety/recency penalties (sameWorkoutPenalty 2.0,
+// sameTitlePenalty 0.8) dominate the load/duration match terms (0.3/0.2) by
+// design — week-to-week novelty outranks a marginally tighter target match.
+// Behavior-preserving: exact values previously inlined as literals.
+enum SelectorWeights {
+    /// Base match cost: weighted relative load + duration error.
+    static let loadDiffWeight = 0.3
+    static let durationDiffWeight = 0.2
+
+    /// Maintenance plans reshape the pick: favor easy/long/progression (×0.6),
+    /// penalize hard intervals/speed (×1.8), moderately penalize threshold/fartlek (×1.3).
+    static let maintenanceEasyMultiplier = 0.6
+    static let maintenanceIntenseMultiplier = 1.8
+    static let maintenanceThresholdMultiplier = 1.3
+
+    /// Strong anti-repetition penalties (these dominate the match terms).
+    static let sameWorkoutPenalty = 2.0   // exact same workout key as last week
+    static let sameTitlePenalty = 0.8     // same title, different key (e.g. same hill repeats, other duration)
+
+    /// Rest-progression nudges when this week repeats last week's workout TYPE.
+    /// Deload: reward same-or-longer rest, penalize shorter.
+    static let deloadLongerRestBonus = -0.1
+    static let deloadShorterRestPenalty = 0.15
+    /// Build: reward same/shorter rest, penalize increasing rest (base + slope × rest growth).
+    static let buildSameRestBonus = -0.25
+    static let buildShorterRestBonus = -0.15
+    static let buildLongerRestPenalty = 0.4
+    static let buildLongerRestPenaltySlope = 0.3
+
+    /// Phase-start rest-window policy for the first interval/threshold of a type
+    /// (rest seconds; compared against interval recovery duration, a TimeInterval).
+    /// Ideal recovery 60-75s; too short (<45s) or too long (>90s) is penalized.
+    static let restTooShortThreshold: Double = 45   // below this: too dense
+    static let restIdealRangeLow: Double = 60       // ideal window: [60, 75]s
+    static let restIdealRangeHigh: Double = 75
+    static let restExcessThreshold: Double = 90     // above this: too easy
+    static let restTooShortPenalty = 1.5
+    static let restTooLongPenalty = 1.0
+    static let restTooLongPenaltySlope = 0.8
+    static let restIdealBonus = -1.0
+    static let restModerateBonus = -0.5
+}
+
 // MARK: - Seeded Random Number Generator
 
 public struct SeededRandomNumberGenerator: RandomNumberGenerator {
@@ -159,20 +255,20 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
 
     switch phase {
     case .base:
-        targetPhaseBoost = 1.0
+        targetPhaseBoost = TrainingModel.baseBoost
     case .speed:
-        targetPhaseBoost = 1.35
+        targetPhaseBoost = TrainingModel.speedBoost
     case .peak:
-        targetPhaseBoost = 1.7
+        targetPhaseBoost = TrainingModel.peakBoost
     case .taper:
         // Taper reduces from peak: 70% -> 50%
-        let taperReduction = 0.7 - (0.2 * phaseProgression)
-        targetPhaseBoost = 1.7 * taperReduction
+        let taperReduction = TrainingModel.taperReductionStart - (TrainingModel.taperReductionSpan * phaseProgression)
+        targetPhaseBoost = TrainingModel.peakBoost * taperReduction
     case .race:
         // Race week: 55% of peak load
         return WeeklyTargets(
-            load: baseLoad * 1.7 * 0.55,
-            duration: duration * 0.6,
+            load: baseLoad * TrainingModel.peakBoost * TrainingModel.raceLoadFraction,
+            duration: duration * TrainingModel.raceDurationFraction,
             isDeloading: true,
             phaseProgression: 1.0
         )
@@ -192,16 +288,15 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         && config.runnerLevel == .competitive
         && config.distance == 21097
     if phase != .base && phase != .race && !skipPeakSmoothRamp {
+        // Read the prior phase's boost from the SAME ladder as targetPhaseBoost
+        // (DRY: both go through TrainingModel.phaseBoost). The smooth ramp
+        // interpolates from the predecessor phase's boost up to this phase's.
         let previousPhaseBoost: Double
         switch phase {
-        case .speed:
-            previousPhaseBoost = 1.0  // BASE boost
-        case .peak:
-            previousPhaseBoost = 1.35  // SPEED boost
-        case .taper:
-            previousPhaseBoost = 1.7  // PEAK boost
-        default:
-            previousPhaseBoost = targetPhaseBoost
+        case .speed: previousPhaseBoost = TrainingModel.phaseBoost(for: .base)
+        case .peak:  previousPhaseBoost = TrainingModel.phaseBoost(for: .speed)
+        case .taper: previousPhaseBoost = TrainingModel.phaseBoost(for: .peak)
+        default:     previousPhaseBoost = targetPhaseBoost
         }
 
         if weekInPhase == 0 {
@@ -219,7 +314,7 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
     }
     
     // Check if deloading (end of phase)
-    let isPhaseEndDeload = phaseProgression >= 0.8
+    let isPhaseEndDeload = phaseProgression >= TrainingModel.phaseEndDeloadThreshold
 
     // Check if this is a mid-phase recovery week (every 4th week in build phases)
     // Mid-phase recovery cadence is phase-relative, not plan-relative.
@@ -239,11 +334,11 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
     var isDeloading = isPhaseEndDeload || isMidPhaseRecovery
 
     let load: Double
-    if phaseProgression >= 0.8 {
+    if phaseProgression >= TrainingModel.phaseEndDeloadThreshold {
         // Phase-end deload - cap at 25%
         let deloadPercent = min(25.0, (config.phaseFinishDeloadPercent.lowerBound + config.phaseFinishDeloadPercent.upperBound) / 2)
-        load = baseLoad * phaseBoost * (1.0 + 0.8 * phaseProgression) * (1.0 - deloadPercent / 100)
-        duration = duration * phaseBoost * (1.0 + 0.7 * phaseProgression) * (1.0 - deloadPercent / 100)
+        load = baseLoad * phaseBoost * (1.0 + TrainingModel.phaseEndDeloadLoadProgressionCoeff * phaseProgression) * (1.0 - deloadPercent / 100)
+        duration = duration * phaseBoost * (1.0 + TrainingModel.phaseEndDeloadDurationProgressionCoeff * phaseProgression) * (1.0 - deloadPercent / 100)
     } else if isMidPhaseRecovery {
         // Mid-phase recovery week - 15% reduction (25% for competitive).
         // Competitive plans run higher absolute volume, so recovery needs to
@@ -259,7 +354,7 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         let refWeekInPhase = config.profile.cutbackDipsBelowPriorWeek
             ? Double(max(0, weekInPhase - 1)) : Double(weekInPhase)
         let refProgression = min(1.0, refWeekInPhase / Double(safePhasePhase))
-        let progressionFactor = 1.0 + (refProgression * increasePercent / 100 * 5)
+        let progressionFactor = 1.0 + (refProgression * increasePercent / 100 * TrainingModel.progressionAmplifier)
         let recoveryMult = config.profile.recoveryWeekLoadMultiplier
         load = baseLoad * phaseBoost * progressionFactor * recoveryMult
         duration = duration * phaseBoost * progressionFactor * recoveryMult
@@ -278,7 +373,7 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
     } else {
         // Normal progression
         let increasePercent = (config.weeklyLoadIncreasePercent.lowerBound + config.weeklyLoadIncreasePercent.upperBound) / 2
-        let progressionFactor = 1.0 + (phaseProgression * increasePercent / 100 * 5)
+        let progressionFactor = 1.0 + (phaseProgression * increasePercent / 100 * TrainingModel.progressionAmplifier)
         load = baseLoad * phaseBoost * progressionFactor
         duration = duration * phaseBoost * progressionFactor
     }
@@ -309,16 +404,16 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
         let durationDiff = abs(workoutDuration - safeTargetDuration) / safeTargetDuration
 
         // Base score from load/duration match
-        var score = loadDiff * 0.3 + durationDiff * 0.2
+        var score = loadDiff * SelectorWeights.loadDiffWeight + durationDiff * SelectorWeights.durationDiffWeight
 
         // Maintenance plan adjustments: favor easy/long/progression, penalize intense workouts
         if isMaintenance {
             if w.type == .easyRun || w.type == .longRun || w.type == .progressionRun {
-                score *= 0.6  // Strong preference for these workout types
+                score *= SelectorWeights.maintenanceEasyMultiplier  // Strong preference for these workout types
             } else if w.type == .intervalRun || w.type == .speedRun {
-                score *= 1.8  // Penalize intense workouts
+                score *= SelectorWeights.maintenanceIntenseMultiplier  // Penalize intense workouts
             } else if w.type == .thresholdRun || w.type == .fartlekRun {
-                score *= 1.3  // Moderate penalty for threshold work
+                score *= SelectorWeights.maintenanceThresholdMultiplier  // Moderate penalty for threshold work
             }
         }
         
@@ -336,7 +431,7 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
         
         // VERY STRONG penalty for same workout as previous week
         if let prev = previousWorkout, w.key == prev.key {
-            score += 2.0
+            score += SelectorWeights.sameWorkoutPenalty
         }
         // Title-based penalty. Catalog has e.g. "Hill Repeats (8 x 60s)" at
         // 3 different durations (40/42/44min) — all with different keys, so
@@ -345,7 +440,7 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
         // same workout from the runner's perspective). Title match captures
         // the runner-visible repetition.
         if let prev = previousWorkout, w.title == prev.title && w.key != prev.key {
-            score += 0.8
+            score += SelectorWeights.sameTitlePenalty
         }
         
         // Progression-aware scoring for threshold/interval types
@@ -356,20 +451,20 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
             if isDeloading {
                 // DELOAD: prefer same or LONGER rest
                 if currRest >= prevRest {
-                    score -= 0.1
+                    score += SelectorWeights.deloadLongerRestBonus
                 } else {
-                    score += 0.15
+                    score += SelectorWeights.deloadShorterRestPenalty
                 }
             } else {
                 // BUILD week: prefer same or shorter rest
                 if currRest == prevRest {
-                    score -= 0.25
+                    score += SelectorWeights.buildSameRestBonus
                 } else if currRest < prevRest {
-                    score -= 0.15
+                    score += SelectorWeights.buildShorterRestBonus
                 } else {
                     // Increasing rest during build is bad
                     let restIncrease = Double(currRest - prevRest) / Double(max(prevRest, 60))
-                    score += 0.4 + (restIncrease * 0.3)
+                    score += SelectorWeights.buildLongerRestPenalty + (restIncrease * SelectorWeights.buildLongerRestPenaltySlope)
                 }
             }
         }
@@ -384,15 +479,15 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
             
             if restPerInterval > 0 && (previousWorkout == nil || previousWorkout?.type != w.type) {
                 // First workout of this type - prefer moderate rest
-                if restPerInterval < 45 {
-                    score += 1.5
-                } else if restPerInterval > 90 {
-                    let excessRest = Double(restPerInterval - 90) / 90.0
-                    score += 1.0 + (excessRest * 0.8)
-                } else if restPerInterval >= 60 && restPerInterval <= 75 {
-                    score -= 1.0  // Ideal range
+                if restPerInterval < SelectorWeights.restTooShortThreshold {
+                    score += SelectorWeights.restTooShortPenalty
+                } else if restPerInterval > SelectorWeights.restExcessThreshold {
+                    let excessRest = Double(restPerInterval - SelectorWeights.restExcessThreshold) / Double(SelectorWeights.restExcessThreshold)
+                    score += SelectorWeights.restTooLongPenalty + (excessRest * SelectorWeights.restTooLongPenaltySlope)
+                } else if restPerInterval >= SelectorWeights.restIdealRangeLow && restPerInterval <= SelectorWeights.restIdealRangeHigh {
+                    score += SelectorWeights.restIdealBonus  // Ideal range
                 } else {
-                    score -= 0.5
+                    score += SelectorWeights.restModerateBonus
                 }
             }
         }
