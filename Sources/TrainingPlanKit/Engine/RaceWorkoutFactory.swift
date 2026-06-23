@@ -1,8 +1,8 @@
 //
-//  PlanGenerator.swift
+//  RaceWorkoutFactory.swift
 //  RunPlan
 //
-//  Plan generation engine: creates workout plans from configurations.
+//  Race-day workout + weekday-date helpers used by PlanGeneratorV3.
 //
 
 import Foundation

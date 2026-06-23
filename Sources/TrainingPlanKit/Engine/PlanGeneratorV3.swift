@@ -88,19 +88,6 @@ enum SelectorWeights {
     static let buildShorterRestBonus = -0.15
     static let buildLongerRestPenalty = 0.4
     static let buildLongerRestPenaltySlope = 0.3
-
-    /// Phase-start rest-window policy for the first interval/threshold of a type
-    /// (rest seconds; compared against interval recovery duration, a TimeInterval).
-    /// Ideal recovery 60-75s; too short (<45s) or too long (>90s) is penalized.
-    static let restTooShortThreshold: Double = 45   // below this: too dense
-    static let restIdealRangeLow: Double = 60       // ideal window: [60, 75]s
-    static let restIdealRangeHigh: Double = 75
-    static let restExcessThreshold: Double = 90     // above this: too easy
-    static let restTooShortPenalty = 1.5
-    static let restTooLongPenalty = 1.0
-    static let restTooLongPenaltySlope = 0.8
-    static let restIdealBonus = -1.0
-    static let restModerateBonus = -0.5
 }
 
 // MARK: - Phase Duration Calculation (mirrors calculate_phase_durations)
@@ -453,30 +440,7 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
                 }
             }
         }
-        
-        // At phase start for intervals/threshold: prefer moderate rest (60-75s ideal)
-        let isIntervalOrThreshold = w.type == .intervalRun || w.type == .thresholdRun
-        
-        if phaseJustStarted && isIntervalOrThreshold && !w.intervals.isEmpty {
-            // Get rest per interval
-            let restIntervals = w.intervals.filter { $0.type == .recovery }
-            let restPerInterval = restIntervals.first?.duration ?? 0
-            
-            if restPerInterval > 0 && (previousWorkout == nil || previousWorkout?.type != w.type) {
-                // First workout of this type - prefer moderate rest
-                if restPerInterval < SelectorWeights.restTooShortThreshold {
-                    score += SelectorWeights.restTooShortPenalty
-                } else if restPerInterval > SelectorWeights.restExcessThreshold {
-                    let excessRest = Double(restPerInterval - SelectorWeights.restExcessThreshold) / Double(SelectorWeights.restExcessThreshold)
-                    score += SelectorWeights.restTooLongPenalty + (excessRest * SelectorWeights.restTooLongPenaltySlope)
-                } else if restPerInterval >= SelectorWeights.restIdealRangeLow && restPerInterval <= SelectorWeights.restIdealRangeHigh {
-                    score += SelectorWeights.restIdealBonus  // Ideal range
-                } else {
-                    score += SelectorWeights.restModerateBonus
-                }
-            }
-        }
-        
+
         if score < bestScore {
             bestScore = score
             bestMatch = w

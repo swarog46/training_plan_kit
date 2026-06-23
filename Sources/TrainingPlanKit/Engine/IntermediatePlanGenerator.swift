@@ -241,6 +241,31 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                             let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
                             if !ttOnly.isEmpty { return ttOnly }
                         }
+                        // PEAK lead-VO2 rotation (mirrors baseLTWeek): hills are gated
+                        // out of PEAK and the load selector parks on the single biggest
+                        // ladder every week (5-6× the same ladder title). On alternating
+                        // PEAK weeks force plain intervals so the lead VO2 alternates
+                        // intervals/ladder instead of locking. Sourced from filteredIntervals
+                        // (pre-floor): the only plain-intervals templates are 25-36min, below
+                        // the PEAK min-interval floor that otherwise leaves the 61min ladder
+                        // as the sole survivor — so the floor is bypassed for this slot only.
+                        // All plain-intervals templates are true Z5 (VO2), so the 5K/10K
+                        // Z5-lead requirement still holds.
+                        // 5K excluded: its PEAK is 5K-pace/intervals driven (no ladder
+                        // lock), and forcing the light plain-intervals templates there
+                        // displaces the heavier race-specific work.
+                        if phase == .peak && weekInPhase % 2 == 1 && config.distance >= 10000 {
+                            // Cycle the segment-count variant per forced-interval week
+                            // (load-sorted) so back-to-back interval weeks don't all
+                            // land on the heaviest template — otherwise the lock just
+                            // moves from one ladder title to one interval title.
+                            let variants = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
+                                .filter { $0.subtype == .intervals }
+                                .sorted { $0.trainingLoad < $1.trainingLoad }
+                            if !variants.isEmpty {
+                                return [variants[(weekInPhase / 2) % variants.count]]
+                            }
+                        }
                         if preferHillsThisWeek {
                             let hillsOnly = intervalPool.filter { $0.subtype == .hillRepeats }
                             return hillsOnly.isEmpty ? intervalPool : hillsOnly
