@@ -676,6 +676,11 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 }
             }
 
+            // Recovery-week reshaping: remove real load on deload weeks (drop a
+            // session at >=5/wk, else swap the heaviest quality for easy/progression).
+            // Runs last so it sees the fully-assembled week. BUILD phases only.
+            applyDeloadReshaping(&weekWorkouts, phase: phase, isDeloading: isDeloading)
+
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
             workoutsByWeek[week] = weekWorkouts
         } while false

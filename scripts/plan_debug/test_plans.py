@@ -66,6 +66,19 @@ def run_dump(filter_str):
                        capture_output=True, text=True, env=os.environ.copy())
     return r.stdout
 
+def parse_phase_weeks(filter_str):
+    """dict[week_num(1-based)] = (phase, is_deload) from the `phases` target model.
+    Recovery weeks now intentionally dip in realized volume, so peak comparisons
+    must exclude [deload] weeks to avoid measuring against a cutback week."""
+    r = subprocess.run([PLAN_DEBUG, "phases", filter_str],
+                       capture_output=True, text=True, env=os.environ.copy())
+    res = {}
+    for m in re.finditer(
+            r"^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load=.*?dur=\s*\d+min(\s+\[deload\])?",
+            r.stdout, re.M):
+        res[int(m.group(1))] = (m.group(2), m.group(3) is not None)
+    return res
+
 def parse_plan(text, header):
     """Return dict[week_num] = [(subtype, duration_min, pace_str)]."""
     if header not in text:
@@ -614,11 +627,18 @@ if w:
     week_vols = {wk: sum(d for _,d,_ in w[wk]) for wk in w}
     nweeks = max(w)
     last_taper = week_vols[nweeks - 1]
-    avg_peak = sum(week_vols[wk] for wk in range(nweeks-5, nweeks-2)) / 3
+    # Peak figure from NON-DELOAD PEAK weeks only: recovery weeks now deliberately
+    # remove load and dip below their predecessor, so averaging them in (as the
+    # old fixed nweeks-5..nweeks-2 window did) understates the true peak and makes
+    # the taper-drop ratio spuriously fail. Compare the taper against real peak load.
+    phw = parse_phase_weeks("Cmp 42K (build")
+    peak_real = [week_vols[wk] for wk in week_vols
+                 if phw.get(wk, (None, False)) == ("PEAK", False)]
+    avg_peak = sum(peak_real) / len(peak_real) if peak_real else 0
     check(
         "Cmp 42K 28w TAPER drops meaningfully from peak",
-        last_taper < avg_peak * 0.7,
-        f"last_taper={last_taper}, avg_peak={avg_peak:.0f}"
+        peak_real and last_taper < avg_peak * 0.7,
+        f"last_taper={last_taper}, avg_peak={avg_peak:.0f} (non-deload peak weeks={len(peak_real)})"
     )
 
 section("Short-than-recommended plans (5K 5w) generate cleanly")

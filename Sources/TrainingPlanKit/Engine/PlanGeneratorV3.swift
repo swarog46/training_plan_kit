@@ -669,6 +669,55 @@ class PlanGeneratorV3 {
         return floored.isEmpty ? pool : floored
     }
 
+    /// Recovery-week reshaping, differentiated by training frequency. Cutting the
+    /// deload long run (above) isn't enough on its own — a coach on a down week
+    /// removes real load. High-frequency weeks (>=5 sessions) drop a session;
+    /// low-frequency weeks (<=4) keep the days but swap the heaviest quality out
+    /// for an easy/progression run. Shared post-step run at the END of every build
+    /// generator's buildWeek. BUILD phases only — taper/race own their descent.
+    func applyDeloadReshaping(_ week: inout [(type: String, workout: Workout)],
+                              phase: TrainingPhase, isDeloading: Bool) {
+        guard isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
+
+        let aerobicFill: Set<WorkoutSubtype> = [.mediumLong, .easy]
+        let qualityTypes: Set<WorkoutType> = [.intervalRun, .speedRun, .thresholdRun, .fartlekRun]
+
+        // High-frequency: drop the largest-duration aerobic fill (never the long
+        // run, never quality), keeping the week at >= 4 sessions — a real rest day.
+        if week.count >= 5 {
+            let cands = week.enumerated().filter { aerobicFill.contains($0.element.workout.subtype) }
+            if let victim = cands.max(by: { $0.element.workout.duration < $1.element.workout.duration }) {
+                week.remove(at: victim.offset)
+                return
+            }
+            // Defensive: no aerobic fill to drop — fall through to lighten.
+        }
+
+        // Low-frequency (or no fill to drop): keep the days, drop the intensity —
+        // replace the single heaviest quality session with an easy/progression run
+        // of similar duration (prefer a progression near it for a mild stimulus).
+        let qualityCands = week.enumerated().filter { qualityTypes.contains($0.element.workout.type) }
+        guard let heaviest = qualityCands.max(by: { $0.element.workout.trainingLoad < $1.element.workout.trainingLoad }) else { return }
+        let targetMins = Int(heaviest.element.workout.duration / 60)
+
+        // Prefer a progression near the quality's duration (keeps a light stimulus).
+        let progressionPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+            .filter { abs(Int($0.duration / 60) - targetMins) <= 12 }
+        if let prog = progressionPool.min(by: {
+            abs(Int($0.duration / 60) - targetMins) < abs(Int($1.duration / 60) - targetMins)
+        }) {
+            week[heaviest.offset] = ("deload_progression", prog)
+            return
+        }
+        // Else an easy run of similar duration from the instance easy pool.
+        if let easy = selectWorkoutByTargetV3(workouts: easyRuns,
+                                              targetLoad: Double(heaviest.element.workout.trainingLoad) * 0.6,
+                                              targetDuration: targetMins, usedIds: &usedIds,
+                                              isMaintenance: false) {
+            week[heaviest.offset] = ("deload_easy", easy)
+        }
+    }
+
     func generate() -> [Int: [(type: String, workout: Workout)]] {
         // Reset per-run state (defensive: this type is single-use today).
         workoutsByWeek = [:]

@@ -214,3 +214,70 @@ python3 /tmp/plan_audit/analyze2.py    # criteria 1(quality-only),4(aerobic-min)
 Parser coverage verified at 767/767 weeks and 3186/3186 workout lines before drawing
 conclusions. Spacing checked against the real `createMarathonPlanV3` scheduler, not the
 flat workout list.
+
+---
+
+## Post-reshaping prod re-audit (deload-session reshaping)
+
+Read-only re-audit on the **production catalog (804 workouts, `ADAPTIVE=1`)** after a
+second, uncommitted recovery-week change layered on top of the prior fix. **Method:
+A/B diff** — built the CLI on the working tree (reshaping present), then `git stash`-ed
+the 5 generator files to rebuild the pre-reshaping baseline (commit `1ef7404`), and
+diffed every build-phase deload week. Data in `/tmp/plan_reaudit/`
+(`reaudit.py`, `diff_reshaping.py`).
+
+**The reshaping under test (BUILD-phase deload weeks only — base/speed/peak):**
+- `>=5`-session weeks **drop** the largest aerobic fill (mediumLong/easy; never the
+  long run, never quality) → week lands at `>=4` sessions (a real rest day).
+- `<=4`-session weeks (or when no aerobic fill exists to drop) **lighten**: replace the
+  single heaviest quality with a progression near its duration (`deload_progression`),
+  else an easy run (`deload_easy`).
+
+Verified it fires on prod: **64 `deload_*` tags** (53 progression, 11 easy) across 26
+plan variants, plus 63 silent drop-a-session weeks. 172 build-deload weeks total:
+drop=63, lighten→prog=44, lighten→easy=11 (remainder are RACE/Maint weeks the phases
+model marks `[deload]` that this BUILD-only step intentionally doesn't touch).
+
+### Verdict: NO REGRESSION. All 5 criteria still PASS; two get measurably better.
+
+The A/B diff is unambiguous: **reshaping introduced 0 new test failures** (the suite
+fails 18 checks *identically* on baseline and reshaped — all pre-existing peak-LR tier
+caps / Cmp BASE long-run ordering / VO2 1–2s race-pace bunching / stale "unchanged"
+sentinels, none deload-related), **0 new back-to-back-quality days** (`daydump` ⚠ = 0
+on both), and **0 new sawtooth breaks**.
+
+| Criterion | Result | Evidence (baseline → reshaped) |
+|---|---|---|
+| **1. No 4+ wk repeat** | ✅ PASS | All quality-title streaks still rotate by duration/reps. Reshaping *shortened* one streak (Adv 42K MP W15–19→W15–18) and broke others by injecting progression/easy; created none. |
+| **2. Load sawtooth + deeper dips** | ✅ PASS (improved) | Mean realized deload-week load **26 984 → 23 106 (−14%)** over 172 weeks — the intended deeper dip. Sawtooth-break count (deload week ≥ its non-deload neighbour mean) **52 → 22**; reshaping *introduced none, fixed 30*. Remaining 22 are pre-existing phase-label quirks (Maint every-4th, 5K-rec SPEED peak, phase boundaries). No plan flattened. |
+| **3. Pace progression** | ✅ PASS | Injected `deload_*` sit in the aerobic band: e.g. Int 21K progression 5:00–5:45 vs that plan's threshold 4:55–5:00 (no work-segment inversion); easy < race everywhere. Quality keeps sharpening across remaining hard weeks. The only ">race" hits are (a) strides (by-design neuromuscular) and (b) progression runs finishing at ~MP/threshold — distance-correct per §2A, ≤31s, pre-existing, not reshaping-introduced. |
+| **4. 80/20 distribution** | ✅ PASS | **No plan dropped to zero hard sessions.** Lighten branch trades a few H→P on deload weeks (e.g. Int 42K long 36H→30H, +4P); Cmp plans lose **0** hard sessions (they drop aerobic fill) and just shed 5–7% load. Total-load delta −0% to −7%, concentrated on deload weeks. No over-tip toward easy. |
+| **5. No all-hard / no B2B** | ✅ PASS | Removing/lightening hard load on deloads only helps. `daydump` back-to-back-quality = **0 → 0**. No all-hard week. |
+
+### Only nuance worth a note (LOW, not a regression)
+
+**`Int 5K (long, 10w)` W8** (PEAK deload) is the single week where the lighten branch
+fell through to `deload_easy`: baseline `Intervals (10 seg) l=6097` → reshaped
+`Easy + Strides (2×15s) l=2010`, leaving that one week with no quality body (the strides
+retain a neuromuscular touch). It happens because no progression template sits within
+±12 min of the 26-min target. It's a correct down-week, the plan is not flattened, and
+absolute load is tiny — defensible. If ever tightened, widen the progression
+duration-match window or fall back to a *short* progression before pure easy. Every other
+`deload_easy`/`deload_progression` week retains a long run and/or a progression stimulus;
+**zero** build-deload weeks are truly stimulus-free as a result of the reshaping (the 6
+other all-easy `[deload]` weeks — Maint W10, 5K/42K RACE-phase tapers — are unchanged
+from baseline and outside this step's scope).
+
+### Reproduction
+```bash
+cd training_plan_kit
+PROD=/Users/dansh/Sandbox/runplan/RunPlan/Resources/JSON/workouts.json
+# reshaped:
+./scripts/plan_debug/build.sh
+WORKOUTS_PATH=$PROD ADAPTIVE=1 ./scripts/plan_debug/plan_debug dump    > /tmp/plan_reaudit/dump_all.txt
+WORKOUTS_PATH=$PROD ADAPTIVE=1 ./scripts/plan_debug/plan_debug phases  > /tmp/plan_reaudit/phases_all.txt
+WORKOUTS_PATH=$PROD ADAPTIVE=1 ./scripts/plan_debug/plan_debug daydump > /tmp/plan_reaudit/daydump_all.txt
+# baseline: git stash the 5 Engine/*Generator*.swift, rebuild, dump -> BASE_dump_all.txt, pop
+python3 /tmp/plan_reaudit/reaudit.py        # 5-criteria pass on reshaped
+python3 /tmp/plan_reaudit/diff_reshaping.py # per-deload-week baseline→reshaped diff
+```
