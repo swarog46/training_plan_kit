@@ -68,9 +68,6 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // recoveries by construction — exempt them from this filter or they
             // get excluded for advanced runners (60s rest cap).
             let maxRestPerInterval = config.profile.intervalRestCapSeconds
-            
-            // No surprise weeks for competitive: sub-3h / sub-1:30 athletes need
-            // consistent progressive overload, so those branches are dropped here.
 
             // PEAK milestone cadence — computed at week scope so both the
             // pool gate AND the per-level selection logic below can read it.
@@ -135,7 +132,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // 35-50min). Onboarding (BASE wks 0-2) gets the lighter floor;
                 // race-PEAK pushes Int/Adv toward textbook 40-50min sessions.
                 let isOnboarding = phase == .base && weekInPhase <= 1
+                // Deload build weeks: relax the floor to the onboarding value (22).
+                // The full PEAK floor can drop every interval/short-ladder template
+                // except one heavy survivor, forcing the "recovery" pick onto the
+                // monster session. 22 still excludes the lightest 20-min ladder so
+                // the deload lands on a genuine Z5 session, not something trivial.
                 let minIntervalMinutes: Int = {
+                    if isDeloading && phase != .race { return 22 }
                     if isOnboarding { return 22 }
                     return config.profile.minIntervalMinutes(phase: phase)
                 }()
@@ -568,9 +571,12 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     case .taper, .race:
                         targetLongRunMins = p.taper
                     }
-                    longRunTargetMins = targetLongRunMins
+                    // On recovery/deload BUILD weeks, cut the LR target ~20% so the
+                    // week's dominant load chunk dips. Both the tolerance filter and
+                    // the selector below read longRunTargetMins, so the cut reaches both.
+                    longRunTargetMins = recoveryLongRunTarget(targetLongRunMins, isDeloading: isDeloading, phase: phase)
                     let toleranceMins = 15
-                    let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - targetLongRunMins) <= toleranceMins }
+                    let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - longRunTargetMins) <= toleranceMins }
                     if !filteredByTarget.isEmpty {
                         pool = filteredByTarget
                     }
@@ -588,8 +594,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                         }
                         let base = aerobic.isEmpty ? pool : aerobic
                         if let nearest = base.min(by: {
-                            abs(Int($0.duration) / 60 - targetLongRunMins)
-                                < abs(Int($1.duration) / 60 - targetLongRunMins)
+                            abs(Int($0.duration) / 60 - longRunTargetMins)
+                                < abs(Int($1.duration) / 60 - longRunTargetMins)
                         }) {
                             let nd = Int(nearest.duration) / 60
                             let snapped = base.filter { abs(Int($0.duration) / 60 - nd) <= 2 }
@@ -611,7 +617,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // Monotonic enforcement (shared): non-decreasing in BUILD, non-
                 // increasing in TAPER/RACE, with a 65%-of-peak cutback floor so a
                 // down-week long run never collapses to the 60min catalog minimum.
-                pool = applyLongRunMonotonic(pool: pool, phase: phase, prevLongRunMins: prevLongRunMins)
+                pool = applyLongRunMonotonic(pool: pool, phase: phase, prevLongRunMins: prevLongRunMins, isDeloading: isDeloading)
                 if let longRun = selectWorkoutByTargetV3(workouts: pool, targetLoad: targetLoad * lrLoadMult, targetDuration: longRunTargetMins, usedIds: &usedIds, isMaintenance: false) {
                     weekWorkouts.append(("long", longRun))
                     prevLongRunMins = Int(longRun.duration / 60)

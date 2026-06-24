@@ -18,9 +18,6 @@ public protocol PlanProfile {
     /// Max recovery (seconds) an interval rep may have and still be selectable.
     /// Beginners tolerate longer rests; the fitter tiers keep recoveries tight.
     var intervalRestCapSeconds: Int { get }
-    /// Whether the plan sprinkles "surprise" progressive weeks through speed/peak
-    /// (beginners don't — they get a steadier ramp).
-    var hasSurpriseProgressiveWeeks: Bool { get }
     /// Whether intervals already appear in the BASE phase (fitter tiers) vs only
     /// from SPEED on (beginners build aerobically first).
     var startsIntervalsInBase: Bool { get }
@@ -49,7 +46,6 @@ public protocol PlanProfile {
 
 public extension PlanProfile {
     var intervalRestCapSeconds: Int { 60 }          // fitter-tier defaults
-    var hasSurpriseProgressiveWeeks: Bool { true }
     var startsIntervalsInBase: Bool { true }
     var alternatesMilestoneInBase: Bool { true }
     var recoveryWeekLoadMultiplier: Double { 0.85 }

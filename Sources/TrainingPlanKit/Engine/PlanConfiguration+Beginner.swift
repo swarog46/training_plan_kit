@@ -139,7 +139,6 @@ extension PlanConfiguration {
 public struct BeginnerProfile: PlanProfile {
     public init() {}
     public var intervalRestCapSeconds: Int { 75 }   // beginners tolerate longer rests
-    public var hasSurpriseProgressiveWeeks: Bool { false }  // steadier ramp
     // Steadier ramp ⇒ no quality-week sawtooth to make cutbacks visible, so the
     // mid-phase recovery week must explicitly dip below the prior week (long
     // beginner 42K/10K builds otherwise climb straight through their cutback).

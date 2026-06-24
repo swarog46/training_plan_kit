@@ -55,6 +55,12 @@ enum TrainingModel {
     /// Amplifies the per-week % load increase into the progression factor:
     /// `1 + phaseProgression * increasePercent/100 * progressionAmplifier`.
     static let progressionAmplifier = 5.0
+
+    /// On recovery/deload weeks, cut the long-run duration target ~20% (Pfitz
+    /// cutback weeks drop the long run, not just the quality). The weekly
+    /// recoveryMult never reaches the LR target, so the dominant load chunk
+    /// holds flat without this.
+    static let recoveryLongRunCutback = 0.80
 }
 
 // MARK: - Selector Weights
@@ -504,7 +510,6 @@ class PlanGeneratorV3 {
     var easyRuns: [Workout] = []
     var filteredIntervals: [Workout] = []
     var filteredThresholds: [Workout] = []
-    var surpriseWeeks: Set<Int> = []
     let restGatedSubtypes: Set<WorkoutSubtype> = [.intervals, .pyramidIntervals, .ladderIntervals]
 
 
@@ -608,10 +613,23 @@ class PlanGeneratorV3 {
         }
     }
 
+    /// On recovery/deload weeks, cut the long-run duration target so the week's
+    /// dominant load chunk actually dips (the weekly recoveryMult never reaches it).
+    /// Build phases only — taper/race long runs are already shaped by their own logic.
+    func recoveryLongRunTarget(_ mins: Int, isDeloading: Bool, phase: TrainingPhase) -> Int {
+        guard isDeloading, phase == .base || phase == .speed || phase == .peak else { return mins }
+        return max(60, Int((Double(mins) * TrainingModel.recoveryLongRunCutback).rounded()))
+    }
+
     // Apply the long-run monotonic constraint, returning the narrowed pool.
     // BASE/SPEED/PEAK: this week's LR may not be meaningfully shorter than last
     // week's (5min slack absorbs selector noise / phase-target movement).
     // TAPER + RACE: must not be longer than last week's.
+    //
+    // EXCEPTION — deloading BUILD weeks: the non-decreasing rule is exactly what
+    // pins the long run flat on a cutback week. When isDeloading, skip it and
+    // instead floor the pool at the cutback target (~80% of prev) so the LR can
+    // dip without collapsing to the 60min catalog floor.
     //
     // When the strict monotonic floor empties the pool (e.g. a mid-block cutback
     // week whose only ≈peak-length option was a rehearsal that's filtered out of
@@ -619,8 +637,17 @@ class PlanGeneratorV3 {
     // floor — that snaps the long run to ~9km mid-marathon. Instead floor a
     // BUILD-phase cutback long run at ~65% of the surrounding peak (prevLongRun),
     // so the long-run thread stays continuous through the down-week.
-    func applyLongRunMonotonic(pool: [Workout], phase: TrainingPhase, prevLongRunMins: Int) -> [Workout] {
+    func applyLongRunMonotonic(pool: [Workout], phase: TrainingPhase, prevLongRunMins: Int, isDeloading: Bool) -> [Workout] {
         guard prevLongRunMins > 0 else { return pool }
+        // Deloading BUILD week: allow the dip. The non-decreasing rule below is
+        // exactly what pins the LR flat on a cutback week — skip it and floor at
+        // the cutback target (~80% of prev) so the down-week LR drops but stays
+        // continuous. (TAPER/RACE deloads keep their own ceiling logic below.)
+        if isDeloading, phase == .base || phase == .speed || phase == .peak {
+            let floor = recoveryLongRunTarget(prevLongRunMins, isDeloading: true, phase: phase)
+            let floored = pool.filter { Int($0.duration / 60) >= floor }
+            return floored.isEmpty ? pool : floored
+        }
         let monotonicPool: [Workout]
         switch phase {
         case .base:
@@ -717,28 +744,6 @@ class PlanGeneratorV3 {
         (filteredIntervals, filteredThresholds) = config.profile.qualityPools(
             intervals: intervals, thresholds: thresholds, allWorkouts: workoutPool,
             isVO2Max: config.isVO2Max, hasZone5: hasZone5)
-
-        // Determine surprise weeks for intermediate/advanced
-        let surpriseProgressiveCount: Int
-        switch config.distance {
-        case 5000: surpriseProgressiveCount = 1
-        case 10000: surpriseProgressiveCount = 2
-        case 21097: surpriseProgressiveCount = 3
-        default: surpriseProgressiveCount = 4
-        }
-
-        let totalSpeedPeakWeeks = speedDur + peakDur
-        surpriseWeeks = []
-        if totalSpeedPeakWeeks > 0 && config.profile.hasSurpriseProgressiveWeeks {
-            let intervalSize = max(1, totalSpeedPeakWeeks / (surpriseProgressiveCount + 1))
-            let speedStart = baseDur
-            for i in 1...surpriseProgressiveCount {
-                let surpriseWeek = speedStart + (i * intervalSize)
-                if surpriseWeek < actualWeeksToGenerate - 1 {
-                    surpriseWeeks.insert(surpriseWeek)
-                }
-            }
-        }
 
         for week in 0..<actualWeeksToGenerate {
             buildWeek(week: week)

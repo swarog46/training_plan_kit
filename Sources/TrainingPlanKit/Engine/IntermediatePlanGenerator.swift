@@ -64,10 +64,6 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             // recoveries by construction — exempt them from this filter or they
             // get excluded for advanced runners (60s rest cap).
             let maxRestPerInterval = config.profile.intervalRestCapSeconds
-            
-            // Surprise weeks inject variety (shorter LR, threshold → progression
-            // swap) to prevent staleness in long plans.
-            let isSurpriseWeek = surpriseWeeks.contains(week)
 
             // PEAK milestone cadence — computed at week scope so both the
             // pool gate AND the per-level selection logic below can read it.
@@ -122,7 +118,13 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 // 35-50min). Onboarding (BASE wks 0-2) gets the lighter floor;
                 // race-PEAK pushes Int/Adv toward textbook 40-50min sessions.
                 let isOnboarding = phase == .base && weekInPhase <= 1
+                // Deload build weeks: relax the floor to the onboarding value (22).
+                // The full PEAK floor can drop every interval/short-ladder template
+                // except one heavy survivor, forcing the "recovery" pick onto the
+                // monster session. 22 still excludes the lightest 20-min ladder so
+                // the deload lands on a genuine Z5 session, not something trivial.
                 let minIntervalMinutes: Int = {
+                    if isDeloading && phase != .race { return 22 }
                     if isOnboarding { return 22 }
                     return config.profile.minIntervalMinutes(phase: phase)
                 }()
@@ -322,17 +324,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
-                        if isSurpriseWeek {
-                            // Surprise week: Replace threshold with progression run (intensity drop)
-                            var progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
-                                .filter { $0.duration >= 40 * 60 }
-                            if config.distance < 42000 {
-                                progressivePool = progressivePool.filter { $0.duration <= 70 * 60 }  // Cap at 1h10m for <42K
-                            }
-                            if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: false) {
-                                weekWorkouts.append(("progressive_surprise", progressive))
-                            }
-                        } else if weekVariation == 3 && !intervalPool.isEmpty && config.distance < 21097 {
+                        if weekVariation == 3 && !intervalPool.isEmpty && config.distance < 21097 {
                             // Every 5th week (week % 5 == 3): Double intervals instead
                             // of threshold — 5K/10K ONLY. Doubling VO2 in a week suits
                             // a speed race, but a half/marathon is LT- and MP-dominant
@@ -465,19 +457,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 }
                 // (Beg 21K/42K mid-PEAK rehearsal is handled in BeginnerPlanGenerator.)
             }
-            
-            // Surprise week: for short-race plans (5K/10K/21K) replace the long
-            // run with an easy "surprise" run. For marathon, the user needs every
-            // long run they can get in SPEED+PEAK — instead of skipping, just
-            // shorten the long run cap so it still happens but lighter.
-            let isMarathon = config.distance >= 30000
-            if isSurpriseWeek && !isMarathon {
-                if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.12, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: false) {
-                    weekWorkouts.append(("easy_surprise", easy))
-                }
-                shouldAddLong = false
-            }
-            
+
             if shouldAddLong && !longRuns.isEmpty {
                 var pool = filterWorkoutsBySubtypeV3(workouts: longRuns, subtypes: longRunTypes)
 
@@ -485,17 +465,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 // 18/55 peaks at 22mi long runs; Higdon Int 1 marathon at 20mi.
                 // Longest-run cap is declared per-plan on the config as one readable
                 // (distance, level) table — see PlanConfiguration.maxLongRunMinutes.
-                var maxDurationMins = config.maxLongRunMinutes
-                // Marathon surprise/cutback weeks: shorten the long run instead of
-                // skipping it (5d). Cap at 90min for the aerobic stimulus without the
-                // recovery cost — but never below ~70% of the surrounding peak
-                // long run, so a mid-block cutback doesn't collapse to the 60min
-                // floor (~9km). 0.72 (not 0.65) so a peak cutback (prev ~145min)
-                // clears the catalog's 100min rung instead of falling back to 60.
-                if isSurpriseWeek && isMarathon {
-                    let cutbackFloor = Int(Double(prevLongRunMins) * 0.72)
-                    maxDurationMins = min(maxDurationMins, max(90, cutbackFloor))
-                }
+                let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
 
                 // Filter: ALL long runs (including progressive) must be >= 60 minutes
@@ -541,9 +511,12 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     case .taper, .race:
                         targetLongRunMins = p.taper
                     }
-                    longRunTargetMins = targetLongRunMins
+                    // On recovery/deload BUILD weeks, cut the LR target ~20% so the
+                    // week's dominant load chunk dips. Both the tolerance filter and
+                    // the selector below read longRunTargetMins, so the cut reaches both.
+                    longRunTargetMins = recoveryLongRunTarget(targetLongRunMins, isDeloading: isDeloading, phase: phase)
                     let toleranceMins = 15
-                    let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - targetLongRunMins) <= toleranceMins }
+                    let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - longRunTargetMins) <= toleranceMins }
                     if !filteredByTarget.isEmpty {
                         pool = filteredByTarget
                     }
@@ -561,8 +534,8 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         }
                         let base = aerobic.isEmpty ? pool : aerobic
                         if let nearest = base.min(by: {
-                            abs(Int($0.duration) / 60 - targetLongRunMins)
-                                < abs(Int($1.duration) / 60 - targetLongRunMins)
+                            abs(Int($0.duration) / 60 - longRunTargetMins)
+                                < abs(Int($1.duration) / 60 - longRunTargetMins)
                         }) {
                             let nd = Int(nearest.duration) / 60
                             let snapped = base.filter { abs(Int($0.duration) / 60 - nd) <= 2 }
@@ -584,7 +557,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 // Monotonic enforcement (shared): non-decreasing in BUILD, non-
                 // increasing in TAPER/RACE, with a 65%-of-peak cutback floor so a
                 // down-week long run never collapses to the 60min catalog minimum.
-                pool = applyLongRunMonotonic(pool: pool, phase: phase, prevLongRunMins: prevLongRunMins)
+                pool = applyLongRunMonotonic(pool: pool, phase: phase, prevLongRunMins: prevLongRunMins, isDeloading: isDeloading)
                 if let longRun = selectWorkoutByTargetV3(workouts: pool, targetLoad: targetLoad * lrLoadMult, targetDuration: longRunTargetMins, usedIds: &usedIds, isMaintenance: false) {
                     weekWorkouts.append(("long", longRun))
                     prevLongRunMins = Int(longRun.duration / 60)
