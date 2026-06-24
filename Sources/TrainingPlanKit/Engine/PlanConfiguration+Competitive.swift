@@ -41,8 +41,7 @@ extension PlanConfiguration {
             weeklyLoadIncreasePercent: 13...22,
             phaseFinishDeloadPercent: 18...20,
             taperDeloadPercent: 30,
-            // Same selector-undershoot compensation as competitive42 (~15%).
-            // 320 → 380 lands W1 at ~320 (target) and average ~430 → ~500.
+            // Over-set ~15% to compensate for the selector's volume undershoot.
             initialWeeklyDuration: 285, // 380×0.75 (sub-1:30 half trim baked in)
             initialLongRunDuration: 80...95,
             maxLongRunMinutes: 115,
@@ -81,11 +80,8 @@ extension PlanConfiguration {
             weeklyLoadIncreasePercent: 12...20,
             phaseFinishDeloadPercent: 18...20,
             taperDeloadPercent: 35,
-            // Pfitz 18/70: starts ~80 km/wk ≈ 470 min, peaks ~110 km/wk ≈ 650 min.
-            // Bumped 470 → 560 to compensate for the selector's tendency to
-            // underdeliver vs configured target by ~15%. With initial 560,
-            // W1 lands at ~470 (Pfitz target) instead of 390 (~77% of target).
-            // Average week climbs from 464 to ~550, closing most of the gap.
+            // Pfitz 18/70 target ~470min W1. Over-set to 560 to compensate for the
+            // selector's ~15% volume undershoot.
             initialWeeklyDuration: 560,
             initialLongRunDuration: 110...125,
             maxLongRunMinutes: 220,

@@ -22,22 +22,15 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
             // Detect phase transition
             let phaseJustStarted = prevPhase != nil && phase != prevPhase!
             if phaseJustStarted {
-                // Reset variety tracking at phase boundaries — encourages reuse of
-                // pool workouts within each phase. Persisting across phases interacts
-                // badly with the cumulative penalty (good matches give way to short
-                // easies, dragging volume down), so keep the per-phase reset.
+                // Reset variety tracking at phase boundaries. See BeginnerPlanGenerator.
                 usedIds.removeAll()
             }
             prevPhase = phase
             
             // Calculate targets
             let rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
-            // ACWR ramp cap (DURATION): a week's volume may not exceed 1.25× the
-            // highest of the last 3 weeks — kills back-loaded single-week spikes
-            // (e.g. the 5K peak-finish week leaping +44% off a ~250min plateau) while
-            // letting post-deload weeks rebound to the recent high. Load scales with
-            // the cut so intensity/min is preserved. Caps VOLUME only, so load-
-            // balanced builds (marathon) with no duration spike are untouched.
+            // ACWR ramp cap (DURATION): cap volume at 1.25× the recent 3-week max,
+            // scaling load with the cut. See BeginnerPlanGenerator for the rationale.
             let targets: WeeklyTargets = {
                 guard let maxDur = recentDur.max() else { return rawTargets }
                 let capDur = maxDur * 1.25
@@ -55,37 +48,23 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
 
             let maxWorkoutsPerWeek = config.trainingDays.count
             
-            // Filter intervals by max rest per runner level. Only applies to the
-            // VO2max-style subtypes (intervals/pyramidIntervals/ladderIntervals)
-            // that get their stimulus from short-rest density. Hill repeats,
-            // yasso 800s, mile repeats, and time trials are designed with long
-            // recoveries by construction — exempt them from this filter or they
-            // get excluded for advanced runners (60s rest cap).
+            // Max-rest filter applies only to density-driven VO2 subtypes; see
+            // BeginnerPlanGenerator for why hills/yasso/mile-reps/TT are exempt.
             let maxRestPerInterval = config.profile.intervalRestCapSeconds
-            
+
             // PEAK milestone cadence — computed at week scope so both the
             // pool gate AND the per-level selection logic below can read it.
             let milestoneCadence = max(3, peakDur / 2)
             let yassoWeek = phase == .peak && config.runnerLevel != .beginner && (weekInPhase % milestoneCadence) == 0
-            // Time trials: a recalibration checkpoint mid-plan (SPEED phase) so the
-            // runner re-measures fitness with most of the plan still ahead to act on
-            // it, PLUS the original late PEAK tune-up (also breaks up PEAK ladder/
-            // interval repetition and holds peak load). Was PEAK-only, which buried
-            // the sole TT near ~80% of the plan. Recalib falls back to the last BASE
-            // week if a plan has no SPEED phase.
+            // Time trials: a mid-plan SPEED recalibration check + the late PEAK
+            // tune-up; recalib falls back to the last BASE week if no SPEED phase.
+            // See BeginnerPlanGenerator for the full reasoning.
             let recalibTTWeek = (speedDur > 0)
                 ? (phase == .speed && weekInPhase == speedDur / 2)
                 : (phase == .base && weekInPhase == baseDur - 1)
-            // Late PEAK tune-up TT only for the longer plans (half+, 12-20 wk), which
-            // benefit from a periodic ~4-week TT cadence and where it also breaks PEAK
-            // ladder repetition. 5K/10K (6-10 wk) keep just the single mid-plan
-            // recalibration TT — one race-effort check is plenty for a short block.
-            // Competitive forces a race rehearsal onto even (and the last) PEAK weeks
-            // (mirrors the long-run section's isMPSegmentWeek). Don't also drop a PEAK
-            // time-trial there: the rehearsal already IS the race-effort check, so a
-            // TT + a race-pace rehearsal would stack into one brutal week. Keep the
-            // TT and the rehearsal in separate weeks (the rehearsal is the learning
-            // point; the mid-plan recalibration TT still satisfies "half has a TT").
+            // Late PEAK tune-up TT only for the longer plans (half+); see Beginner.
+            // Competitive forces a rehearsal onto even/last PEAK weeks, so suppress a
+            // PEAK TT there (rehearsal + TT would stack into one brutal week).
             let peakWeekIndex = week - baseDur - speedDur
             let competitiveRehearsalWeek = config.runnerLevel == .competitive && peakDur >= 3
                 && (peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1)
@@ -94,25 +73,19 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                 && !competitiveRehearsalWeek
             let ttWeek = recalibTTWeek || peakTTWeek
 
-            // Climb one variant per ~2 plan weeks (load-sorted) across BASE+SPEED so
-            // the load-target selector can't park on the cheapest template. Absolute
-            // week (not weekInPhase) so the ramp continues base → speed. Applied to
-            // BOTH hills and ladders — both have many same-subtype catalog variants.
-
+            // (Hills/ladders climb one variant per ~2 plan weeks via
+            // rampVariantsByPlanWeek below — see PlanGeneratorV3.)
             let intervalPool: [Workout] = {
                 var pool = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
-                // Gate hill repeats: BASE and SPEED only (strength foundation,
-                // then transition to race-specific). Skip the first week of
-                // each phase so the runner adapts before adding hill stress.
+                // Gate hill repeats: BASE/SPEED only, skipping each phase's first
+                // week so the runner adapts first. See BeginnerPlanGenerator.
                 let hillsAllowed = (phase == .base || phase == .speed) && weekInPhase >= 1
                 if !hillsAllowed {
                     pool = pool.filter { $0.subtype != .hillRepeats }
                 }
 
-                // Gate Yasso 800s and Time Trials based on the milestone
-                // cadence computed at week scope. Yasso is Int/Adv only;
-                // TT runs for all levels. Cadence yields 2-3 of each per
-                // PEAK cycle, never sharing a week.
+                // Gate Yasso 800s (Int/Adv only) and Time Trials (all levels) by
+                // milestone cadence — 2-3 of each per PEAK cycle, never sharing a week.
                 if !yassoWeek {
                     pool = pool.filter { $0.subtype != .yasso800 }
                 }
@@ -120,25 +93,14 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                     pool = pool.filter { $0.subtype != .timeTrial }
                 }
 
-                // Minimum-duration floor by phase + level. Below the floor the
-                // session is too short to engage VO2max/T-pace meaningfully
-                // (Daniels: I-pace reps need 2-5min each; total session typically
-                // 35-50min). Onboarding (BASE wks 0-2) gets the lighter floor;
-                // race-PEAK pushes Int/Adv toward textbook 40-50min sessions.
-                // Maintenance: fixed 20min interval floor.
+                // Maintenance: fixed 20min interval floor (engine min to engage VO2/T-pace).
                 let minIntervalMinutes = 20
                 let filtered = pool.filter { $0.duration >= minIntervalMinutes * 60 }
-                // Don't return an empty pool — fall back to full pool if the
-                // floor excluded everything (catalog gap, not the user's
-                // problem).
+                // Fall back to the full pool if the floor excluded everything.
                 var result = filtered.isEmpty ? pool : filtered
-                // 5K/10K: the lead SPEED/VO2 session must be true VO2 (Z5). The catalog
-                // tags ~half of intervals/ladderIntervals templates Z4 (LT cruise work)
-                // — correct on half/marathon (LT-dominant BY DESIGN) but on 5K/10K,
-                // where race ≈ 5K speed, a Z4 "VO2" session renders SLOWER than race
-                // (inversion: the "fast" work reads as threshold/race-pace cruise).
-                // Drop the Z4-only VO2-family templates when true-Z5 ones exist; hills
-                // / mile-reps (strength / LT) are left untouched for variety.
+                // 5K/10K: the lead VO2 session must be true Z5. Drop Z4-only VO2-family
+                // templates when true-Z5 ones exist (on 5K/10K a Z4 "VO2" renders
+                // slower than race); see BeginnerPlanGenerator.
                 if config.distance < 21000 {
                     for vsub in [WorkoutSubtype.intervals, .ladderIntervals, .pyramidIntervals] {
                         if result.contains(where: { $0.subtype == vsub && isRealZ5($0) }) {
@@ -158,11 +120,9 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                 return result
             }()
             
-            // MAINTENANCE: indefinite fitness upkeep, no race target. Safely
-            // handles a post-marathon runner AND preserves fitness long-term.
-            // Cadence: weeks 0-1 easy ramp; every 4th week deload; all other
-            // weeks get 1 long + 1 quality (alternating interval/threshold) +
-            // easy fill, scaled to days/week.
+            // MAINTENANCE: indefinite upkeep, no race target. Cadence: weeks 0-1
+            // easy ramp; every 4th week deload; all other weeks 1 long + 1 quality
+            // (alternating interval/threshold) + easy fill, scaled to days/week.
             do {
                 let isRecoveryRamp = week < 2
                 let isDeloadWeek = week >= 4 && week % 4 == 1  // weeks 5, 9, 13, ...
@@ -211,14 +171,9 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                         }
                     }
                 } else {
-                    // Regular maintenance week. Strategy depends on days/week:
-                    //
-                    // 2 days/wk (Beg): too few slots for long+quality same week.
-                    //   Alternate by week: odd = long+easy, even = quality+easy.
-                    //   Quality itself alternates interval/threshold week-to-week.
-                    //
-                    // 3+ days/wk (Int/Adv): 1 long + 1 quality + easy fill every
-                    //   regular week. Quality alternates interval/threshold.
+                    // Regular maintenance week, by days/week. 2 days/wk: alternate
+                    // long+easy / quality+easy by week (no room for both). 3+ days/wk:
+                    // 1 long + 1 quality + easy fill. Quality alternates interval/threshold.
                     let useInterval = (week / 2) % 2 == 0  // alternate quality type per week
                     let isLongWeek = week % 2 == 1          // for 2-day plans only
 

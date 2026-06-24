@@ -11,9 +11,7 @@ import Foundation
 //
 // The periodization model read by `calculateWeeklyTargetsV3`: phase boosts,
 // taper/race shaping, deload thresholds, and the progression amplifier — the
-// numbers that define the *shape* of every plan's weekly load/duration ramp,
-// gathered here so the model is legible in one place. Behavior-preserving:
-// these are the exact values previously inlined as literals.
+// numbers that define the *shape* of every plan's weekly load/duration ramp.
 enum TrainingModel {
     /// Per-phase load/duration multiplier over the config baseLoad.
     /// base = baseline; speed = +35%; peak = +70% above base.
@@ -57,19 +55,16 @@ enum TrainingModel {
     static let progressionAmplifier = 5.0
 
     /// On recovery/deload weeks, cut the long-run duration target ~20% (Pfitz
-    /// cutback weeks drop the long run, not just the quality). The weekly
-    /// recoveryMult never reaches the LR target, so the dominant load chunk
-    /// holds flat without this.
+    /// cutback weeks drop the long run too, not just the quality).
     static let recoveryLongRunCutback = 0.80
 }
 
 // MARK: - Selector Weights
 //
 // Scoring policy for `selectWorkoutByTargetV3`. Lower score = better pick.
-// Intended hierarchy: variety/recency penalties (sameWorkoutPenalty 2.0,
-// sameTitlePenalty 0.8) dominate the load/duration match terms (0.3/0.2) by
-// design — week-to-week novelty outranks a marginally tighter target match.
-// Behavior-preserving: exact values previously inlined as literals.
+// Variety/recency penalties (sameWorkoutPenalty 2.0, sameTitlePenalty 0.8)
+// dominate the load/duration match terms (0.3/0.2) by design — week-to-week
+// novelty outranks a marginally tighter target match.
 enum SelectorWeights {
     /// Base match cost: weighted relative load + duration error.
     static let loadDiffWeight = 0.3
@@ -101,9 +96,8 @@ enum SelectorWeights {
 public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) -> [String: Int] {
     // Taper is fixed — longer plans get more training, not more taper
     var taper = config.minTaperPhaseWeeks
-    // Marathon: floor the taper at 3 weeks. Long runs build monotonically and
-    // peak at the last PEAK week, so a 2-week taper lands the longest run only
-    // ~2 weeks out — too close to absorb. (Half/shorter shed less; keep theirs.)
+    // Marathon: floor the taper at 3 weeks. The long run peaks at the last PEAK
+    // week, so a 2-week taper lands it only ~2 weeks out — too close to absorb.
     if config.distance >= 30000 {
         taper = max(taper, 3)
     }
@@ -156,10 +150,8 @@ public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) 
         }
     }
 
-    // Final pass: cap PEAK at 8 weeks for competitive plans (Pfitz peak
-    // windows are 6-8 weeks; longer = overtraining). Any excess moves to
-    // BASE — that's where VDOT growth actually happens, and a 28-week
-    // sub-3h plan needs a long BASE not an 11-week PEAK.
+    // Final pass: cap PEAK at 8 weeks for competitive (Pfitz peak windows are
+    // 6-8w; longer = overtraining). Excess moves to BASE where VDOT growth happens.
     if config.runnerLevel == .competitive && peak > 8 {
         let excess = peak - 8
         peak = 8
@@ -172,11 +164,9 @@ public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) 
 // MARK: - Phase Determination (mirrors determine_phase)
 
 public func determinePhaseV3(weekIndex: Int, baseDur: Int, speedDur: Int, peakDur: Int, taperDur: Int) -> (phase: TrainingPhase, weekInPhase: Int) {
-    // Week ordering: BASE -> SPEED -> PEAK -> TAPER -> RACE (last week)
-    // The final week of the plan is race week — distinct from taper because
-    // it cuts volume to ~50% of peak (Pfitz / Daniels) rather than the
-    // gradual ramp-down the taper phase delivers. Only fires when taper
-    // is >= 2 weeks (a 1-week taper IS the race week, no need to split).
+    // Week ordering: BASE -> SPEED -> PEAK -> TAPER -> RACE (last week).
+    // Race week is distinct from taper: it cuts to ~50% of peak rather than the
+    // taper ramp-down. Only splits off when taper >= 2 (a 1-week taper IS race week).
     let totalWeeks = baseDur + speedDur + peakDur + taperDur
     if taperDur >= 2 && weekIndex == totalWeeks - 1 {
         return (.race, 0)
@@ -252,23 +242,18 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         )
     }
 
-    // Smooth phase transitions: ramp up gradually over first 2 weeks
+    // Smooth phase transitions: ramp up gradually over first 2 weeks.
     //
-    // Cmp 21K PEAK exception: skip the ramp. With only 5 PEAK weeks (5w PEAK
-    // + 1w smooth ramp × 2 = 2 ramp weeks), the smooth ramp eats 40% of the
-    // phase. By the time full boost lands at W13 there are only 2 weeks of
-    // it before TAPER. Result: BASE peak min (565) > PEAK peak min (515) —
-    // backwards from Pfitz/Daniels shape, and not deliberate Canova/Norwegian
-    // either (just a side-effect of phase math). The marathon's 8-week PEAK
-    // absorbs the ramp fine; the half doesn't have room. Competitive runners
-    // at this gate level have the fitness to handle full PEAK boost in W1.
+    // Cmp 21K PEAK exception: skip the ramp. With only 5 PEAK weeks the ramp eats
+    // 40% of the phase, leaving BASE peak > PEAK peak (backwards). The marathon's
+    // 8-week PEAK absorbs the ramp fine; the half doesn't have room, and these
+    // runners can handle full PEAK boost in W1.
     let skipPeakSmoothRamp = phase == .peak
         && config.runnerLevel == .competitive
         && config.distance == 21097
     if phase != .base && phase != .race && !skipPeakSmoothRamp {
-        // Read the prior phase's boost from the SAME ladder as targetPhaseBoost
-        // (DRY: both go through TrainingModel.phaseBoost). The smooth ramp
-        // interpolates from the predecessor phase's boost up to this phase's.
+        // Interpolate from the predecessor phase's boost up to this phase's,
+        // reading both off the same TrainingModel.phaseBoost ladder.
         let previousPhaseBoost: Double
         switch phase {
         case .speed: previousPhaseBoost = TrainingModel.phaseBoost(for: .base)
@@ -294,14 +279,8 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
     // Check if deloading (end of phase)
     let isPhaseEndDeload = phaseProgression >= TrainingModel.phaseEndDeloadThreshold
 
-    // Check if this is a mid-phase recovery week (every 4th week in build phases)
-    // Mid-phase recovery cadence is phase-relative, not plan-relative.
-    // 3:1 build:recovery within any phase >= 4 weeks. Skips race/taper
-    // (already deloaded) and the smooth-transition ramp.
-    //
-    // Previous logic used `weekInPlan % 4 == 3` which placed recovery weeks
-    // at random points within phases (and excluded BASE entirely — but a
-    // long beginner BASE absolutely benefits from a cutback week).
+    // Mid-phase recovery: phase-relative 3:1 build:recovery within any phase
+    // >= 4 weeks. Skips race/taper (already deloaded) and the smooth-transition ramp.
     let isMidPhaseRecovery: Bool = {
         guard phase != .race, phase != .taper, !isPhaseEndDeload else { return false }
         guard phaseDuration >= 4 else { return false }   // Skip on short phases
@@ -318,17 +297,12 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         load = baseLoad * phaseBoost * (1.0 + TrainingModel.phaseEndDeloadLoadProgressionCoeff * phaseProgression) * (1.0 - deloadPercent / 100)
         duration = duration * phaseBoost * (1.0 + TrainingModel.phaseEndDeloadDurationProgressionCoeff * phaseProgression) * (1.0 - deloadPercent / 100)
     } else if isMidPhaseRecovery {
-        // Mid-phase recovery week - 15% reduction (25% for competitive).
-        // Competitive plans run higher absolute volume, so recovery needs to
-        // be more pronounced to actually feel like recovery. At sub-3h
-        // training loads a 15% drop is invisible; 25% is what Pfitz's
-        // cutback weeks actually deliver.
+        // Mid-phase recovery week: 15% reduction (25% for competitive, whose higher
+        // absolute volume makes a 15% drop invisible).
         let increasePercent = (config.weeklyLoadIncreasePercent.lowerBound + config.weeklyLoadIncreasePercent.upperBound) / 2
-        // Anchor the cut to the PRIOR week's progression (not this week's still-
-        // rising one) when the profile asks for an explicit dip — otherwise a
-        // steady ramp climbs straight through the 0.85× cut and the cutback is
-        // invisible. Reference week = weekInPhase-1, so recovery lands clearly
-        // below the prior week. Fitter tiers keep the trajectory-relative cut.
+        // Anchor the cut to the PRIOR week's progression when the profile asks for
+        // an explicit dip — else a steady ramp climbs straight through the cut and
+        // the cutback is invisible. Fitter tiers keep the trajectory-relative cut.
         let refWeekInPhase = config.profile.cutbackDipsBelowPriorWeek
             ? Double(max(0, weekInPhase - 1)) : Double(weekInPhase)
         let refProgression = min(1.0, refWeekInPhase / Double(safePhasePhase))
@@ -337,14 +311,9 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         load = baseLoad * phaseBoost * progressionFactor * recoveryMult
         duration = duration * phaseBoost * progressionFactor * recoveryMult
     } else if phase == .taper {
-        // Taper: pure phaseBoost-driven reduction within phase. Do NOT
-        // apply progressionFactor — it grows with phaseProgression, which
-        // for build phases means "more load as the phase ramps up" but in
-        // a taper that's exactly the wrong signal. With progressionFactor
-        // compounding upward, a 3-week taper's last week landed at 82%
-        // of peak volume — Pfitz / Daniels target 50-55%. Removing the
-        // factor lets phaseBoost (1.19 → 0.85 across the 3 weeks) do its
-        // job: race-week ends up at the intended ~50% of peak.
+        // Taper: pure phaseBoost-driven reduction. Do NOT apply progressionFactor —
+        // it grows with phaseProgression (right for build phases, exactly wrong for
+        // a taper), pushing the last taper week to ~82% of peak vs the 50-55% target.
         load = baseLoad * phaseBoost
         duration = duration * phaseBoost
         isDeloading = true  // every taper week is a deload by definition
@@ -395,13 +364,9 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
             }
         }
         
-        // Variety bonus — penalty scales with how many times we've already
-        // picked this workout this phase. Was a binary Set check (0.05 if
-        // ever used) which went stale within ~5 weeks because every pool
-        // member had been used at least once. Now usedIds is a counter
-        // dict, so workouts used 5× incur a 0.25 penalty vs 0.05 for once
-        // — meaningfully shifts the ranking even when "everything has
-        // been used at least once" in long plans.
+        // Variety penalty scales with how many times this workout was already
+        // picked this phase (usedIds is a counter, not a flag) — so a 5×-used
+        // workout still ranks below a 1×-used one in long plans.
         let usage = usedIds[w.key, default: 0]
         if usage > 0 {
             score += Double(usage) * varietyBonusBoost
@@ -411,12 +376,9 @@ func selectWorkoutByTargetV3(workouts: [Workout], targetLoad: Double, targetDura
         if let prev = previousWorkout, w.key == prev.key {
             score += SelectorWeights.sameWorkoutPenalty
         }
-        // Title-based penalty. Catalog has e.g. "Hill Repeats (8 x 60s)" at
-        // 3 different durations (40/42/44min) — all with different keys, so
-        // the key-based penalty above doesn't stop the selector from picking
-        // "Hill Repeats (8 x 60s)" 5 weeks in a row (different durations,
-        // same workout from the runner's perspective). Title match captures
-        // the runner-visible repetition.
+        // Title penalty: the catalog has one title at several durations (distinct
+        // keys), so the key penalty above won't stop the same runner-visible
+        // workout repeating week after week. Title match catches that.
         if let prev = previousWorkout, w.title == prev.title && w.key != prev.key {
             score += SelectorWeights.sameTitlePenalty
         }
@@ -621,28 +583,15 @@ class PlanGeneratorV3 {
         return max(60, Int((Double(mins) * TrainingModel.recoveryLongRunCutback).rounded()))
     }
 
-    // Apply the long-run monotonic constraint, returning the narrowed pool.
-    // BASE/SPEED/PEAK: this week's LR may not be meaningfully shorter than last
-    // week's (5min slack absorbs selector noise / phase-target movement).
-    // TAPER + RACE: must not be longer than last week's.
-    //
-    // EXCEPTION — deloading BUILD weeks: the non-decreasing rule is exactly what
-    // pins the long run flat on a cutback week. When isDeloading, skip it and
-    // instead floor the pool at the cutback target (~80% of prev) so the LR can
-    // dip without collapsing to the 60min catalog floor.
-    //
-    // When the strict monotonic floor empties the pool (e.g. a mid-block cutback
-    // week whose only ≈peak-length option was a rehearsal that's filtered out of
-    // this week's subtypes), don't fall all the way back to the 60min catalog
-    // floor — that snaps the long run to ~9km mid-marathon. Instead floor a
-    // BUILD-phase cutback long run at ~65% of the surrounding peak (prevLongRun),
-    // so the long-run thread stays continuous through the down-week.
+    // Long-run monotonic constraint, returning the narrowed pool.
+    // BASE/SPEED/PEAK: not meaningfully shorter than last week's (5min slack).
+    // TAPER/RACE: not longer than last week's.
+    // Deloading BUILD weeks are the exception (see below).
     func applyLongRunMonotonic(pool: [Workout], phase: TrainingPhase, prevLongRunMins: Int, isDeloading: Bool) -> [Workout] {
         guard prevLongRunMins > 0 else { return pool }
-        // Deloading BUILD week: allow the dip. The non-decreasing rule below is
-        // exactly what pins the LR flat on a cutback week — skip it and floor at
-        // the cutback target (~80% of prev) so the down-week LR drops but stays
-        // continuous. (TAPER/RACE deloads keep their own ceiling logic below.)
+        // Deloading BUILD week: allow the dip. The non-decreasing rule below would
+        // pin the LR flat, so floor at the cutback target (~80% of prev) instead —
+        // the down-week LR drops but stays continuous.
         if isDeloading, phase == .base || phase == .speed || phase == .peak {
             let floor = recoveryLongRunTarget(prevLongRunMins, isDeloading: true, phase: phase)
             let floored = pool.filter { Int($0.duration / 60) >= floor }
@@ -661,20 +610,17 @@ class PlanGeneratorV3 {
             return capped.isEmpty ? pool : capped
         }
         if !monotonicPool.isEmpty { return monotonicPool }
-        // Strict floor emptied the pool. In BUILD phases keep a continuous long
-        // run by flooring at 65% of the prior (≈peak) long run instead of the
-        // 60min minimum. TAPER/RACE already returned above.
+        // Strict floor emptied the pool. In BUILD phases keep a continuous long run
+        // by flooring at 65% of the prior (≈peak) LR, not the 60min minimum.
         let cutbackFloor = Int(Double(prevLongRunMins) * 0.65)
         let floored = pool.filter { Int($0.duration / 60) >= cutbackFloor }
         return floored.isEmpty ? pool : floored
     }
 
-    /// Recovery-week reshaping, differentiated by training frequency. Cutting the
-    /// deload long run (above) isn't enough on its own — a coach on a down week
-    /// removes real load. High-frequency weeks (>=5 sessions) drop a session;
-    /// low-frequency weeks (<=4) keep the days but swap the heaviest quality out
-    /// for an easy/progression run. Shared post-step run at the END of every build
-    /// generator's buildWeek. BUILD phases only — taper/race own their descent.
+    /// Recovery-week reshaping, by training frequency (cutting the deload LR alone
+    /// isn't enough — a down week removes real load). >=5 sessions: drop one;
+    /// <=4: keep the days but swap the heaviest quality for easy/progression.
+    /// Runs last in every build generator's buildWeek. BUILD phases only.
     func applyDeloadReshaping(_ week: inout [(type: String, workout: Workout)],
                               phase: TrainingPhase, isDeloading: Bool) {
         guard isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
@@ -870,12 +816,9 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
         // Key insight: Speed workouts (intervals, threshold) should have easy workouts between them
         // Pattern: Intervals → Easy → Threshold → Long Run
 
-        // Helper to check if a workout is "hard" (speed/quality work).
-        // Slot types come from per-week scheduling above; must include EVERY
-        // physiologically-quality slot label or the day scheduler will place
-        // it next to other hard sessions. Marathon-pace sustained efforts
-        // (`mp_quality` slot, also `marathonPace` if it appears in titles)
-        // count as quality even though they sit at Z3 rather than Z4-Z5.
+        // True if a slot is "hard" (speed/quality). Must list EVERY quality slot
+        // label or the day scheduler places it next to other hard sessions.
+        // MP efforts count as quality even though they sit at Z3, not Z4-Z5.
         func isHardWorkout(_ tuple: (type: String, workout: Workout)) -> Bool {
             tuple.type.contains("interval") ||
             tuple.type.contains("threshold") ||

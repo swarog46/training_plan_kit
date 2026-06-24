@@ -26,10 +26,9 @@ public protocol PlanProfile {
     var alternatesMilestoneInBase: Bool { get }
     /// Load multiplier applied on recovery/deload weeks (competitive cuts harder).
     var recoveryWeekLoadMultiplier: Double { get }
-    /// Whether a mid-phase recovery week dips BELOW the prior week rather than
-    /// just cutting the still-rising trajectory. Fitter tiers already sawtooth
-    /// from quality-week alternation; the steadier beginner builds need the
-    /// explicit dip or the cutback is invisible (climbs right through it).
+    /// Whether a mid-phase recovery week dips BELOW the prior week rather than just
+    /// cutting the still-rising trajectory. Steadier beginner builds need the
+    /// explicit dip or the cutback is invisible; fitter tiers sawtooth already.
     var cutbackDipsBelowPriorWeek: Bool { get }
     /// Load fraction used when snapping a too-light long run to the nearest
     /// aerobic run (competitive uses a higher fraction).

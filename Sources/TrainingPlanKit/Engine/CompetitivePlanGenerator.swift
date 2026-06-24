@@ -67,9 +67,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 ? (phase == .speed && weekInPhase == speedDur / 2)
                 : (phase == .base && weekInPhase == baseDur - 1)
             // Late PEAK tune-up TT for the longer plans (half+); see Beginner.
-            // Competitive forces a race rehearsal onto even (and the last) PEAK weeks,
-            // so suppress a PEAK TT there — rehearsal + TT would stack into one brutal
-            // week. Keep them in separate weeks (mid-plan recalib still gives the half a TT).
+            // Competitive forces a rehearsal onto even/last PEAK weeks, so suppress a
+            // PEAK TT there (rehearsal + TT would stack into one brutal week).
             let peakWeekIndex = week - baseDur - speedDur
             let competitiveRehearsalWeek = peakDur >= 3
                 && (peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1)
@@ -284,16 +283,11 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                             let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
                             var thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
 
-                            // Competitive marathon PEAK weeks will fire a dedicated
-                            // mp_quality slot below (the Pfitz Wednesday MP run).
-                            // `.marathonPace` is also a member of `thresholdSubtypes`,
-                            // so without this filter the threshold slot would
-                            // happily pick a second MP workout — giving us two MP
-                            // sessions plus the LR-with-MP in the same week, which
-                            // is way over Pfitz's quality budget for peak. Drop MP
-                            // from the threshold pool when the dedicated slot is
-                            // about to fire, so the threshold slot picks a real
-                            // threshold (or mile repeats, or 10K pace).
+                            // Competitive marathon PEAK already carries MP via the
+                            // MP-segment LR alternation. `.marathonPace` is also in
+                            // `thresholdSubtypes`, so without this the threshold slot
+                            // would add a second MP session (LR + 2 MP = over budget).
+                            // Drop MP here so the threshold slot picks a real threshold.
                             let mpQualitySlotWillFire = phase == .peak
                                 && config.distance >= 30000
                                 && !isDeloading
@@ -303,24 +297,11 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                             }
 
                             // Cmp 21K Pfitz LT-interval preference: on alternating
-                            // SPEED/PEAK weeks, restrict the threshold pool to
-                            // mileRepeats. Pfitz's signature sub-1:30 LT workout is
-                            // 4-6 × 1mi @ HMP — the selector at default threshold
-                            // targets tends to pick "Threshold Run (3 × 10min)"
-                            // (continuous) over mileRepeats (interval). Result was
-                            // 1 mile-rep session in 18 weeks; Pfitz prescribes 4-6.
-                            // Forcing alternation gives Pfitz-style interval LT
-                            // exposure on ~50% of SPEED/PEAK weeks, with
-                            // continuous LT runs on the other half. Marathon Cmp
-                            // unaffected (Pfitz 18/85 uses continuous tempo more
-                            // than the half).
-                            //
-                            // Note: filterThresholdsByProgression excludes
-                            // mileRepeats after ~33% of the plan (its 5min work
-                            // intervals don't match the 7-15min late-phase
-                            // preference). When forcing mileRepeats, bypass the
-                            // progression filter and pull from the unfiltered
-                            // `filteredThresholds` pool instead.
+                            // SPEED/PEAK weeks restrict the threshold pool to mileRepeats
+                            // (Pfitz's signature 4-6 × 1mi @ HMP, which the selector
+                            // otherwise passes over for continuous tempo). Bypasses the
+                            // progression filter via `filteredThresholds` (it drops
+                            // mileRepeats after ~33%). Marathon Cmp unaffected.
                             let preferMileRepeats = config.distance == 21097
                                 && (phase == .speed || phase == .peak)
                                 && (week % 2 == 0)
@@ -360,9 +341,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
 
             // SPEED + PEAK: add progressiveLong (Z2→Z3/MP) to break up the wall of
             // aerobic that pure steadyLong selection creates. BASE stays pure aerobic.
-            // On even SPEED weeks, force progressiveLong by removing steadyLong/long:
-            // at competitive's scaled-down SPEED targets the selector otherwise picks
-            // light steadyLong every week and the runner never does any HMP work.
+            // On even SPEED weeks force progressiveLong (else the selector picks light
+            // steadyLong every week at competitive's scaled-down targets, no HMP work).
             if phase == .speed || phase == .peak {
                 longRunTypes.append(.progressiveLong)
                 if phase == .speed {
@@ -382,25 +362,20 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     // reaches the base generator, so no beginner guard needed here.
                     longRunTypes.append(rehearsal)
                 }
-                // fastFinish is skipped for competitive plans: it caps at 100min,
-                // way short of the 160-200min peak LR target competitive needs —
-                // so its append below is dead and removed.
-                // Late PEAK for competitive: alternate MP-segment vs steady long
-                // runs. Pfitz schedules 2-3 race rehearsals across a cycle, not
-                // every PEAK week — pure exclusion of steadyLong starves the
-                // selector and produces 5+ consecutive race rehearsals. Even
-                // peakWeekIndex gets MP-segment (preferred); odd gets steady or
-                // progressive (recovery aerobic week between hard race-pace
-                // efforts). First PEAK week is always MP-segment.
+                // fastFinish isn't appended for competitive: it caps at 100min, short
+                // of the 160-200min peak LR target.
+                // Late PEAK: alternate MP-segment vs steady LRs — pure steadyLong
+                // exclusion would starve the selector into 5+ consecutive rehearsals.
+                // Even peakWeekIndex (and the first/last) gets MP-segment; odd gets a
+                // recovery aerobic week.
                 let peakWeekIndex = week - baseDur - speedDur
                 if peakDur >= 3 {
                     let isMPSegmentWeek = peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
                     if isMPSegmentWeek {
-                        // Drop plain steady — force a race-rehearsal-style pick.
+                        // Force a race-rehearsal-style pick.
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
                     } else {
-                        // Recovery aerobic week: drop the race-rehearsal types so
-                        // selector picks plain steady (or progressive at most).
+                        // Recovery aerobic week: drop rehearsals, pick plain steady.
                         longRunTypes.removeAll {
                             $0 == .raceRehearsalM || $0 == .raceRehearsalHM || $0 == .raceRehearsal10K
                         }
@@ -415,15 +390,9 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
 
-                // Competitive: filter out the lightest progressives. The catalog
-                // has progressiveLong variants with Z3 work-interval content
-                // ranging from 12% to 47%. At sub-3 / sub-1:30 training the
-                // load+duration matcher tends to pick the LIGHTEST variants
-                // (12-18% Z3) for SPEED-phase workouts, which leaves the total
-                // long-run aerobic share around 85%. Pfitz competitive long runs
-                // prescribe 25-40% MP volume per workout, not 12-18%. Excluding
-                // the lightest variants forces the selector toward Pfitz-style
-                // progressives, dropping aerobic share to ~80% by HR-zone time.
+                // Competitive: drop the lightest progressives (< 25% Z3 work). The
+                // selector otherwise picks the 12-18% Z3 variants, leaving long-run
+                // aerobic share ~85%; Pfitz prescribes 25-40% MP volume per workout.
                 pool = pool.filter { w in
                     if w.subtype != .progressiveLong { return true }
                     var workSec: Double = 0
@@ -461,9 +430,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 if let p = progression {
                     switch phase {
                     case .base:
-                        // Ramp the long run UP across BASE toward p.base (anchored at
-                        // the last base week, -2min/week earlier, floored at 0.80×base).
-                        // See BeginnerPlanGenerator.
+                        // Ramp the LR UP across BASE toward p.base (last base week,
+                        // -2min/week earlier, floored at 0.80×base). See Beginner.
                         let weeksFromBaseEnd = max(0, baseDur - 1 - week)
                         let floorMins = Int(Double(p.base) * 0.80)
                         targetLongRunMins = max(floorMins, p.base - 2 * weeksFromBaseEnd)
@@ -478,8 +446,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     case .taper, .race:
                         targetLongRunMins = p.taper
                     }
-                    // On recovery/deload BUILD weeks, cut the LR target ~20% so the
-                    // week's dominant load chunk dips. See BeginnerPlanGenerator.
+                    // Recovery/deload BUILD weeks: cut the LR target ~20%. See Beginner.
                     longRunTargetMins = recoveryLongRunTarget(targetLongRunMins, isDeloading: isDeloading, phase: phase)
                     let toleranceMins = 15
                     let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - longRunTargetMins) <= toleranceMins }
@@ -527,19 +494,12 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // should be easy, so this slot is easy by default.
             if weekWorkouts.count < maxWorkoutsPerWeek {
                 if !easyRuns.isEmpty {
-                        // Competitive plans bump the load multiplier from 0.15
-                        // to 0.30 so the selector targets ~6000 load (matches
-                        // 80-90min easies) instead of ~3000 (matches the now-
-                        // filtered-out 60min easies). Without this, every
-                        // competitive PEAK week was picking the same 60min
-                        // easy 5+ times despite having longer options.
-                        //
-                        // TAPER + RACE override: competitive plans should drop
-                        // to short easy runs (30-50min) — Pfitz tapers easy-day
-                        // duration along with everything else. Without this
-                        // override, the >= 60min filter forces 80-110min easies
-                        // through to race week, blowing past the taper target
-                        // (W17 was landing at ~510min vs ~370min target).
+                        // Competitive bumps the easy load multiplier to 0.30 so the
+                        // selector targets the 80-90min easies, not the filtered-out
+                        // 60min ones (every PEAK week picked the same 60min easy otherwise).
+                        // TAPER/RACE override: drop to short easies (30-50min) — Pfitz
+                        // tapers easy-day duration too, and the >= 60min filter would
+                        // otherwise blow past the taper target.
                         let isTaperingDown = phase == .taper || phase == .race
                         let easyLoadMult: Double
                         let easyPool: [Workout]
@@ -556,15 +516,10 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                             easyTargetDur = Int(targetDuration * 0.30)
                         }
 
-                        // Force mediumLong on alternating midweek slots for Pfitz-
-                        // style plans. Without this, the generator picks generic
-                        // `easy` (60-80min) over `mediumLong` (85-110min) because
-                        // of duration matching at lower target loads. Pfitz 18/55
-                        // (marathon) and the HM 47-63 / 63-77 mi/wk plans both
-                        // explicitly prescribe a Wed/Thu Medium-Long Run; we
-                        // guarantee at least one per fortnight in serious plans.
-                        // Marathon + half-marathon only. 10K/5K excluded (pool is
-                        // 85+min, too long for those targets).
+                        // Force mediumLong on alternating midweek slots (marathon/HM):
+                        // else the selector picks generic `easy` (60-80min) over
+                        // `mediumLong` (85-110min), and Pfitz prescribes a weekday MLR.
+                        // 10K/5K excluded (the 85+min pool is too long for their targets).
                         let isMarathonOrHM = (config.distance == 42195 || config.distance == 21097)
                         let prefersMediumLong = isMarathonOrHM
                             && phase != .taper && phase != .race
@@ -590,19 +545,14 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 }
             }
 
-            // Fill remaining slots (5 workouts for 21K+, 4 for others).
+            // Fill remaining slots (5 for 21K+, 4 for others).
             while weekWorkouts.count < maxWorkoutsPerWeek {
-                // Competitive: fill remaining trainingDays with easy runs. For
-                // 21K+ prefer a longer easy ("medium-long" Pfitz-style) for the
-                // first fill slot so weekly volume actually grows when
-                // trainingDays.count is 4+.
+                // Fill with easy runs; 21K+ prefers a longer "medium-long" first fill
+                // so weekly volume grows at 4+ days.
                 let isLongRace = config.distance >= 21000
                 let isFirstFill = !weekWorkouts.contains { $0.type.contains("fill") }
-                // Competitive plans drop the Pfitz-MLR sizing in TAPER + RACE.
-                // The weekday MLR pattern is correct for BASE/SPEED/PEAK
-                // (sub-3 fitness comes from total easy volume), but tapering
-                // means shorter easy runs all around — Pfitz's race week
-                // easies are 30-45min, not 80-110.
+                // Drop the Pfitz-MLR sizing in TAPER/RACE — tapering means shorter
+                // easies all around (Pfitz race-week easies are 30-45min, not 80-110).
                 let isTaperingDown = phase == .taper || phase == .race
                 let easyTargetMin: Int = {
                     if isTaperingDown {
@@ -613,10 +563,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                         return min(90, max(60, Int(targetDuration * 0.25)))
                     }
                 }()
-                // Per-slot LOAD multipliers determine which workout the
-                // selector picks (load match dominates the score). Competitive
-                // scales these up so the selector lands on the long easies the
-                // catalog has.
+                // Per-slot LOAD multipliers drive the pick (load match dominates);
+                // competitive scales them up to land on the catalog's long easies.
                 let mlrLoadMult = 0.33
                 let fillLoadMult = 0.23
                 let easyTargetLoad: Double
@@ -625,9 +573,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 } else {
                     easyTargetLoad = targetLoad * (isLongRace && isFirstFill ? mlrLoadMult : fillLoadMult)
                 }
-                // Hard-cap easy duration for tapering competitive plans
-                // so the selector can't pick a 60-90min MLR-sized workout
-                // even when load scoring would otherwise prefer it.
+                // Hard-cap easy duration when tapering so the selector can't pick a
+                // 60-90min MLR even when load scoring would prefer it.
                 let easyPool: [Workout]
                 if isTaperingDown {
                     let taperCapMins = phase == .race ? 35 : 50
@@ -662,7 +609,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // aerobic FILL only, freeing a recovery day. See BeginnerPlanGenerator.
             let weeklyCapMinutes: Int = {
                 guard config.distance >= 42195 else { return .max }
-                return 540   // Cmp marathon ~9.0h ceiling (was up to 10.1h)
+                return 540   // Cmp marathon ~9.0h ceiling
             }()
             if weeklyCapMinutes != .max {
                 let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]

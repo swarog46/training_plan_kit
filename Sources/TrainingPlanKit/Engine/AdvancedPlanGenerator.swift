@@ -233,14 +233,10 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         || (config.distance >= 21000 && lastWeekHadZ5))
                     if z5Blocked {
                         let noZ5 = preferredPool.filter { !isRealZ5($0) }
-                        // Competitive/advanced BASE otherwise collapses to all-ladders
-                        // on the hill off-weeks (the load selector parks on ladders;
-                        // intervals/pyramids are real-Z5 and blocked in BASE). Rotate
-                        // an LT (threshold) session into every other off-week so BASE
-                        // carries 3 quality types (hill / ladder / LT) instead of 2.
-                        // Daniels' base quality IS the LT run — the fallback below
-                        // already allows it; this just makes it deliberate. Off-weeks
-                        // are even weekInPhase; %4==2 picks 2,6,10,… (skip wk-0).
+                        // BASE off-weeks otherwise collapse to all-ladders (the selector
+                        // parks on ladders; intervals/pyramids are Z5 and blocked here).
+                        // Rotate an LT (threshold) session into every other off-week so
+                        // BASE carries 3 quality types (hill/ladder/LT). %4==2 → 2,6,10,…
                         let baseLTWeek = phase == .base && weekInPhase % 4 == 2
                         if baseLTWeek,
                            let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
@@ -324,9 +320,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             var longRunTypes: [WorkoutSubtype] = [.long, .steadyLong]
 
             if config.distance == 5000 {
-                // Adv 5K: Daniels' Phase II prescribes optional ~75min long
-                // runs on Sundays — pure aerobic base for the speed work.
-                // Schedule LR in BASE/SPEED only; PEAK stays sharp/speed-focused.
+                // Adv 5K: Daniels' Phase II optional ~75min Sunday LRs — aerobic base
+                // for the speed work. BASE/SPEED only; PEAK stays sharp.
                 longRunTypes = [.long, .steadyLong]
                 shouldAddLong = (phase == .base || phase == .speed)
             } else if config.distance == 10000 {
@@ -537,12 +532,9 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             weekWorkouts.append(("long_base", longRun))
                         }
                     } else {
-                        // Already have a long run — BASE wants easy aerobic
-                        // volume here, not a 2nd Z3 progression. The every-3rd-
-                        // week progression (slot above) already supplies the
-                        // controlled tempo touch; stacking another keeps Adv in
-                        // the gray zone (~50% easy) instead of polarized (~80%,
-                        // like the Cmp tier). Default this base slot to easy.
+                        // Already have a long run — BASE wants easy aerobic volume,
+                        // not a 2nd Z3 progression (the every-3rd-week progression
+                        // already adds tempo; stacking keeps Adv gray, not polarized).
                         if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("easy_base", easy))
                         }
@@ -566,11 +558,9 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         break  // No more workouts available
                     }
                 } else if config.distance >= 21000 {
-                    // 21K+ Advanced: fill volume with EASY aerobic running.
-                    // (Previously alternated progression/easy here, which — on top
-                    // of the every-3rd-week progression and the long run — left
-                    // the half/marathon Adv plans ~50% easy. The endurance base
-                    // for a 21K+/Adv plan wants easy volume, not more Z3 fill.)
+                    // 21K+ Advanced: fill volume with EASY aerobic running — the
+                    // endurance base wants easy volume, not more Z3 fill on top of the
+                    // every-3rd-week progression and the long run.
                     if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.10, targetDuration: Int(targetDuration * 0.20), usedIds: &usedIds, isMaintenance: false) {
                         weekWorkouts.append(("easy_fill", easy))
                     } else {
@@ -605,7 +595,7 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             // aerobic FILL only, freeing a recovery day. See BeginnerPlanGenerator.
             let weeklyCapMinutes: Int = {
                 guard config.distance >= 42195 else { return .max }
-                return 480   // Adv marathon ~8.0h ceiling (was up to 8.4h)
+                return 480   // Adv marathon ~8.0h ceiling
             }()
             if weeklyCapMinutes != .max {
                 let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]

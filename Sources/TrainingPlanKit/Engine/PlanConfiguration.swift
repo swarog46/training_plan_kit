@@ -31,11 +31,9 @@ public enum TrainingPhase: String {
     case taper
     case race
 
-    /// User-facing phase name. Maintenance plans repurpose the phase slots
-    /// (speed = the ongoing "maintenance" block, taper = a recovery week), and
-    /// their volume holds/rises through the end by design — so the final phase
-    /// must NOT read "taper". The rawValue is left untouched (it keys the
-    /// phase-duration dictionary in the engine); this only affects display.
+    /// User-facing phase name. Maintenance repurposes the slots (speed = the
+    /// ongoing "maintenance" block, taper = a recovery week) since its volume
+    /// holds through the end. rawValue is untouched (it keys the engine dict).
     public func displayName(isMaintenance: Bool) -> String {
         guard isMaintenance else { return rawValue }
         switch self {
