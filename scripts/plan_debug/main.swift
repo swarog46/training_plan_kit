@@ -42,9 +42,14 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
         let totalMin  = ws.reduce(0) { $0 + Int($1.workout.duration) } / 60
         let phaseLen = phaseLength(phase, base: baseDur, speed: speedDur, peak: peakDur, taper: taperDur)
         let phaseLabel = phase.displayName(isMaintenance: config.distance == 0)
-        print(String(format: "W%2d [%@ %d/%d] %dwkts load=%5d %3dmin",
+        // Deload flag, computed on the SAME trimmed indices the generator uses (so it
+        // aligns with the delivered loads above — `phases` mode is un-trimmed).
+        let targets = calculateWeeklyTargetsV3(weekInPlan: week + weeksTrimmed, weekInPhase: weekInPhase,
+                                               phase: phase, phaseDurations: phaseDurations, config: config)
+        let deloadTag = targets.isDeloading ? " [deload]" : ""
+        print(String(format: "W%2d [%@ %d/%d] %dwkts load=%5d %3dmin%@",
                      week + 1, phaseLabel, weekInPhase + 1, phaseLen,
-                     ws.count, totalLoad, totalMin))
+                     ws.count, totalLoad, totalMin, deloadTag))
         for w in ws {
             let dur = Int(w.workout.duration) / 60
             let load = Int(w.workout.trainingLoad)
@@ -52,9 +57,11 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
             let subtype = w.workout.subtype.rawValue
             // Z5 work minutes from the actual picked template — ground truth
             // for the Z5-policy tests (title-based joins are ambiguous).
-            let z5min = Int(w.workout.intervals
-                .filter { $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5) }
-                .reduce(0.0) { $0 + $1.duration } / 60)
+            let z5work = w.workout.intervals.filter {
+                $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5)
+            }
+            let z5sec: Double = z5work.reduce(0.0) { $0 + $1.duration }
+            let z5min = Int(z5sec / 60)
             let z5tag = z5min > 0 ? " z5=\(z5min)" : ""
             print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]%@", dur, load, subtype, w.type, z5tag))")
         }

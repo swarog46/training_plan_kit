@@ -2864,6 +2864,129 @@ for header in ["Int 21K (long, 18w)", "Int 42K (long, 22w)"]:
               sum(lad[h:]) / len(lad[h:]) > sum(lad[:h]) / len(lad[:h]),
               f"ladder loads in week order: {lad}", full=True)
 
+section("Deload reshaping: neighbor-aware dip + sole-quality retention")
+
+# These two tests audit applyDeloadReshaping's POST-condition across every plan:
+#   A) a build-phase recovery week must actually DIP below its predecessor (not be
+#      a local maximum), and B) a recovery week must keep a structured-quality body
+#      (never strip its SOLE quality to easy). Both read REAL delivered loads from
+#      plan_debug `dump`, cross-referenced with the `phases` deload flags.
+
+def _dump_blocks():
+    """dict[header] = {week: {load,mins,nwkts,phase,wip,deload,subs:[(subtype,role)]}}
+    from a single `dump ""` run (every plan, incl. Acc variants). The [deload] flag
+    on the dump header is GENERATOR-aligned (trim-aware) — unlike `phases` mode,
+    which recomputes on un-trimmed indices and so misaligns on front-trimmed plans."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    blocks = {}
+    cur_header = None
+    cur_week = None
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur_header = hm.group(1).strip()
+            blocks[cur_header] = {}
+            cur_week = None
+            continue
+        if cur_header is None:
+            continue
+        wm = re.match(r'^W\s*(\d+)\s*\[(\w+)\s+(\d+)/(\d+)\]\s+(\d+)wkts\s+load=\s*(\d+)\s+(\d+)min(\s+\[deload\])?', line)
+        if wm:
+            cur_week = int(wm.group(1))
+            blocks[cur_header][cur_week] = dict(
+                phase=wm.group(2), wip=int(wm.group(3)),
+                nwkts=int(wm.group(5)), load=int(wm.group(6)),
+                mins=int(wm.group(7)), deload=wm.group(8) is not None, subs=[])
+            continue
+        if cur_week is not None:
+            sm = re.search(r'\[([a-zA-Z0-9]+)/([a-z_0-9]+)\]\s*(?:z5=\d+)?\s*$', line)
+            if sm:
+                blocks[cur_header][cur_week]['subs'].append((sm.group(1), sm.group(2)))
+    return blocks
+
+_DUMP = _dump_blocks()
+_BUILD = ('base', 'speed', 'peak')
+# subtype is a real structured-quality body (NOT marker/role — Beginner "speed"
+# slots are filled with strides, which is not a quality body).
+_QUAL_SUB = QUALITY | PROG
+
+# --- Test A: build-phase deload weeks must dip below their predecessor --------
+# A deload week that is a LOCAL MAXIMUM in delivered load (>= both neighbors) has
+# failed to deload. We flag those, EXCLUDING legitimate structural floors:
+#   - the plan's FIRST build-phase deload (predecessor is still early-ramp, no
+#     real peak to dip below);
+#   - flat early-base weeks where the predecessor itself is still in the smooth-
+#     transition ramp (predecessor wip < 2) — no headroom yet; and
+#   - weeks the generator already reshaped to its FLOOR — a [deload_*] marker is
+#     present AND no droppable aerobic fill remains (every easy/medium-long is the
+#     last recovery day). The week is down to its long run + a quality body, which
+#     can't shed further on the active catalog. (On the full catalog none of these
+#     remain — the sparse sample catalog lacks the lighter progressions/long runs
+#     the engine would otherwise swap in.)
+_REC_SUB  = EASY | STRIDES                       # easy/strides/recovery = rest day
+_FILL_SUB = {'easy', 'recovery', 'mediumLong'}   # droppable aerobic fill subtypes
+
+def _at_reshape_floor(cur):
+    subs = cur['subs']
+    if not any(role.startswith('deload_') for _, role in subs):
+        return False  # reshaping never engaged — not a floor, a real miss
+    n_rec = sum(1 for s, _ in subs if s in _REC_SUB)
+    # a fill is droppable only if it isn't the week's last rest day
+    droppable = sum(1 for s, _ in subs
+                    if s in _FILL_SUB and (s not in _REC_SUB or n_rec > 1))
+    return droppable == 0
+
+_A_failures = []
+for header, weeks in sorted(_DUMP.items()):
+    build_deloads = sorted(w for w in weeks
+                           if weeks[w].get('deload') and weeks[w]['phase'] in _BUILD)
+    first_deload = build_deloads[0] if build_deloads else None
+    for w in build_deloads:
+        cur, prev, nxt = weeks.get(w), weeks.get(w - 1), weeks.get(w + 1)
+        if not cur or not prev or not nxt:
+            continue
+        if w == first_deload:           # first deload: no prior peak — exclude
+            continue
+        if prev['wip'] < 2:             # predecessor still ramping — no headroom
+            continue
+        is_local_max = cur['load'] >= prev['load'] and cur['load'] >= nxt['load']
+        if is_local_max and not _at_reshape_floor(cur):
+            _A_failures.append(
+                f"{header} W{w} ({cur['phase']}) load={cur['load']} "
+                f">= prev W{w-1}={prev['load']} and next W{w+1}={nxt['load']}")
+
+check(
+    "every build-phase recovery week dips below its predecessor (no local-max deload)",
+    not _A_failures,
+    "local-maximum deload weeks (out-load predecessor): " + "; ".join(_A_failures)
+)
+
+# --- Test B: a deload week must keep a structured-quality body ----------------
+# `deload_easy` is produced ONLY by the lighten branch converting a quality to
+# easy+strides. If that conversion leaves the week with ZERO structured-quality
+# subtype, the week's sole quality was stripped — the defect. `deload_easy` is
+# fine when another real quality remains (only a fill was converted). Beginner
+# strides-as-speedwork weeks have no `deload_easy` marker, so they don't trip
+# this; pure-aerobic plans (no quality anywhere) are excluded implicitly.
+_B_failures = []
+for header, weeks in sorted(_DUMP.items()):
+    for w in sorted(weeks):
+        if weeks[w]['phase'] not in _BUILD or not weeks[w].get('deload'):
+            continue
+        subs = weeks[w]['subs']
+        had_easy_strip = any(role == 'deload_easy' for _, role in subs)
+        has_quality = any(s in _QUAL_SUB for s, _ in subs)
+        if had_easy_strip and not has_quality:
+            roles = [r for _, r in subs]
+            _B_failures.append(f"{header} W{w} ({weeks[w]['phase']}): {roles}")
+
+check(
+    "no recovery week strips its sole quality to easy (deload_easy w/ zero quality body)",
+    not _B_failures,
+    "quality-less deload weeks: " + "; ".join(_B_failures)
+)
+
 # --- report ----------------------------------------------------------
 
 print(f"\n{'='*60}")
