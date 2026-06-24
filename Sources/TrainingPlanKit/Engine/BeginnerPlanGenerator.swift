@@ -231,15 +231,26 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 longRunTypes = [.long, .steadyLong]
                 shouldAddLong = phase == .base || phase == .speed || phase == .peak
             } else if config.distance >= 21000 {
-                // 21K+ Beginner: long run every BASE/SPEED/PEAK week.
+                // 21K+ Beginner: long run every BASE/SPEED/PEAK week AND a reduced
+                // one in TAPER (mirrors Int/Adv) — avoids the endurance cliff of
+                // going from the peak long run straight to no long run. Duration is
+                // driven by the config's taper anchor; applyLongRunMonotonic keeps
+                // it below the peak. RACE week stays hands-off (handled above).
                 longRunTypes = [.long, .steadyLong]
-                shouldAddLong = phase == .base || phase == .speed || phase == .peak
+                shouldAddLong = phase == .base || phase == .speed || phase == .peak || phase == .taper
             }
 
             // SPEED + PEAK: add progressiveLong (Z2→Z3/MP) to break up the wall of
             // aerobic that pure steadyLong selection creates. BASE stays pure aerobic.
             // No progressive-forcing for Beg — Pfitz "Just Finish" half IS pure-aerobic.
             if phase == .speed || phase == .peak {
+                longRunTypes.append(.progressiveLong)
+            }
+            // TAPER (21K+ only): open the pool to progressiveLong so the reduced
+            // taper long run can reach its declared taper anchor (the catalog's
+            // mid-length long runs are progressiveLong); without it the selector
+            // snaps to the shortest steadyLong, undershooting the anchor.
+            if phase == .taper && config.distance >= 21000 {
                 longRunTypes.append(.progressiveLong)
             }
 

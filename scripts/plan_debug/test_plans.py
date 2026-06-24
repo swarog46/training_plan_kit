@@ -514,6 +514,91 @@ for header, fil, rp, ep in [
         f"no race-pace workouts found"
     )
 
+section("Beg 21K/42K keep a REDUCED long run in the taper (no taper LR cliff)")
+
+# Bug: beginner half/marathon plans went from the single longest run of the
+# plan (peak) straight to NO long run in the taper — a cliff. Every other tier
+# (Int/Adv/Cmp) keeps a reduced taper long run for endurance maintenance
+# (Pfitz/Daniels). Assert: for Beg 21K/42K (ALL variants incl Acc), every TAPER
+# week that PRECEDES the race week carries a long-run-class session, and that
+# session is REDUCED vs the plan's peak long run (present, but below peak —
+# not zero, not >= peak). Phase labels come from `dump` (the real per-week
+# phase buildWeek uses), not the `phases` target model.
+
+def parse_dump_phase_longs(dump_text, header):
+    """dict[week] = (phase, [long_durs]) parsed from `dump`. A long-run-class
+    session is any workout whose subtype is in LONG or whose role == 'long'."""
+    if f'=== {header}' not in dump_text:
+        return None
+    sect = dump_text.split(f'=== {header}')[1]
+    weeks = {}
+    cur = cur_phase = None
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *(\d+) \[(\w+)', line)
+        if m:
+            cur, cur_phase = int(m.group(1)), m.group(2)
+            weeks[cur] = (cur_phase, [])
+            continue
+        if cur is None:
+            continue
+        mm = re.search(r'\s(\d+)min\s+l=\d+\s+\[(\w+)/(\w+)\]', line)
+        if mm:
+            dur, sub, role = int(mm.group(1)), mm.group(2), mm.group(3)
+            if sub in LONG or role == 'long':
+                weeks[cur][1].append(dur)
+    return weeks
+
+# (header, unique dump filter). All 8 affected Beg variants + every other tier
+# at 21K/42K (which must ALREADY satisfy the invariant — regression guard).
+TAPER_LR_BEG = [
+    ("Beg 21K (short, 10w)",   "Beg 21K (short, 10w)"),
+    ("Beg 21K (rec, 14w)",     "Beg 21K (rec, 14w)"),
+    ("Beg 21K (long, 18w)",    "Beg 21K (long, 18w)"),
+    ("Beg 42K (short, 14w)",   "Beg 42K (short, 14w)"),
+    ("Beg 42K (rec, 18w)",     "Beg 42K (rec, 18w)"),
+    ("Beg 42K (long, 22w)",    "Beg 42K (long, 22w)"),
+    ("Acc Beg 21K (rec, 14w)", "Acc Beg 21K (rec, 14w)"),
+    ("Acc Beg 42K (rec, 18w)", "Acc Beg 42K (rec, 18w)"),
+]
+TAPER_LR_OTHER = [
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)"),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)"),
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)"),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)"),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)"),
+]
+for label_group, plans in [("Beg", TAPER_LR_BEG), ("other tier", TAPER_LR_OTHER)]:
+    for header, fil in plans:
+        weeks = parse_dump_phase_longs(run_dump(fil), header)
+        if not weeks:
+            check(f"{header} taper-LR parses", False, "no plan parsed from dump")
+            continue
+        # Peak long run = max long-run-class duration across all BUILD weeks.
+        peak_lr = max(
+            (max(longs) for (ph, longs) in weeks.values()
+             if ph in ('base', 'speed', 'peak') and longs),
+            default=0)
+        # Taper weeks that PRECEDE the race week (race week stays hands-off).
+        race_wk = max((wk for wk, (ph, _) in weeks.items() if ph == 'race'),
+                      default=max(weeks))
+        taper_wks = [wk for wk, (ph, _) in sorted(weeks.items())
+                     if ph == 'taper' and wk < race_wk]
+        problems = []
+        for wk in taper_wks:
+            longs = weeks[wk][1]
+            if not longs:
+                problems.append(f"W{wk}: NO long run (peak={peak_lr}m)")
+            elif max(longs) >= peak_lr:
+                problems.append(f"W{wk}: long {max(longs)}m >= peak {peak_lr}m (not reduced)")
+        check(
+            f"{header.split(' (')[0]} {label_group}: taper weeks carry a REDUCED long run",
+            bool(taper_wks) and not problems,
+            f"taper_wks={taper_wks}, peak={peak_lr}m, problems={problems}"
+        )
+
 section("Beg 10K has a long run every build week")
 
 text = run_pacedump("Beg 10K (long", race_pace=300, easy_pace=420)
