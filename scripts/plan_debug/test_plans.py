@@ -1064,6 +1064,89 @@ for header, fil, t5k, dist in [
               max(easies) - min(easies) >= 10,
               f"range={_mm(min(easies))}..{_mm(max(easies))}", full=True)
 
+section("Aerobic floor — easy/long never render FASTER than race pace (any plan)")
+# Universal §2A invariant: an easy-class run's AEROBIC pace must never be faster
+# than that plan's race pace (easy >= race). The legacy easy-easing floors the
+# base gap at race but then eases ~6.5% on top with no clamp, so low-headroom
+# plans (easy ~ race) underflow: at-goal competitive (Cmp clear, ~1% headroom)
+# and slow runners (race ~ easy). We assert on the SLOWEST listed pace per line
+# — the aerobic pace — so an embedded MP / progression-finish race-pace segment
+# (which is MEANT to touch race) does not mask or trip the check.
+EASY_CLASS = {'easy', 'recovery', 'steadyLong', 'long', 'mediumLong', 'progressiveLong'}
+
+def parse_pace_secs_slowest(pace_str):
+    """SLOWEST (largest sec/km) pace on a line — the aerobic pace of an easy/long
+    run. Embedded faster MP/progression-finish segments are ignored on purpose."""
+    if not pace_str: return None
+    paces = re.findall(r'(\d+):(\d+)/km', pace_str)
+    if not paces: return None
+    return max(int(m) * 60 + int(s) for m, s in paces)
+
+# Faithful per-plan inputs, derived the way the iOS app derives them from a race
+# result. Cmp uses the at-goal "clear" config (build_band=False → no BUILD_BAND):
+# goal 256, easy/speed from the runner's real VDOT. The SLOW band is the
+# highest-inversion-risk: VDOT<30 caps easy near threshold (see
+# `VDOT.easyPaceSecondsPerKm`) so easy lands only ~1-5% above race — well inside
+# the 6.5% legacy easing. We replicate that exact clamp here (a plain 72%-VO2max
+# easy overstates the headroom and would miss the slow-runner inversion).
+def _app_easy(vd):
+    """Replicates VDOT.easyPaceSecondsPerKm: 72% VO2max, but below VDOT 30 the
+    72% pace balloons into a walk, so it's capped to threshold + a shrinking gap."""
+    natural = int(_vel(vd, 0.72))             # 72% VO2max (matches paceAtVO2Fraction)
+    if vd >= 30:
+        return natural
+    thr = int(_vel(vd, 0.88))                 # threshold (88% VO2max)
+    max_gap = int(max(33.0, min(65.0, 65.0 - (30.0 - vd) * 3.5)))
+    return min(natural, thr + max_gap)
+
+# (header, filter, race-result distance/time → VDOT, plan distance, is_cmp).
+# The slow rows use REAL slow finish times (verified via `vdotpaces`): a 5:30
+# marathon → VDOT 25 (race 7:49, easy 8:05, 3.4% headroom) and a 6:00 marathon →
+# VDOT 23 (1% headroom) both cross; the half slow row matches the manifest.
+AEROBIC_FLOOR_PLANS = [
+    # (header, filter, result_dist_m, result_time_s, plan_dist_m, is_cmp) — typical
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 5000, 1320, 10000, False),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 5000, 1080, 10000, False),
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 5000, 1320, 21097, False),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)", 5000, 1080, 21097, False),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 5000, 1320, 42195, False),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)", 5000, 1080, 42195, False),
+    # Slow runners (VDOT 22-25): easy clamped near race, the inversion band.
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 42195, 19800, 42195, False),  # 5:30 M, VDOT 25
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 42195, 21600, 42195, False),  # 6:00 M, VDOT 23
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 21097, 9900,  21097, False),  # 2:45 HM, VDOT 25
+    ("Beg 42K (long, 22w)", "Beg 42K (long, 22w)", 42195, 19800, 42195, False),
+    # At-goal competitive (Cmp clear): ~1% easy/race headroom — flagship case.
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)", 5000, 1050, 21097, True),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)", 5000, 1050, 42195, True),
+]
+for header, fil, res_dist, res_time, dist, is_cmp in AEROBIC_FLOOR_PLANS:
+    vd = _vf(res_dist, res_time)
+    speed5k = int(_pred(5000, vd) / 5)
+    goal = 256 if is_cmp else int(_pred(dist, vd) / (dist / 1000.0))
+    easy = _app_easy(vd)
+    short = header.split(' (')[0]
+    # build_band=False → Cmp "clear" (at-goal) config, the failing competitive path.
+    w = parse_plan(run_pacedump_with(fil, goal, easy, False, speed_pace=speed5k), header)
+    if not w:
+        check(f"{short} aerobic-floor parse (VDOT {vd:.0f})", False, "no plan", full=True)
+        continue
+    violations = []
+    for wk in sorted(w):
+        for s, _, pp in w[wk]:
+            if s not in EASY_CLASS:
+                continue
+            aer = parse_pace_secs_slowest(pp)
+            if aer is None:
+                continue
+            if aer < goal:
+                violations.append(f"W{wk} [{s}] {_mm(aer)} < race {_mm(goal)} ({goal - aer}s faster)")
+    check(
+        f"{short} (VDOT {vd:.0f}, race {_mm(goal)}, easy {_mm(easy)}) no easy/long aerobic pace faster than race",
+        not violations,
+        f"{len(violations)} inversions, e.g. {violations[:4]}",
+        full=True)
+
 section("ACWR volume ramp cap — no back-loaded single-week spike")
 # A build week's volume may not exceed ~1.35x the max of the prior 3 weeks (the
 # 1.25 target cap + placement overshoot). Kills the 5K peak-finish spike (Adv 5K

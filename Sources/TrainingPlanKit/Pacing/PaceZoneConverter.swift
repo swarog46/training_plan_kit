@@ -202,8 +202,11 @@ public struct PaceZoneConverter {
             // Legacy mode: ~6.5% easing over the WHOLE plan as a modeled slice of the
             // projected fitness gain (same effort, pace drifts down as the runner
             // adapts). 5s-quantized downstream. Guardrail, not a target.
+            // Clamp at 1.0 (race pace): when easy↔race headroom is below the 6.5%
+            // easing (gapRatio−1 < 0.065 — at-goal competitive, slow runners), the
+            // eased aerobic pace would otherwise underflow race. Easy must be ≥ race.
             let p = max(0, min(1.0, progressionFactor))
-            return flat * (1.0 - 0.065 * p)
+            return max(1.0, flat * (1.0 - 0.065 * p))
         }
 
         let gapFactor = max(0, min(1.0, (gapRatio - 1.0) / 0.20))
@@ -295,6 +298,11 @@ public struct PaceZoneConverter {
     ) -> WorkoutInterval {
         var newTarget: TargetRange
         var roundToFive = true   // quantize pace to 5s; OFF for Z3 (exact goal pace)
+        // Easy/recovery (Z1/Z2) anchored to race: the multiplier is already floored
+        // at race, but 5s-quantization can round a race-pace easy DOWN to the next
+        // lower 5s (256→255), i.e. faster than race. Floor the rounded pace at race
+        // so the aerobic floor survives rounding. Only the easy/noRange branches set this.
+        var floorAtBasePace = false
         switch interval.target {
         case .heartRateZone(let zone):
             if let speedPace = speedPace, zone >= 4 {
@@ -361,6 +369,9 @@ public struct PaceZoneConverter {
                 // Z1/Z2 (easy) and Z3 (marathon pace) stay anchored to race pace.
                 // Z3 = the EXACT race-day goal pace; keep it exact (don't 5s-round).
                 if zone == 3 { roundToFive = false }
+                // Easy/recovery is the aerobic floor — never let quantization round it
+                // faster than race (Z3 MP is meant to sit AT race, so it's exempt).
+                if zone <= 2 { floorAtBasePace = true }
                 let relative = progressiveMultiplier(
                     for: zone,
                     racePace: racePace,
@@ -373,6 +384,7 @@ public struct PaceZoneConverter {
             }
         case .noRange:
             // Assign easy pace (zone 2 equivalent) for warmup/rest/cooldown with no target
+            floorAtBasePace = true
             let easyRelative = progressiveMultiplier(
                 for: 2,
                 racePace: racePace,
@@ -391,7 +403,12 @@ public struct PaceZoneConverter {
         // Nearest (not strict round-up) keeps 5K/10K VO2 from rounding ONTO race
         // pace. Z3 goal pace and non-pace (HR) targets pass through untouched.
         if roundToFive, case let .paceTarget(basePace, relative) = newTarget, basePace > 0 {
-            let rounded = (Double(basePace) * relative / 5.0).rounded() * 5.0
+            var rounded = (Double(basePace) * relative / 5.0).rounded() * 5.0
+            // Aerobic floor: a race-anchored easy/recovery pace must never render
+            // faster than race. When 5s-rounding pulls it below race (e.g. 256→255),
+            // pin it AT race instead. Only binds in the low-headroom zone (easy≈race);
+            // typical runners round well above race and are untouched.
+            if floorAtBasePace, rounded < Double(basePace) { rounded = Double(basePace) }
             // +0.5 so the downstream Int(basePace × relative) floors back to the
             // exact 5s multiple instead of one second under (380 → 6:20, not 6:19).
             newTarget = .paceTarget(basePace: basePace, relative: (rounded + 0.5) / Double(basePace))

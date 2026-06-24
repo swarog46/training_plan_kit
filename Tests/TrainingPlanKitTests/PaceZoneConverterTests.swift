@@ -140,4 +140,39 @@ final class PaceZoneConverterTests: XCTestCase {
                                         "Z5 must not be faster at plan start than race week")
         }
     }
+
+    // MARK: - Aerobic floor: low-headroom easy never eases UNDER race pace
+    //
+    // The legacy easy-easing floors the base gap at race (max(1.0, gapRatio)) but
+    // then applies ~6.5% easing on top with no clamp — so when the easy↔race
+    // headroom is below 6.5% (gapRatio−1 < 0.065), easy underflows race at high
+    // progressionFactor. Race-pace-anchored aerobic must never render FASTER than
+    // race (easy must be ≥ race). Drives both the at-goal competitive config
+    // (Cmp clear, ~1% headroom) and a slow runner (race≈easy).
+
+    func testLowHeadroomEasyNeverFasterThanRace() {
+        // Cmp "clear" (at-goal): race 256 (4:16), runner easy 259 (4:19) →
+        // gapRatio ≈ 1.012, ~1.2% headroom. Whole-plan 6.5% easing crosses race.
+        // Slow runner: race 469 (7:49), easy 485 (8:05) → ~3.4% headroom.
+        // Easy↔race gap (4s, 16s) is below the 6.5% easing, so easy underflows.
+        let cases: [(race: Int, easy: Int, config: PaceProgressionConfig, label: String)] = [
+            (256, 259, .competitive, "Cmp clear (at-goal, ~1.2% headroom)"),
+            (469, 485, .intermediate, "slow runner (~3.4% headroom)"),
+            // Synthetic worst case: ~1% headroom on a generic intermediate plan.
+            (300, 303, .intermediate, "synthetic 1% headroom"),
+        ]
+        for c in cases {
+            for zone in [1, 2] {
+                // p=1.0 is where the 6.5% easing bites hardest (race week).
+                for p in [0.0, 0.5, 0.9, 1.0] {
+                    let easyPace = Double(c.race) * PaceZoneConverter.progressiveMultiplier(
+                        for: zone, racePace: c.race, conversationalPace: c.easy,
+                        progressionFactor: p, config: c.config)
+                    XCTAssertGreaterThanOrEqual(
+                        easyPace, Double(c.race),
+                        "\(c.label) Z\(zone) p=\(p): easy \(Int(easyPace.rounded()))s must be ≥ race \(c.race)s (aerobic floor)")
+                }
+            }
+        }
+    }
 }
