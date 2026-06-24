@@ -57,8 +57,10 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
             let subtype = w.workout.subtype.rawValue
             // Z5 work minutes from the actual picked template — ground truth
             // for the Z5-policy tests (title-based joins are ambiguous).
-            let z5work = w.workout.intervals.filter {
-                $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5)
+            let z5work = w.workout.intervals.filter { iv -> Bool in
+                guard iv.type == .work else { return false }
+                if case .heartRateZone(let zone) = iv.target { return zone == 5 }
+                return false
             }
             let z5sec: Double = z5work.reduce(0.0) { $0 + $1.duration }
             let z5min = Int(z5sec / 60)
