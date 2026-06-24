@@ -21,22 +21,16 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             // Detect phase transition
             let phaseJustStarted = prevPhase != nil && phase != prevPhase!
             if phaseJustStarted {
-                // Reset variety tracking at phase boundaries — encourages reuse of
-                // pool workouts within each phase. Persisting across phases interacts
-                // badly with the cumulative penalty (good matches give way to short
-                // easies, dragging volume down), so keep the per-phase reset.
+                // Reset variety tracking at phase boundaries (per-phase reset).
+                // See BeginnerPlanGenerator.
                 usedIds.removeAll()
             }
             prevPhase = phase
             
             // Calculate targets
             let rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
-            // ACWR ramp cap (DURATION): a week's volume may not exceed 1.25× the
-            // highest of the last 3 weeks — kills back-loaded single-week spikes
-            // (e.g. the 5K peak-finish week leaping +44% off a ~250min plateau) while
-            // letting post-deload weeks rebound to the recent high. Load scales with
-            // the cut so intensity/min is preserved. Caps VOLUME only, so load-
-            // balanced builds (marathon) with no duration spike are untouched.
+            // ACWR ramp cap (DURATION): cap volume at 1.25× the recent 3-week max,
+            // scaling load with the cut. See BeginnerPlanGenerator for the rationale.
             let targets: WeeklyTargets = {
                 guard let maxDur = recentDur.max() else { return rawTargets }
                 let capDur = maxDur * 1.25
@@ -57,54 +51,39 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             
             let maxWorkoutsPerWeek = config.trainingDays.count
             
-            // Filter intervals by max rest per runner level. Only applies to the
-            // VO2max-style subtypes (intervals/pyramidIntervals/ladderIntervals)
-            // that get their stimulus from short-rest density. Hill repeats,
-            // yasso 800s, mile repeats, and time trials are designed with long
-            // recoveries by construction — exempt them from this filter or they
-            // get excluded for advanced runners (60s rest cap).
+            // Max-rest filter applies only to density-driven VO2 subtypes; see
+            // BeginnerPlanGenerator for why hills/yasso/mile-reps/TT are exempt.
             let maxRestPerInterval = config.profile.intervalRestCapSeconds
 
             // PEAK milestone cadence — computed at week scope so both the
             // pool gate AND the per-level selection logic below can read it.
             let milestoneCadence = max(3, peakDur / 2)
             let yassoWeek = phase == .peak && (weekInPhase % milestoneCadence) == 0
-            // Time trials: a recalibration checkpoint mid-plan (SPEED phase) so the
-            // runner re-measures fitness with most of the plan still ahead to act on
-            // it, PLUS the original late PEAK tune-up (also breaks up PEAK ladder/
-            // interval repetition and holds peak load). Was PEAK-only, which buried
-            // the sole TT near ~80% of the plan. Recalib falls back to the last BASE
-            // week if a plan has no SPEED phase.
+            // Time trials: a mid-plan SPEED recalibration check + the late PEAK
+            // tune-up; recalib falls back to the last BASE week if no SPEED phase.
+            // See BeginnerPlanGenerator for the full reasoning.
             let recalibTTWeek = (speedDur > 0)
                 ? (phase == .speed && weekInPhase == speedDur / 2)
                 : (phase == .base && weekInPhase == baseDur - 1)
-            // Late PEAK tune-up TT only for the longer plans (half+, 12-20 wk), which
-            // benefit from a periodic ~4-week TT cadence and where it also breaks PEAK
-            // ladder repetition. 5K/10K (6-10 wk) keep just the single mid-plan
-            // recalibration TT — one race-effort check is plenty for a short block.
+            // Late PEAK tune-up TT only for the longer plans (half+); short 5K/10K
+            // blocks keep just the mid-plan recalib. See BeginnerPlanGenerator.
             let peakTTWeek = config.distance >= 21000 && phase == .peak
                 && (weekInPhase % milestoneCadence) == milestoneCadence / 2
             let ttWeek = recalibTTWeek || peakTTWeek
 
-            // Climb one variant per ~2 plan weeks (load-sorted) across BASE+SPEED so
-            // the load-target selector can't park on the cheapest template. Absolute
-            // week (not weekInPhase) so the ramp continues base → speed. Applied to
-            // BOTH hills and ladders — both have many same-subtype catalog variants.
-
+            // (Hills/ladders climb one variant per ~2 plan weeks via
+            // rampVariantsByPlanWeek below — see BeginnerPlanGenerator.)
             let intervalPool: [Workout] = {
                 var pool = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
-                // Gate hill repeats: BASE and SPEED only (strength foundation,
-                // then transition to race-specific). Skip the first week of
-                // each phase so the runner adapts before adding hill stress.
+                // Gate hill repeats: BASE/SPEED only, skipping each phase's first
+                // week so the runner adapts first. See BeginnerPlanGenerator.
                 let hillsAllowed = (phase == .base || phase == .speed) && weekInPhase >= 1
                 if !hillsAllowed {
                     pool = pool.filter { $0.subtype != .hillRepeats }
                 }
 
-                // Gate Yasso 800s and Time Trials based on the milestone
-                // cadence computed at week scope. Yasso is Int/Adv only;
-                // TT runs for all levels. Cadence yields 2-3 of each per
-                // PEAK cycle, never sharing a week.
+                // Gate Yasso 800s / Time Trials by milestone cadence. See
+                // IntermediatePlanGenerator.
                 if !yassoWeek {
                     pool = pool.filter { $0.subtype != .yasso800 }
                 }
@@ -112,34 +91,22 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     pool = pool.filter { $0.subtype != .timeTrial }
                 }
 
-                // Minimum-duration floor by phase + level. Below the floor the
-                // session is too short to engage VO2max/T-pace meaningfully
-                // (Daniels: I-pace reps need 2-5min each; total session typically
-                // 35-50min). Onboarding (BASE wks 0-2) gets the lighter floor;
-                // race-PEAK pushes Int/Adv toward textbook 40-50min sessions.
+                // Min-duration floor by phase+level so the session engages VO2/T-pace;
+                // onboarding gets the lighter floor. See BeginnerPlanGenerator.
                 let isOnboarding = phase == .base && weekInPhase <= 1
-                // Deload build weeks: relax the floor to the onboarding value (22).
-                // The full PEAK floor can drop every interval/short-ladder template
-                // except one heavy survivor, forcing the "recovery" pick onto the
-                // monster session. 22 still excludes the lightest 20-min ladder so
-                // the deload lands on a genuine Z5 session, not something trivial.
+                // Deload build weeks relax the floor to the onboarding 22 (keeps the
+                // deload on a real Z5 session, not a trivial one) — see Beginner.
                 let minIntervalMinutes: Int = {
                     if isDeloading && phase != .race { return 22 }
                     if isOnboarding { return 22 }
                     return config.profile.minIntervalMinutes(phase: phase)
                 }()
                 let filtered = pool.filter { $0.duration >= minIntervalMinutes * 60 }
-                // Don't return an empty pool — fall back to full pool if the
-                // floor excluded everything (catalog gap, not the user's
-                // problem).
+                // Fall back to the full pool if the floor excluded everything.
                 var result = filtered.isEmpty ? pool : filtered
-                // 5K/10K: the lead SPEED/VO2 session must be true VO2 (Z5). The catalog
-                // tags ~half of intervals/ladderIntervals templates Z4 (LT cruise work)
-                // — correct on half/marathon (LT-dominant BY DESIGN) but on 5K/10K,
-                // where race ≈ 5K speed, a Z4 "VO2" session renders SLOWER than race
-                // (inversion: the "fast" work reads as threshold/race-pace cruise).
-                // Drop the Z4-only VO2-family templates when true-Z5 ones exist; hills
-                // / mile-reps (strength / LT) are left untouched for variety.
+                // 5K/10K: the lead VO2 session must be true Z5. Drop Z4-only VO2-family
+                // templates when true-Z5 ones exist (on 5K/10K a Z4 "VO2" renders
+                // slower than race); see BeginnerPlanGenerator.
                 if config.distance < 21000 {
                     for vsub in [WorkoutSubtype.intervals, .ladderIntervals, .pyramidIntervals] {
                         if result.contains(where: { $0.subtype == vsub && isRealZ5($0) }) {
@@ -159,22 +126,15 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 return result
             }()
             
-            // RACE week: Skip quality workouts entirely.
-            //
-            // For plans with taperDur >= 2 (most 21K/42K plans), phase==.race is
-            // explicitly returned for the last week of the plan. For shorter
-            // plans (5K/10K) we keep taperDur=1 to preserve build time — there
-            // the last week is technically phase==.taper, but it IS the race
-            // week and needs the same hands-off treatment. Without this branch,
-            // 5K/10K plans were ending with a 40min threshold or intervals
-            // session 3-4 days before race day.
+            // RACE week: skip quality entirely. 5K/10K keep taperDur=1, so their
+            // last week is phase==.taper but still needs this hands-off treatment.
+            // See BeginnerPlanGenerator.
             let isLastWeekOfPlan = week == actualWeeksToGenerate - 1
             let isRaceWeek = phase == .race
                 || (phase == .taper && isLastWeekOfPlan)
             if isRaceWeek {
-                // Pfitz-style race week: 3 short sessions before race day — a
-                // progression tune-up, an easy + strides, and a short shakeout.
-                // Total ~120min, matching Pfitz's ~25km race-week mileage at light pace.
+                // Pfitz-style race week: 3 short sessions (progression tune-up,
+                // easy+strides, shakeout) ~120min total. See BeginnerPlanGenerator.
                 let numWorkouts = min(3, maxWorkoutsPerWeek)
                 for i in 0..<numWorkouts {
                     if i == 0 {
@@ -193,11 +153,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             weekWorkouts.append(("shakeout_race", shakeout))
                         }
                     } else {
-                        // Second workout: easy run, hard-capped at 50min. The unbounded
-                        // `targetDuration * 0.30` lands ~90min for competitive 42K — too
-                        // long 3 days pre-race. So bypass the global >= 60min easy filter
-                        // AND hard-filter the pool to <= 50min before the selector, or
-                        // load scoring picks the 90-110min options over the duration target.
+                        // Second workout: easy run hard-capped at 50min (pre-filtered
+                        // <= 50min so load scoring can't pick the long ones). See Beginner.
                         let raceEasyPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                             .filter { $0.duration <= 50 * 60 }
                         let raceEasyTarget = min(Int(targetDuration * 0.30), 40 * 60)
@@ -221,20 +178,16 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             // Helper: Filter thresholds by progression (prefer shorter intervals early, longer later)
 
             if shouldAddIntervals {
-                    // Always add intervals. BASE prefers hill repeats (Higdon/Lydiard
-                    // strength foundation), alternating with other interval work
-                    // week-to-week so five straight weeks of one hill template don't
-                    // read as a single repeated workout. Falls back to plain intervals.
+                    // Always add intervals; BASE alternates hill repeats with other
+                    // interval work week-to-week. See IntermediatePlanGenerator.
                     let preferHillsThisWeek: Bool = {
                         guard phase == .base, weekInPhase >= 1 else { return false }
                         // fitter tiers alternate a milestone subtype in BASE; beginners stay plain
                         return config.profile.alternatesMilestoneInBase && weekInPhase % 2 == 1
                     }()
                     let preferredPool: [Workout] = {
-                        // PEAK milestone weeks: if the pool has the milestone
-                        // subtype (Yasso 800s / time trial), prefer it so it
-                        // doesn't lose the load competition to ladders/hills and
-                        // get under-picked.
+                        // PEAK milestone weeks: prefer the milestone subtype (Yasso /
+                        // TT) so it isn't under-picked. See IntermediatePlanGenerator.
                         if phase == .peak && yassoWeek {
                             let yassosOnly = intervalPool.filter { $0.subtype == .yasso800 }
                             if !yassosOnly.isEmpty { return yassosOnly }
@@ -243,24 +196,12 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
                             if !ttOnly.isEmpty { return ttOnly }
                         }
-                        // PEAK lead-VO2 rotation (mirrors baseLTWeek): hills are gated
-                        // out of PEAK and the load selector parks on the single biggest
-                        // ladder every week (5-6× the same ladder title). On alternating
-                        // PEAK weeks force plain intervals so the lead VO2 alternates
-                        // intervals/ladder instead of locking. Sourced from filteredIntervals
-                        // (pre-floor): the only plain-intervals templates are 25-36min, below
-                        // the PEAK min-interval floor that otherwise leaves the 61min ladder
-                        // as the sole survivor — so the floor is bypassed for this slot only.
-                        // All plain-intervals templates are true Z5 (VO2), so the 5K/10K
-                        // Z5-lead requirement still holds.
-                        // 5K excluded: its PEAK is 5K-pace/intervals driven (no ladder
-                        // lock), and forcing the light plain-intervals templates there
-                        // displaces the heavier race-specific work.
+                        // PEAK lead-VO2 rotation (mirrors baseLTWeek): force plain
+                        // intervals on alternating PEAK weeks so the lead VO2 doesn't
+                        // lock onto one ladder; 5K excluded. See IntermediatePlanGenerator.
                         if phase == .peak && weekInPhase % 2 == 1 && config.distance >= 10000 {
                             // Cycle the segment-count variant per forced-interval week
-                            // (load-sorted) so back-to-back interval weeks don't all
-                            // land on the heaviest template — otherwise the lock just
-                            // moves from one ladder title to one interval title.
+                            // (load-sorted) so the lock doesn't just move titles. See Int.
                             let variants = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
                                 .filter { $0.subtype == .intervals }
                                 .sorted { $0.trainingLoad < $1.trainingLoad }
@@ -272,11 +213,9 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             let hillsOnly = intervalPool.filter { $0.subtype == .hillRepeats }
                             return hillsOnly.isEmpty ? intervalPool : hillsOnly
                         }
-                        // BASE off-weeks: actively exclude hill repeats so the
-                        // load-target selector doesn't keep picking them out of the
-                        // unfiltered pool (they score cleanly against BASE load
-                        // targets and would win the off-weeks too, making the
-                        // "alternating" rule meaningless). This is what forces variety.
+                        // BASE off-weeks: exclude hill repeats so the load selector
+                        // can't pick them every week (forces the alternation that gives
+                        // variety). See IntermediatePlanGenerator.
                         let excludesHillsOnOffWeek = phase == .base
                         if excludesHillsOnOffWeek {
                             let withoutHills = intervalPool.filter { $0.subtype != .hillRepeats }
@@ -285,12 +224,9 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         return intervalPool
                     }()
 
-                    // Z5 policy: blocked in BASE/TAPER, and on the week after a
-                    // Z5 week for 21K/42K. VO2 blocks are exempt.
-                    // Note `week == weeksToTrim`: short plans are generated at
-                    // recommended length and trimmed from the front, so the
-                    // runner's first week can land mid-SPEED — it still must not
-                    // open with a VO2 session.
+                    // Z5 policy: blocked in BASE/TAPER and the week after a Z5 week
+                    // for 21K/42K (VO2 blocks exempt); also blocked at week==weeksToTrim
+                    // since trimmed plans can open mid-SPEED. See IntermediatePlanGenerator.
                     let z5Blocked = !config.isVO2Max && (
                         phase == .base || phase == .taper
                         || week == weeksToTrim
@@ -314,10 +250,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             weekWorkouts.append(("interval", interval))
                             prevInterval = interval
                         } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
-                            // No sub-Z5 interval template exists for this distance
-                            // (5K pools are mostly I-pace). Use a threshold session
-                            // as the week's quality instead of breaking the policy —
-                            // Daniels' BASE-phase quality IS the LT run.
+                            // No sub-Z5 interval exists (5K pools are mostly I-pace);
+                            // use a threshold as the quality. See IntermediatePlanGenerator.
                             weekWorkouts.append(("threshold", threshold))
                             prevThreshold = threshold
                         }
@@ -329,27 +263,17 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         }
                     }
                     
-                    // Threshold in SPEED/PEAK only (not BASE). Gated to 4+ day plans:
-                    // a 2nd quality session would leave a 3-day week zero easy days
-                    // (quality + quality + long), so the accessible 3-day tier caps at
-                    // one quality/week and fills the freed day with aerobic running.
+                    // Threshold in SPEED/PEAK only, gated to 4+ day plans (a 2nd quality
+                    // would zero out a 3-day week's easy days). See IntermediatePlanGenerator.
                     if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
                         if weekVariation == 3 && !intervalPool.isEmpty && config.distance < 21097 {
-                            // Every 5th week (week % 5 == 3): Double intervals instead
-                            // of threshold — 5K/10K ONLY. Doubling VO2 in a week suits
-                            // a speed race, but a half/marathon is LT- and MP-dominant
-                            // (Pfitzinger): no VO2-doubling weeks. 21K/42K fall through
-                            // to the threshold (LT) slot below instead.
-                            // Exclude milestones (Yasso/TT) from the second slot so we
-                            // don't end up with two milestone workouts in the same week —
-                            // those are meant to be standalone benchmarks. Also exclude
-                            // the subtype already picked in the first interval slot —
-                            // doubling up on e.g. hill repeats in one week stacks the
-                            // same fibres; variety is the whole reason we run two
-                            // intervals here instead of interval+threshold.
+                            // Every 5th week: double intervals instead of threshold —
+                            // 5K/10K ONLY (half/marathon are LT/MP-dominant). The second
+                            // slot excludes milestones and the first slot's subtype.
+                            // See IntermediatePlanGenerator.
                             let firstIntervalSubtype = weekWorkouts.last(where: { $0.type == "interval" })?.workout.subtype
                             let secondSlotPool = intervalPool.filter {
                                 $0.subtype != .yasso800 &&
@@ -357,11 +281,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                                 $0.subtype != firstIntervalSubtype
                             }
                             let pool2base = secondSlotPool.isEmpty ? intervalPool : secondSlotPool
-                            // Weekly Z5 cap + phase/cadence policy for the second
-                            // slot: one Z5 session per week is the ceiling (Adv
-                            // VO2 blocks excepted). No unfiltered fallback here —
-                            // if no sub-Z5 candidate exists, skip the second
-                            // interval; the week keeps its slot-1 quality.
+                            // Weekly Z5 cap for the second slot: one Z5/week ceiling
+                            // (Adv VO2 blocks excepted), no fallback. See Intermediate.
                             let blockZ5Second = z5Blocked
                                 || (z5UsedThisWeek && !config.isVO2Max)
                             let pool2: [Workout] = blockZ5Second
@@ -377,13 +298,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             var thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
 
                             // 42K Pfitz MP-volume preference: force marathonPace in the
-                            // threshold slot on alternating PEAK weeks (Pfitz prescribes
-                            // two MP exposures — one LR-with-MP, one dedicated MP run).
-                            // The default selector picks bigger thresholds over MP
-                            // (whose Z3 load sits below threshold workouts), so the
-                            // dedicated "12mi @ MP" run never appeared. MP entries are
-                            // continuous so they fail the progression filter — bypass it
-                            // by pulling from `filteredThresholds`.
+                            // threshold slot on alternating PEAK weeks (bypassing the
+                            // progression filter via `filteredThresholds`). See Intermediate.
                             let preferMP = config.distance == 42195
                                 && phase == .peak
                                 && (week % 2 == 0)
@@ -399,9 +315,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         }
                     }
 
-                    // No dedicated 3rd MP slot: the LR already carries MP volume, and
-                    // a 3rd hard session would force back-to-back hard days in a 5-day
-                    // non-LR window (Pfitz prescribes 2 quality + LR-with-MP, not 3 + 1).
+                    // No dedicated 3rd MP slot — the LR already carries MP volume.
+                    // See IntermediatePlanGenerator.
             }
 
             // LONG RUN
@@ -439,11 +354,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 }
             }
 
-            // PEAK weeks: open the long-run pool to include the race-rehearsal
-            // flavor matching the plan distance (10K → raceRehearsal10K,
-            // 21K → raceRehearsalHM, 42K → raceRehearsalM). Each subtype's
-            // eligibleDistances pins it to one race, so we just look up the
-            // first matching subtype.
+            // PEAK weeks: open the long-run pool to the distance-matched race
+            // rehearsal (eligibleDistances pins each to one race). See Beginner.
             if phase == .peak {
                 for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
                 where rehearsal.eligibleDistances.contains(config.distance) {
@@ -458,11 +370,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 }
                 let peakWeekIndex = week - baseDur - speedDur
                 if config.distance == 10000 && peakDur >= 2 {
-                    // 10K: alternate raceRehearsal10K (5K tune-up simulation) with
-                    // plain steady in PEAK. The selector picks steadyLong/fastFinish
-                    // at default loads every week, so force the alternation to guarantee
-                    // the tune-up exposure. On MP-segment weeks also drop fastFinish, or
-                    // it out-scores raceRehearsal10K (closer 10K-LR duration).
+                    // 10K: alternate raceRehearsal10K with plain steady in PEAK to
+                    // guarantee the tune-up exposure. See IntermediatePlanGenerator.
                     let isMPSegmentWeek = peakWeekIndex % 2 == 0
                     if isMPSegmentWeek {
                         longRunTypes.removeAll {
@@ -477,10 +386,7 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             if shouldAddLong && !longRuns.isEmpty {
                 var pool = filterWorkoutsBySubtypeV3(workouts: longRuns, subtypes: longRunTypes)
 
-                // Duration caps. Marathon/Half caps scale with level — Pfitzinger
-                // 18/55 peaks at 22mi long runs; Higdon Int 1 marathon at 20mi.
-                // Longest-run cap is declared per-plan on the config as one readable
-                // (distance, level) table — see PlanConfiguration.maxLongRunMinutes.
+                // Duration cap per (distance, level) — see PlanConfiguration.maxLongRunMinutes.
                 let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
 
@@ -490,29 +396,22 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     return workout.duration >= minLongRunMins * 60
                 }
 
-                // Progressive long-run target by distance + level + phase, from the
-                // config's (start, peak) anchors. Without explicit targets the load-
-                // dominated selector picks short LRs even when targetDuration is high.
+                // Progressive long-run target by distance+level+phase from the config's
+                // (start, peak) anchors — without it the load-dominated selector picks
+                // short LRs. See BeginnerPlanGenerator.
                 let longRunTargetMins: Int
                 let targetLongRunMins: Int
 
-                // (basePhaseStart, speedPhaseEnd, peakPhaseEnd, taperVal)
-                // nil = use initialLongRunDuration / non-progressive logic
-                // Long-run duration ramp is declared per-plan — see
-                // PlanConfiguration.longRunProgression (nil for 5K / maintenance).
+                // Ramp declared per-plan in PlanConfiguration.longRunProgression
+                // (nil for 5K / maintenance → non-progressive logic below).
                 let progression = config.longRunProgression
 
                 if let p = progression {
                     switch phase {
                     case .base:
-                        // Ramp the long run UP across BASE toward p.base instead of
-                        // holding it flat. Anchored at the LAST base week (= p.base),
-                        // stepping down 2min/week earlier, floored at 0.80×base.
-                        // Short plans (base ≤ 4w) don't reach the floor so they're
-                        // unchanged; long builds (36w marathon, base = 16w) get a real
-                        // progressive build instead of a 16-week plateau at p.base.
-                        // The 0.80 floor matches where the unconstrained week-1 pick
-                        // lands, so the run never descends out of the gate.
+                        // Ramp the long run UP across BASE toward p.base (anchored at
+                        // the last base week, -2min/week earlier, floored at 0.80×base).
+                        // See BeginnerPlanGenerator.
                         let weeksFromBaseEnd = max(0, baseDur - 1 - week)
                         let floorMins = Int(Double(p.base) * 0.80)
                         targetLongRunMins = max(floorMins, p.base - 2 * weeksFromBaseEnd)
@@ -528,19 +427,16 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         targetLongRunMins = p.taper
                     }
                     // On recovery/deload BUILD weeks, cut the LR target ~20% so the
-                    // week's dominant load chunk dips. Both the tolerance filter and
-                    // the selector below read longRunTargetMins, so the cut reaches both.
+                    // week's dominant load chunk dips. See BeginnerPlanGenerator.
                     longRunTargetMins = recoveryLongRunTarget(targetLongRunMins, isDeloading: isDeloading, phase: phase)
                     let toleranceMins = 15
                     let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - longRunTargetMins) <= toleranceMins }
                     if !filteredByTarget.isEmpty {
                         pool = filteredByTarget
                     }
-                    // Low-mileage short races only: the long-run load budget sits
-                    // below even the shortest run, so the load pick freezes the long
-                    // run at the minimum (Beg 10K stuck at 60). Snap to the nearest-
-                    // target AEROBIC run. (Half/marathon clear it — left alone, so
-                    // their MP-segment peak runs stay intact.)
+                    // Low-mileage short races: load budget sits below the shortest run,
+                    // so snap to the nearest-target aerobic run (half/marathon untouched).
+                    // See BeginnerPlanGenerator.
                     let snapLoadMult = config.profile.longRunSnapLoadFraction
                     let snapMinLoad = pool.map { Double($0.trainingLoad) }.min() ?? 0
                     if config.distance < 21000,
@@ -563,16 +459,11 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     longRunTargetMins = Int(targetDuration * 0.50)
                 }
 
-                // LR load multiplier — bumped for competitive so the selector
-                // prefers the 150-200min steadyLong / raceRehearsalM in PEAK
-                // over shorter alternatives whose load happens to match the
-                // default 0.35 multiplier. Without this, a 85min fastFinish
-                // (load ~10700) wins against a 150min steadyLong (load ~14500)
-                // even when the duration target is 160min.
+                // LR load multiplier (bumped for competitive so PEAK picks the long
+                // steadyLong/raceRehearsalM over short alternatives). See Beginner.
                 let lrLoadMult = config.profile.longRunSnapLoadFraction
-                // Monotonic enforcement (shared): non-decreasing in BUILD, non-
-                // increasing in TAPER/RACE, with a 65%-of-peak cutback floor so a
-                // down-week long run never collapses to the 60min catalog minimum.
+                // Monotonic: non-decreasing in BUILD, non-increasing in TAPER/RACE,
+                // 65%-of-peak cutback floor. See BeginnerPlanGenerator.
                 pool = applyLongRunMonotonic(pool: pool, phase: phase, prevLongRunMins: prevLongRunMins, isDeloading: isDeloading)
                 if let longRun = selectWorkoutByTargetV3(workouts: pool, targetLoad: targetLoad * lrLoadMult, targetDuration: longRunTargetMins, usedIds: &usedIds, isMaintenance: false) {
                     weekWorkouts.append(("long", longRun))
@@ -695,12 +586,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 }
             }
 
-            // Cap strides at 1/week — Daniels prescribes ~2/week max but with
-            // 5-day plans that becomes excessive. Replace any extra strides with
-            // the closest-duration plain easy run. Use the UNFILTERED easy pool
-            // here — the competitive >= 60min filter applied to `easyRuns` would
-            // otherwise force taper strides to be replaced with 60min easies,
-            // wrecking the taper volume target.
+            // Cap strides at 1/week — replace extras with the closest-duration plain
+            // easy from the UNFILTERED pool (avoids wrecking taper). See Beginner.
             let stridesIndices = weekWorkouts.indices.filter { weekWorkouts[$0].workout.subtype == .strides }
             if stridesIndices.count > 1 {
                 let plainEasy = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy])
@@ -714,12 +601,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 }
             }
 
-            // Peak-volume soft cap (marathon Adv/Cmp). Pfitz 18/70 and 18/85 push
-            // 9-10h weeks at peak — faithful to the books, but above what most
-            // amateurs choosing these plans can absorb without breaking down. Shed
-            // the excess from the largest aerobic FILL (medium-long / easy) only —
-            // never the long run, the quality session, or MP work — and let the
-            // freed day become recovery. Halves and shorter never approach the cap.
+            // Peak-volume soft cap (marathon Adv/Cmp): shed excess from the largest
+            // aerobic FILL only, freeing a recovery day. See BeginnerPlanGenerator.
             let weeklyCapMinutes: Int = {
                 guard config.distance >= 42195 else { return .max }
                 return 480   // Adv marathon ~8.0h ceiling (was up to 8.4h)
