@@ -330,6 +330,19 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     return workout.duration >= minLongRunMins * 60
                 }
 
+                // Safety net: never leave the long-run slot empty. The forced
+                // mid-PEAK rehearsal clears the pool down to raceRehearsal*, which
+                // a tight maxLongRunMinutes cap can then filter to nothing — fall
+                // back to a regular steadyLong/long within the cap (>=60min if the
+                // cap allows, else the shortest available) rather than dropping the
+                // long run entirely.
+                if pool.isEmpty {
+                    let regular = filterWorkoutsBySubtypeV3(workouts: longRuns, subtypes: [.steadyLong, .long])
+                        .filter { $0.duration <= maxDurationMins * 60 }
+                    pool = regular.filter { $0.duration >= minLongRunMins * 60 }
+                    if pool.isEmpty { pool = regular }
+                }
+
                 // Marathon PEAK: ramp the Race-Rehearsal MP segment up across the
                 // peak weeks (60→75→90) so it doesn't park on the largest rung.
                 if phase == .peak {

@@ -606,6 +606,63 @@ for label_group, plans in [("Beg", TAPER_LR_BEG), ("other tier", TAPER_LR_OTHER)
             f"taper_wks={taper_wks}, peak={peak_lr}m, problems={problems}"
         )
 
+section("Every 21K+ BUILD week (base/speed/peak) carries a long run (all tiers incl Acc)")
+
+# The taper-LR test above only guards TAPER weeks. This extends the guarantee to
+# the BUILD phases: for every 21K+ plan, EVERY base/speed/peak week (excluding the
+# race week) must carry a long-run-class session. Caught the Acc Beg 21K regression
+# where the forced mid-PEAK race-rehearsal week cleared the long-run pool down to
+# raceRehearsalHM, the 72-min cap then emptied it (shortest HMP rung was 75min), and
+# the long-run slot silently fell through to a ~35min easy filler. Reuses
+# parse_dump_phase_longs (phase labels from `dump`, the real per-week phase).
+
+# Every 21K+ plan plan_debug enumerates, across all tiers incl Acc.
+BUILD_LR_PLANS = [
+    ("Beg 21K (short, 10w)",   "Beg 21K (short, 10w)"),
+    ("Beg 21K (rec, 14w)",     "Beg 21K (rec, 14w)"),
+    ("Beg 21K (long, 18w)",    "Beg 21K (long, 18w)"),
+    ("Int 21K (rec, 14w)",     "Int 21K (rec, 14w)"),
+    ("Int 21K (long, 18w)",    "Int 21K (long, 18w)"),
+    ("Adv 21K (rec, 14w)",     "Adv 21K (rec, 14w)"),
+    ("Adv 21K (long, 18w)",    "Adv 21K (long, 18w)"),
+    ("Cmp 21K (short, 12w)",   "Cmp 21K (short, 12w)"),
+    ("Cmp 21K (rec, 14w)",     "Cmp 21K (rec, 14w)"),
+    ("Cmp 21K (long, 18w)",    "Cmp 21K (long, 18w)"),
+    ("Beg 42K (short, 14w)",   "Beg 42K (short, 14w)"),
+    ("Beg 42K (rec, 18w)",     "Beg 42K (rec, 18w)"),
+    ("Beg 42K (long, 22w)",    "Beg 42K (long, 22w)"),
+    ("Int 42K (rec, 18w)",     "Int 42K (rec, 18w)"),
+    ("Int 42K (long, 22w)",    "Int 42K (long, 22w)"),
+    ("Adv 42K (rec, 18w)",     "Adv 42K (rec, 18w)"),
+    ("Adv 42K (long, 22w)",    "Adv 42K (long, 22w)"),
+    ("Cmp 42K (rec, 18w)",     "Cmp 42K (rec, 18w)"),
+    ("Cmp 42K (long, 22w)",    "Cmp 42K (long, 22w)"),
+    ("Cmp 42K (build, 28w)",   "Cmp 42K (build, 28w)"),
+    ("Acc Beg 21K (rec, 14w)", "Acc Beg 21K (rec, 14w)"),
+    ("Acc Int 21K (rec, 14w)", "Acc Int 21K (rec, 14w)"),
+    ("Acc Adv 21K (rec, 14w)", "Acc Adv 21K (rec, 14w)"),
+    ("Acc Beg 42K (rec, 18w)", "Acc Beg 42K (rec, 18w)"),
+    ("Acc Int 42K (rec, 18w)", "Acc Int 42K (rec, 18w)"),
+    ("Acc Adv 42K (rec, 18w)", "Acc Adv 42K (rec, 18w)"),
+]
+for header, fil in BUILD_LR_PLANS:
+    weeks = parse_dump_phase_longs(run_dump(fil), header)
+    if not weeks:
+        check(f"{header} build-LR parses", False, "no plan parsed from dump")
+        continue
+    # Race week stays hands-off (handled by the race-week branch).
+    race_wk = max((wk for wk, (ph, _) in weeks.items() if ph == 'race'),
+                  default=max(weeks))
+    missing = [
+        f"W{wk}({ph})" for wk, (ph, longs) in sorted(weeks.items())
+        if ph in ('base', 'speed', 'peak') and wk < race_wk and not longs
+    ]
+    check(
+        f"{header.split(' (')[0]}: every build week carries a long run",
+        not missing,
+        f"build weeks with NO long run: {missing}"
+    )
+
 section("Beg 10K has a long run every build week")
 
 text = run_pacedump("Beg 10K (long", race_pace=300, easy_pace=420)
@@ -2813,7 +2870,14 @@ for acc, _, rp, ep, days in ACCESSIBLE_CASES:
     )
 
 # 3) The defining contract: an accessible plan is never heavier than its
-#    textbook twin (alias cells are equal, which satisfies <=).
+#    textbook twin (alias cells are equal, which satisfies <=). Exact-volume
+#    magnitudes only hold against RunPlan's full catalog — same convention as
+#    the load contract (3b) below. On the sparse bundled sample the accessible
+#    and textbook plans draw from too few rungs for total minutes to track:
+#    e.g. once the Acc Beg 21K mid-PEAK rehearsal week correctly carries a 60min
+#    long run (the every-build-week-LR rail), the sample's coarse easy-fill
+#    durations tip its total ~1% over textbook even though its per-week LR (60min)
+#    is lighter than textbook's (75min). The full catalog tracks cleanly.
 for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
     a = total_minutes(acc, rp, ep)
     t = total_minutes(ideal, rp, ep)
@@ -2822,6 +2886,7 @@ for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
         f"{short} total volume <= textbook {ideal.split(' (')[0]}",
         a is not None and t is not None and a <= t,
         f"accessible={a}min textbook={t}min",
+        full=True,
     )
 
 # 3b) STRONGER contract (#147): "accessible" must be GENUINELY lighter, not just

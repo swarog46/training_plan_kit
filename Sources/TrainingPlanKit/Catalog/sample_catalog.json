@@ -5972,5 +5972,57 @@
     "duration": 9000,
     "distance": 0,
     "key": "lthw50.0z2w75.0z3w25.0z2"
+  },
+  {
+    "id": 6021,
+    "title": "Race Rehearsal (12min @ HMP)",
+    "type": "Long Run",
+    "subtype": "raceRehearsalHM",
+    "trainingType": "Time-based",
+    "targetType": "HRZone",
+    "intervals": [
+      {
+        "id": 0,
+        "type": "Work",
+        "duration": 2400,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      },
+      {
+        "id": 1,
+        "type": "Work",
+        "duration": 720,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 4
+        }
+      },
+      {
+        "id": 2,
+        "type": "Work",
+        "duration": 480,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      }
+    ],
+    "training_load": 5765,
+    "work_rest_ratio": 1,
+    "work_duration": 3600,
+    "rest_duration": 0,
+    "work_distance": 0,
+    "rest_distance": 0,
+    "duration": 3600,
+    "distance": 0,
+    "key": "lthw40.0z2w12.0z4w8.0z2"
   }
 ]
