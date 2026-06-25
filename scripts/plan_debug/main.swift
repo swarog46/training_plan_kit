@@ -13,6 +13,110 @@ import Foundation
 
 // MARK: - Pretty-printer
 
+// Render an interval workout's structure as one compact line, e.g.
+//   WU 10min · 8 × 2:00 @ Z5 (90s jog) · CD 8min
+// Returns nil for pure-aerobic workouts (single continuous easy/steady block,
+// no warmup/cooldown, no recovery, no hard work) — their main line says enough.
+func intervalDetail(_ workout: Workout) -> String? {
+    let ivs = workout.intervals
+    let works = ivs.filter { $0.type == .work }
+    guard !works.isEmpty else { return nil }
+
+    func isAerobicTarget(_ t: TargetRange) -> Bool {
+        switch t {
+        case .heartRateZone(let z): return z <= 2
+        case .paceTarget(_, let rel): return rel >= 1.10
+        default: return false
+        }
+    }
+    let hasWarmCool = ivs.contains { $0.type == .warmup || $0.type == .cooldown }
+    let hasRecovery = ivs.contains { $0.type == .rest || $0.type == .recovery }
+    let hardWork = works.contains { !isAerobicTarget($0.target) }
+    // Structure worth showing = brackets (WU/CD), recovery gaps, repeated efforts,
+    // or any non-aerobic (Z3+) effort. A lone continuous Z2 block is just an easy run.
+    guard hasWarmCool || hasRecovery || works.count > 1 || hardWork else { return nil }
+
+    // dur as M:SS (work efforts), e.g. 90 -> "1:30", 600 -> "10:00".
+    func ms(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return "\(s / 60):\(String(format: "%02d", s % 60))"
+    }
+    // WU/CD: whole minutes when clean, else M:SS.
+    func mins(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return s % 60 == 0 ? "\(s / 60)min" : ms(secs)
+    }
+    // Recovery: short gaps as "90s", longer as "M:SS".
+    func rec(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return s < 100 ? "\(s)s" : ms(secs)
+    }
+    // Target label. HR -> "Z4"; pace -> "@race" (rel≈1) / "@MP"/"@HMP" from the
+    // title when obvious / "@pace×1.05"; noRange -> nil (omit).
+    func tgt(_ t: TargetRange) -> String? {
+        switch t {
+        case .heartRateZone(let z): return "Z\(z)"
+        case .paceTarget(_, let rel):
+            if abs(rel - 1.0) < 0.02 {
+                let title = workout.title.lowercased()
+                if title.contains("marathon pace") || title.contains("@ mp") { return "@MP" }
+                if title.contains("hmp") || title.contains("@ hm") || title.contains("half") { return "@HMP" }
+                return "@race"
+            }
+            return String(format: "@pace×%.2f", rel)
+        default: return nil
+        }
+    }
+    func effort(_ iv: WorkoutInterval) -> String {
+        if let t = tgt(iv.target) { return "\(ms(iv.duration)) @ \(t)" }
+        return ms(iv.duration)
+    }
+
+    // Run-length-encode consecutive identical (duration + target) work efforts.
+    struct Run { let dur: Double; let target: TargetRange; var count: Int }
+    var runs: [Run] = []
+    for w in works {
+        if var last = runs.last, last.dur == w.duration, last.target == w.target {
+            last.count += 1; runs[runs.count - 1] = last
+        } else {
+            runs.append(Run(dur: w.duration, target: w.target, count: 1))
+        }
+    }
+
+    // Body string.
+    let body: String
+    let sameTarget = Set(works.map { "\($0.target)" }).count == 1
+    if runs.count == 1 {
+        let r = runs[0]
+        let t = tgt(r.target).map { " @ \($0)" } ?? ""
+        body = r.count > 1 ? "\(r.count) × \(ms(r.dur))\(t)" : "\(ms(r.dur))\(t)"
+    } else if sameTarget && runs.allSatisfy({ $0.count == 1 }) {
+        // Ladder / pyramid: list the varying work durations, target once.
+        let t = tgt(works[0].target).map { " @ \($0)" } ?? ""
+        body = works.map { ms($0.duration) }.joined(separator: "/") + t
+    } else {
+        // Mixed (e.g. rehearsal Z2/Z3/Z2, or grouped reps of differing efforts).
+        body = runs.map { r in
+            let t = tgt(r.target).map { " @ \($0)" } ?? ""
+            return r.count > 1 ? "\(r.count) × \(ms(r.dur))\(t)" : "\(ms(r.dur))\(t)"
+        }.joined(separator: " · ")
+    }
+
+    // Recovery shown once (dominant gap duration).
+    var recStr = ""
+    let gaps = ivs.filter { $0.type == .rest || $0.type == .recovery }.map { $0.duration }
+    if let g = gaps.first { recStr = " (\(rec(g)) jog)" }
+
+    var parts: [String] = []
+    let wuTotal = ivs.filter { $0.type == .warmup }.reduce(0.0) { $0 + $1.duration }
+    if wuTotal > 0 { parts.append("WU \(mins(wuTotal))") }
+    parts.append(body + recStr)
+    let cdTotal = ivs.filter { $0.type == .cooldown }.reduce(0.0) { $0 + $1.duration }
+    if cdTotal > 0 { parts.append("CD \(mins(cdTotal))") }
+
+    return parts.joined(separator: " · ")
+}
+
 func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
     let plan = generatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
     // Mirror the engine's front-trim: short plans are generated at
@@ -66,6 +170,12 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
             let z5min = Int(z5sec / 60)
             let z5tag = z5min > 0 ? " z5=\(z5min)" : ""
             print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]%@", dur, load, subtype, w.type, z5tag))")
+            // Indented structure line for quality workouts. The 6-space + "↳"
+            // prefix keeps test_plans.py's per-workout regexes (l=.../[sub/role])
+            // from matching it, so the parser skips it cleanly.
+            if let detail = intervalDetail(w.workout) {
+                print("      ↳ \(detail)")
+            }
         }
     }
     print("=================================================================\n")
