@@ -586,12 +586,19 @@ for label_group, plans in [("Beg", TAPER_LR_BEG), ("other tier", TAPER_LR_OTHER)
                       default=max(weeks))
         taper_wks = [wk for wk, (ph, _) in sorted(weeks.items())
                      if ph == 'taper' and wk < race_wk]
+        # The 60min long-run floor is the beginner safety minimum. When a plan is
+        # light enough that its PEAK long run already sits at that floor (e.g. the
+        # accessible 21K tier post-#147), the taper long run cannot drop below it
+        # without breaking the rail — so a taper LR AT the floor is "reduced as far
+        # as the floor allows", not a violation. Equality only fails when the peak
+        # is above the floor (a genuine plateau where the taper should have cut).
+        LR_FLOOR = 60
         problems = []
         for wk in taper_wks:
             longs = weeks[wk][1]
             if not longs:
                 problems.append(f"W{wk}: NO long run (peak={peak_lr}m)")
-            elif max(longs) >= peak_lr:
+            elif max(longs) >= peak_lr and peak_lr > LR_FLOOR:
                 problems.append(f"W{wk}: long {max(longs)}m >= peak {peak_lr}m (not reduced)")
         check(
             f"{header.split(' (')[0]} {label_group}: taper weeks carry a REDUCED long run",
@@ -2768,6 +2775,23 @@ def total_minutes(label, rp, ep):
         return None
     return sum(d for wk in w for _, d, _ in w[wk])
 
+def total_training_load(label):
+    """Sum of every week's training load across the plan (intensity-weighted),
+    parsed from `dump` mode. Pace-independent — load is the catalog workout
+    load — so the accessible-vs-textbook ratio is a clean tier comparison."""
+    text = run_dump(label)
+    if f'=== {label}' not in text:
+        return None
+    sect = text.split(f'=== {label}')[1]
+    total = 0
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *\d+ \[\w+[^\]]*\]\s+\d+wkts\s+load=\s*(\d+)', line)
+        if m:
+            total += int(m.group(1))
+    return total
+
 # 1) Every accessible plan still generates a complete, non-empty plan.
 for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
     w = parse_plan(run_pacedump_with(acc, rp, ep, False), acc)
@@ -2798,6 +2822,30 @@ for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
         f"{short} total volume <= textbook {ideal.split(' (')[0]}",
         a is not None and t is not None and a <= t,
         f"accessible={a}min textbook={t}min",
+    )
+
+# 3b) STRONGER contract (#147): "accessible" must be GENUINELY lighter, not just
+#     "<= textbook". Every family carries a training LOAD at most 90% of its
+#     textbook twin (>=10% lighter). This caught the old byte-identical aliases
+#     (Acc Adv 21K / Beg 42K / Adv 42K) and the ~0% near-ties (the whole Int
+#     family, Acc Adv 10K) where "accessible" handed the user the same — or a
+#     heavier — plan. Load (intensity-weighted) is the right axis: a tier whose
+#     minutes dip but whose intensity holds is not actually gentler.
+#
+#     Exact-load magnitudes only hold against RunPlan's full catalog (the bundled
+#     sample is too sparse for the load to track), so this is a full-catalog
+#     check — same convention as every other exact-volume assertion in this file.
+for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
+    a = total_training_load(acc)
+    t = total_training_load(ideal)
+    short = acc.split(' (')[0]
+    ratio = (a / t) if (a and t) else None
+    check(
+        f"{short} training load <= 90% of textbook {ideal.split(' (')[0]} (>=10% lighter)",
+        ratio is not None and ratio <= 0.90,
+        f"accessible={a} textbook={t} ratio={ratio:.3f} (need <=0.900)" if ratio
+            else f"accessible={a} textbook={t}",
+        full=True,
     )
 
 # 4) Safety rails hold on the lighter plans, exactly as on textbook:

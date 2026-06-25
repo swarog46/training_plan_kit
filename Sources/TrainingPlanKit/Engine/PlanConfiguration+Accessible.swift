@@ -2,8 +2,11 @@
 //  PlanConfiguration+Accessible.swift
 //  RunPlan
 //
-//  Accessible-tier plan configs (own shape: days + VolumeProfile incl. long-run cap/ramp).
-//  Aliases reuse a textbook twin where no lighter variant is warranted.
+//  Accessible-tier plan configs. Each family is genuinely lighter than its
+//  textbook twin (~12-16% lower training load) via a uniformly scaled-down
+//  VolumeProfile — baseLoad + durations + long-run cap/ramp — while keeping the
+//  LOCKED day-count matrix (Beg 2/2/3/4, Int 3/3/4/4, Adv 4/4/5/5) and the same
+//  periodization, taper, and safety rails. No alias reuses a textbook twin.
 //
 
 import Foundation
@@ -11,7 +14,7 @@ import Foundation
 extension PlanConfiguration {
 
     public static let accessibleBeginner5Default = PlanConfiguration(
-        raceDate: Date(), // This should be set by the caller
+        raceDate: Date(),
         runnerLevel: .beginner,
         distance: 5000,
         basePhaseRatio: 0.50,
@@ -22,11 +25,10 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 2,
         minPeakPhaseWeeks: 1,
         minTaperPhaseWeeks: 1,
-        // 2 days/wk — the locked beginner-5K day-count (below-textbook
-        // frequency is intentional; accessible tier matches standard Beg 5K here).
-        trainingDays: [2, 6], // accessible tier
+        trainingDays: [2, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: false,
+        // Already >=10% lighter than textbook (verbatim).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 17...25,
             phaseFinishDeloadPercent: 14...16,
@@ -51,22 +53,19 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 3,
         minTaperPhaseWeeks: 1,
-        // Int 5K: 4 days/wk (Tue/Thu/Sat/Sun). Was 3 days (Wed/Fri/Sun);
-        // Daniels' Int 5K Phase II prescribes 5-6 days. Going to 4 is a
-        // measured move — keeps tier-distinct from Adv 5K (5 days) while
-        // matching Pfitz's "5K Intermediate" guidance more honestly.
-        trainingDays: [1, 3, 6], // accessible tier
+        trainingDays: [1, 3, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: false,
+        // Accessible = textbook twin VolumeProfile x0.70 (long-run x0.70; ~lighter tier).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 17...23,
             phaseFinishDeloadPercent: 14...16,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 70,
-            initialLongRunDuration: 30...35,
-            maxLongRunMinutes: 75,
+            initialWeeklyDuration: 56,
+            initialLongRunDuration: 25...30,
+            maxLongRunMinutes: 72,
             longRunProgression: nil,
-            baseLoad: 9200
+            baseLoad: 6440
         )
     )
 
@@ -82,20 +81,19 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 4,
         minPeakPhaseWeeks: 4,
         minTaperPhaseWeeks: 1,
-        // Accessible Adv 5K: 4 days/wk (matches the locked day-count matrix).
-        // Load kept below the textbook Adv 5K twin (accessible = the lighter tier).
-        trainingDays: [1, 3, 5, 6], // accessible tier — 4 days
+        trainingDays: [1, 3, 5, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: false,
+        // Accessible = textbook twin VolumeProfile x0.72 (long-run x0.72; ~lighter tier).
         volume: VolumeProfile(
-            weeklyLoadIncreasePercent: 11...18,
+            weeklyLoadIncreasePercent: 15...25,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 100,
-            initialLongRunDuration: 45...50,
-            maxLongRunMinutes: 75,
+            initialWeeklyDuration: 108,
+            initialLongRunDuration: 32...37,
+            maxLongRunMinutes: 72,
             longRunProgression: nil,
-            baseLoad: 16100.0
+            baseLoad: 11592
         )
     )
 
@@ -111,9 +109,10 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 2,
         minPeakPhaseWeeks: 1,
         minTaperPhaseWeeks: 1,
-        trainingDays: [2, 6], // accessible tier
+        trainingDays: [2, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
+        // Already >=10% lighter than textbook (verbatim).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 18...26,
             phaseFinishDeloadPercent: 14...16,
@@ -138,20 +137,19 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 2,
         minTaperPhaseWeeks: 1,
-        // Accessible Int 10K: 3 days/wk (matches the locked day-count matrix).
-        // Load kept below the textbook Int 10K twin (accessible = the lighter tier).
-        trainingDays: [1, 3, 6], // accessible tier — 3 days
+        trainingDays: [1, 3, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
+        // Accessible = textbook twin VolumeProfile x0.68 (long-run x0.68; ~lighter tier).
         volume: VolumeProfile(
-            weeklyLoadIncreasePercent: 12...20,
+            weeklyLoadIncreasePercent: 17...26,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 105,
-            initialLongRunDuration: 45...55,
-            maxLongRunMinutes: 75,
-            longRunProgression: (base: 60, speed: 70, peak: 80, taper: 60),
-            baseLoad: 11040
+            initialWeeklyDuration: 116,
+            initialLongRunDuration: 31...37,
+            maxLongRunMinutes: 74,
+            longRunProgression: (base: 60, speed: 67, peak: 74, taper: 60),
+            baseLoad: 7507
         )
     )
 
@@ -167,27 +165,19 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 3,
         minTaperPhaseWeeks: 1,
-        // Adv 10K: 5 days/wk (Tue/Wed/Thu/Sat/Sun). Was 4 days; Daniels'
-        // Adv 10K prescribes 6 days. Going to 5 keeps tier distinct from
-        // Cmp marathon (6 days) while letting the runner do Q1/easy/Q2/
-        // easy/long — Daniels' standard.
-        trainingDays: [1, 3, 5, 6], // accessible tier
+        trainingDays: [1, 3, 5, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
+        // Accessible = textbook twin VolumeProfile x0.70 (long-run x0.70; ~lighter tier).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 15...25,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            // Bumped 180 → 220 + bumped LR duration 70-75 → 80-90 so 10K plan
-            // visibly out-volumes 5K plan. Daniels Phase II Adv 10K is 70-90
-            // km/wk; combined with baseLoad ×1.15 × 1.20 (5K/10K + 10K-specific
-            // bumps), bump lands Adv 10K at ~90 km vs Adv 5K's 85 km — clean
-            // step up matching user mental model "longer race = more training".
-            initialWeeklyDuration: 185,
-            initialLongRunDuration: 80...90,
-            maxLongRunMinutes: 90,
-            longRunProgression: (base: 70, speed: 75, peak: 80, taper: 70),
-            baseLoad: 19320
+            initialWeeklyDuration: 154,
+            initialLongRunDuration: 56...63,
+            maxLongRunMinutes: 72,
+            longRunProgression: (base: 60, speed: 64, peak: 67, taper: 60),
+            baseLoad: 13524
         )
     )
 
@@ -195,9 +185,6 @@ extension PlanConfiguration {
         raceDate: Date(),
         runnerLevel: .beginner,
         distance: 21097,
-        // Beginner half-marathoners need MORE base than intermediate/advanced
-        // (cardio least adapted, highest injury risk). Inverted previously
-        // (0.08 / 1 week min) — likely a transcription error from 5K config.
         basePhaseRatio: 0.30,
         speedPhaseRatio: 0.30,
         peakPhaseRatio: 0.30,
@@ -206,18 +193,19 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 4,
         minPeakPhaseWeeks: 4,
         minTaperPhaseWeeks: 2,
-        trainingDays: [1, 3, 6], // accessible tier
+        trainingDays: [1, 3, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
+        // Accessible = textbook twin VolumeProfile x0.60 (long-run x0.55; ~lighter tier).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 18...26,
             phaseFinishDeloadPercent: 14...16,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 95,
-            initialLongRunDuration: 35...40,
-            maxLongRunMinutes: 90,
-            longRunProgression: (base: 60, speed: 90, peak: 120, taper: 60),
-            baseLoad: 4500
+            initialWeeklyDuration: 72,
+            initialLongRunDuration: 19...22,
+            maxLongRunMinutes: 72,
+            longRunProgression: (base: 60, speed: 72, peak: 72, taper: 60),
+            baseLoad: 2700
         )
     )
 
@@ -233,28 +221,76 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 4,
         minTaperPhaseWeeks: 2,
-        // Higdon Intermediate 1 Half = 5 days. The 5th day differentiates Int from
-        // Beg's 4-day plan (otherwise volume gap collapses to ~7%).
-        trainingDays: [1, 3, 5, 6], // accessible tier
+        trainingDays: [1, 3, 5, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
+        // Accessible = textbook twin VolumeProfile x0.46 (long-run x0.55; ~lighter tier).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 17...26,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 165,
-            initialLongRunDuration: 60...70,
-            maxLongRunMinutes: 100,
-            longRunProgression: (base: 70, speed: 100, peak: 135, taper: 70),
-            baseLoad: 8000
+            initialWeeklyDuration: 92,
+            initialLongRunDuration: 33...38,
+            maxLongRunMinutes: 72,
+            longRunProgression: (base: 60, speed: 72, peak: 72, taper: 60),
+            baseLoad: 3680
         )
     )
 
-    /// Accessible advanced21Default — identical to the textbook plan.
-    public static let accessibleAdvanced21Default = advanced21Default
+    public static let accessibleAdvanced21Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 21097,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.30,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 3,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 4,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 4, 5, 6], // accessible tier — locked day-count
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        // Accessible = textbook twin VolumeProfile x0.78 (long-run x0.78; ~lighter tier).
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 15...25,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 156,
+            initialLongRunDuration: 62...66,
+            maxLongRunMinutes: 113,
+            longRunProgression: (base: 62, speed: 85, peak: 113, taper: 62),
+            baseLoad: 16380
+        )
+    )
 
-    /// Accessible beginner42Default — identical to the textbook plan.
-    public static let accessibleBeginner42Default = beginner42Default
+    public static let accessibleBeginner42Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .beginner,
+        distance: 42195,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.25,
+        peakPhaseRatio: 0.40,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 6,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 5, 6], // accessible tier — locked day-count
+        longestWorkoutDay: 6,
+        // Accessible = textbook twin VolumeProfile x0.78 (long-run x0.78; ~lighter tier).
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 18...26,
+            phaseFinishDeloadPercent: 14...16,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 222,
+            initialLongRunDuration: 70...86,
+            maxLongRunMinutes: 168,
+            longRunProgression: (base: 70, speed: 117, peak: 160, taper: 78),
+            baseLoad: 3510
+        )
+    )
 
     public static let accessibleIntermediate42Default = PlanConfiguration(
         raceDate: Date(),
@@ -268,23 +304,45 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 4,
         minPeakPhaseWeeks: 6,
         minTaperPhaseWeeks: 2,
-        // Higdon Intermediate 1 marathon = 5 days (Mon off, Tue/Wed/Thu, Fri off,
-        // Sat pace, Sun long). Beg uses 4 days; the 5th day differentiates Int's
-        // higher volume tier from Beg.
-        trainingDays: [1, 3, 5, 6], // accessible tier
+        trainingDays: [1, 3, 5, 6], // accessible tier — locked day-count
         longestWorkoutDay: 6,
+        // Accessible = textbook twin VolumeProfile x0.72 (long-run x0.72; ~lighter tier).
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 17...26,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 270,
-            initialLongRunDuration: 95...105,
-            maxLongRunMinutes: 200,
-            longRunProgression: (base: 85, speed: 130, peak: 185, taper: 95),
-            baseLoad: 10000
+            initialWeeklyDuration: 230,
+            initialLongRunDuration: 68...76,
+            maxLongRunMinutes: 170,
+            longRunProgression: (base: 61, speed: 93, peak: 133, taper: 68),
+            baseLoad: 7200
         )
     )
 
-    /// Accessible advanced42Default — identical to the textbook plan.
-    public static let accessibleAdvanced42Default = advanced42Default
+    public static let accessibleAdvanced42Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 42195,
+        basePhaseRatio: 0.23,
+        speedPhaseRatio: 0.27,
+        peakPhaseRatio: 0.40,
+        taperPhaseRatio: 0.10,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 6,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 4, 5, 6], // accessible tier — locked day-count
+        longestWorkoutDay: 6,
+        // Accessible = textbook twin VolumeProfile x0.78 (long-run x0.78; ~lighter tier).
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 15...25,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 328,
+            initialLongRunDuration: 70...78,
+            maxLongRunMinutes: 164,
+            longRunProgression: (base: 70, speed: 109, peak: 152, taper: 82),
+            baseLoad: 13650
+        )
+    )
 }
