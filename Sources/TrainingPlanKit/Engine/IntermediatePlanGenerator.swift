@@ -385,6 +385,13 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     return workout.duration >= minLongRunMins * 60
                 }
 
+                // Marathon PEAK: ramp the Race-Rehearsal MP segment up across the
+                // peak weeks (60→75→90) so it doesn't park on the largest rung.
+                if phase == .peak {
+                    pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: true)
+                }
+
                 // Progressive long-run target by distance+level+phase from the config's
                 // (start, peak) anchors — without it the load-dominated selector picks
                 // short LRs. See BeginnerPlanGenerator.

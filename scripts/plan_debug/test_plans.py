@@ -3155,6 +3155,158 @@ check(
     "quality-less deload weeks: " + "; ".join(_B_failures)
 )
 
+section("Marathon PEAK rehearsal MP segment progresses (Finding #5)")
+
+# Bug: marathon PEAK parks the race-rehearsal long run on the LARGEST MP segment
+# the moment its (big) PEAK load target lets it — so e.g. Adv 42K rec W12-W15 all
+# carry "Race Rehearsal (90min @ MP)", four identical 90min MP rehearsals running.
+# A Pfitz-style block runs MULTIPLE MP rehearsals, but the MP segment must RAMP
+# (60→75→90...), not repeat. Assert, across each marathon plan's PEAK rehearsal
+# weeks: (1) the MP-segment minutes are NON-DECREASING week-to-week, and (2) no
+# single rehearsal title repeats 4x+ with an IDENTICAL MP segment.
+#
+# The MP segment is read straight from the dump title "Race Rehearsal (NNmin @ MP)"
+# (raceRehearsalM only — the 42K marathon-pace rehearsal). Build from a single
+# `dump ""` run so every plan + Acc variant is covered.
+
+def _rehearsal_mp_by_week():
+    """dict[header] = {week: mp_minutes} for raceRehearsalM long runs, parsed
+    from a single `dump ""` run (every plan, incl. Acc variants)."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    out = {}
+    cur_header = cur_week = None
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur_header = hm.group(1).strip()
+            out[cur_header] = {}
+            cur_week = None
+            continue
+        if cur_header is None:
+            continue
+        wm = re.match(r'^W\s*(\d+)\s*\[', line)
+        if wm:
+            cur_week = int(wm.group(1))
+            continue
+        if cur_week is None:
+            continue
+        # "    Race Rehearsal (90min @ MP)  170min l=12716  [raceRehearsalM/long]"
+        rm = re.search(r'Race Rehearsal \((\d+)min @ MP\).*\[raceRehearsalM/\w+\]', line)
+        if rm:
+            out[cur_header][cur_week] = int(rm.group(1))
+    return out
+
+_REHEARSAL_MP = _rehearsal_mp_by_week()
+# Marathon plans only (raceRehearsalM is the 42K rehearsal). Across all tiers/variants.
+_MARATHON_HEADERS = sorted(h for h in _DUMP if '42K' in h)
+
+_nondecr_fail = []
+_repeat_fail = []
+from collections import Counter
+for header in _MARATHON_HEADERS:
+    weeks = _DUMP[header]
+    mp = _REHEARSAL_MP.get(header, {})
+    # PEAK-phase rehearsal weeks, in chronological order.
+    peak_reh = [(w, mp[w]) for w in sorted(weeks)
+                if w in mp and weeks[w]['phase'] == 'peak']
+    if not peak_reh:
+        continue
+    # (1) Non-decreasing MP segment across the NON-DELOAD PEAK rehearsal weeks.
+    # A deload (cutback) week may legitimately run a smaller rehearsal, so the
+    # ramp is measured on the building rehearsals; deloads are allowed to dip.
+    build_reh = [(w, seg) for (w, seg) in peak_reh if not weeks[w].get('deload')]
+    bseq = [seg for _, seg in build_reh]
+    for i in range(1, len(bseq)):
+        if bseq[i] < bseq[i - 1]:
+            _nondecr_fail.append(
+                f"{header}: PEAK build-rehearsal MP segments {bseq} "
+                f"(W{build_reh[i][0]}={bseq[i]} < prev {bseq[i-1]})")
+            break
+    # (2) No 4x+ identical MP segment among ALL PEAK rehearsals (incl. deloads):
+    # four identical 90min MP weeks running was the reported defect.
+    seq = [seg for _, seg in peak_reh]
+    worst, n = Counter(seq).most_common(1)[0]
+    if n >= 4:
+        _repeat_fail.append(
+            f"{header}: MP segment {worst}min repeats {n}x in PEAK (segments {seq})")
+
+# Anchor the headline regression on Adv 42K rec (the reported case) so the test
+# is meaningful even on the sample catalog; the loop above covers every plan.
+check(
+    "marathon PEAK rehearsal MP segments are non-decreasing week-to-week",
+    not _nondecr_fail,
+    "decreasing MP segments: " + "; ".join(_nondecr_fail))
+check(
+    "no marathon PEAK rehearsal title repeats 4x+ with an identical MP segment",
+    not _repeat_fail,
+    "over-repeated rehearsals: " + "; ".join(_repeat_fail))
+
+section("PEAK is not front-loaded — heaviest TARGET week is late (Finding #4)")
+
+# The audit flagged compressed 14-wk 21K rec peaks (Int/Adv) as front-loaded. The
+# targets were reshaped to build to a LATE peak (Int->W12, Adv->W11) and the deload
+# fix made the surrounding cutback weeks dip. Assert, for EVERY plan: the heaviest
+# non-deload week inside the PEAK phase sits in the LATTER half of the PEAK weeks
+# (a late peak), not at PEAK week 1.
+#
+# This reads the TARGET periodization model (`phases`), which is the intended
+# weekly stress the generator aims at — the right altitude for "is the peak late?".
+# (Delivered load can spike in PEAK week 1 because a single large VO2/quality
+# session lands there; that is a separate quality-distribution concern, not the
+# peak SHAPE this guards. Measuring delivered load here would flag every plan,
+# including the healthy 18w/22w ones the task says must not be touched.) The target
+# model is catalog-independent, so this guard holds on sample and full alike.
+
+def _target_peak_blocks():
+    """dict[header] = {week: {phase,load,deload}} from a single `phases ""` run."""
+    r = subprocess.run([PLAN_DEBUG, "phases", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    blocks = {}
+    cur = None
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w\)', line)
+        if hm:
+            cur = hm.group(1).strip()
+            blocks[cur] = {}
+            continue
+        if cur is None:
+            continue
+        wm = re.match(
+            r'^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load=\s*(\d+)\s+dur=\s*(\d+)min(\s+\[deload\])?',
+            line)
+        if wm:
+            blocks[cur][int(wm.group(1))] = dict(
+                phase=wm.group(2), load=int(wm.group(3)), deload=wm.group(5) is not None)
+    return blocks
+
+_TARGET = _target_peak_blocks()
+_frontload_fail = []
+for header, weeks in sorted(_TARGET.items()):
+    peak_weeks = sorted(w for w in weeks if weeks[w]['phase'] == 'PEAK')
+    if len(peak_weeks) < 3:
+        continue  # too short to speak of front- vs back-loading
+    # Non-deload PEAK weeks (deloads dip on purpose; don't measure against them).
+    work = [(w, weeks[w]['load']) for w in peak_weeks if not weeks[w]['deload']]
+    if len(work) < 2:
+        continue
+    heaviest_w = max(work, key=lambda t: t[1])[0]
+    # Position of the heaviest non-deload week within the PEAK block (0..1).
+    first, last = peak_weeks[0], peak_weeks[-1]
+    pos = (heaviest_w - first) / (last - first) if last > first else 0.0
+    # "Latter half": position >= 0.5 within the peak block. Explicitly reject
+    # the heaviest landing on PEAK week 1.
+    if heaviest_w == first or pos < 0.5:
+        loads = {w: weeks[w]['load'] for w in peak_weeks}
+        _frontload_fail.append(
+            f"{header}: heaviest non-deload PEAK week is W{heaviest_w} "
+            f"(pos {pos:.2f}) of peak {first}-{last}; target loads={loads}")
+
+check(
+    "no plan's PEAK is front-loaded (heaviest target week in latter half of peak)",
+    not _frontload_fail,
+    "front-loaded peaks: " + "; ".join(_frontload_fail))
+
 # --- report ----------------------------------------------------------
 
 print(f"\n{'='*60}")

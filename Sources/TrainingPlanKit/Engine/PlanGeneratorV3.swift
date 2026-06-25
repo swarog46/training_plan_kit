@@ -549,6 +549,80 @@ class PlanGeneratorV3 {
         return pool.filter { titles.contains($0.title) }
     }
 
+    // Marathon-pace minutes in a workout (sum of Z3 work-interval durations).
+    func marathonPaceMinutes(_ w: Workout) -> Int {
+        var secs: Double = 0
+        for iv in w.intervals where iv.type == .work
+            && iv.target == TargetRange.heartRateZone(zone: 3) {
+            secs += iv.duration
+        }
+        return Int(secs / 60)
+    }
+
+    // Canonical marathon-rehearsal MP-segment ladder (minutes). The PEAK
+    // rehearsal steps UP this ladder so the MP block progresses 60→75→90(→105),
+    // Pfitz-style, instead of parking on the largest rung every rehearsal week.
+    static let rehearsalMPLadder = [60, 75, 90, 105]
+
+    // Count of prior PEAK weeks that already carry a marathon race rehearsal —
+    // the occurrence index used to step the MP-segment ladder. Reads the weeks
+    // built so far (buildWeek runs sequentially, writing workoutsByWeek per week).
+    func priorPeakRehearsalCount(beforeWeek week: Int, baseDur: Int, speedDur: Int) -> Int {
+        var count = 0
+        for w in (baseDur + speedDur)..<week {
+            if let wk = workoutsByWeek[w],
+               wk.contains(where: { $0.workout.subtype == .raceRehearsalM }) {
+                count += 1
+            }
+        }
+        return count
+    }
+
+    // Number of marathon MP-rehearsal weeks placed at the end of PEAK (Pfitz runs
+    // 3-4 MP long runs in the final build block). Bounded so the segment can ramp
+    // across distinct ladder rungs without a long peak stacking many identical 90s.
+    static let peakRehearsalWeeks = 4
+
+    // Ramp the marathon Race-Rehearsal MP segment UP the ladder by occurrence (1st=60,
+    // 2nd=75, 3rd=90, 4th+ hold) so it doesn't park on the largest rung every rehearsal
+    // week (the 4× identical 90min MP defect); occurrence is monotonic ⇒ non-decreasing.
+    // `force`: make the occurrence rung THIS week's long run (else a small early rung
+    // loses on duration) — Int/Adv/Cmp; Beginner stays force=false (one aerobic-tier
+    // rehearsal, more MP crashes its share). `windowGate`: force only in the last
+    // `peakRehearsalWeeks`, dropping earlier emergent rehearsals (Int/Adv) — Competitive
+    // gates its own weeks so passes false. No-op unless `.raceRehearsalM` is in the pool.
+    func rampRehearsalMPSegment(_ pool: [Workout], peakWeekIndex: Int, peakDur: Int,
+                                priorRehearsalCount: Int, force: Bool, windowGate: Bool) -> [Workout] {
+        let rehearsals = pool.filter { $0.subtype == .raceRehearsalM }
+        guard !rehearsals.isEmpty else { return pool }
+        let available = Array(Set(rehearsals.map(marathonPaceMinutes))).sorted()
+        guard available.count >= 2 else { return pool }
+        let ladder = PlanGeneratorV3.rehearsalMPLadder
+        let ladderTarget = ladder[min(priorRehearsalCount, ladder.count - 1)]
+        // Snap the ladder target to the nearest available catalog rung.
+        guard let targetSize = available.min(by: {
+            abs($0 - ladderTarget) < abs($1 - ladderTarget)
+        }) else { return pool }
+        if windowGate {
+            let firstRehearsalWeek = max(0, peakDur - PlanGeneratorV3.peakRehearsalWeeks)
+            if peakWeekIndex < firstRehearsalWeek {
+                // Before the window: drop rehearsals (plain aerobic LR) so they don't
+                // fire early and inflate the occurrence index.
+                let plain = pool.filter { $0.subtype != .raceRehearsalM }
+                return plain.isEmpty ? pool : plain
+            }
+        }
+        if force {
+            // FORCE the occurrence-rung rehearsal as this week's long run.
+            let forced = pool.filter {
+                $0.subtype == .raceRehearsalM && marathonPaceMinutes($0) == targetSize
+            }
+            return forced.isEmpty ? pool : forced
+        }
+        // Beginner (force=false): cap an emergent rehearsal's rung, keep plain longs.
+        return pool.filter { $0.subtype != .raceRehearsalM || marathonPaceMinutes($0) == targetSize }
+    }
+
     // Helper: Filter thresholds by progression (prefer shorter intervals early, longer later)
     func filterThresholdsByProgression(_ workouts: [Workout], week: Int, totalWeeks: Int) -> [Workout] {
         let progress = Double(week) / Double(max(totalWeeks - 1, 1))
@@ -726,10 +800,18 @@ class PlanGeneratorV3 {
             let curLR = week[lrIdx].workout
             let curMins = Int(curLR.duration / 60)
             let floorMins = max(60, Int(Double(curMins) * 0.65))
-            let shorter = longRuns
+            let sameSubtypeShorter = longRuns
                 .filter { Int($0.duration / 60) < curMins && Int($0.duration / 60) >= floorMins
                           && $0.subtype == curLR.subtype }
-                .max(by: { $0.duration < $1.duration })
+            // For a marathon race rehearsal, PREFER a shorter-total variant with the
+            // SAME MP minutes (trim the easy lead/trail, keep the MP block) so the
+            // PEAK MP ramp stays non-decreasing. Fall back to any shorter rehearsal
+            // if the catalog has no same-MP variant — a deload must still be able to
+            // dip rather than get stuck on a too-heavy long run.
+            let curMP = curLR.subtype == .raceRehearsalM ? marathonPaceMinutes(curLR) : -1
+            let sameMP = sameSubtypeShorter.filter { curMP < 0 || marathonPaceMinutes($0) == curMP }
+            let candidates = sameMP.isEmpty ? sameSubtypeShorter : sameMP
+            let shorter = candidates.max(by: { $0.duration < $1.duration })
             guard let pick = shorter, pick.trainingLoad < curLR.trainingLoad else { break }
             week[lrIdx] = (week[lrIdx].type, pick)
         }
