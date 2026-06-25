@@ -9,6 +9,12 @@
 import Foundation
 
 final class BeginnerPlanGenerator: PlanGeneratorV3 {
+    // Counts hard-quality (threshold-branch) weeks placed so far. Every other one
+    // routes to hills instead of threshold (10K+ only) so the season's few quality
+    // weeks span >=2 TYPES (threshold + hills) rather than 100% threshold — both are
+    // beginner-safe LT/strength at similar load. Single-use generator ⇒ 0 is fine.
+    private var begHardQualityCount = 0
+
     override func buildWeek(week: Int) {
         // `repeat { … } while false` lets `continue` (race week) skip the rest
         // of the body and fall through, as it did in the former per-week for-loop.
@@ -83,6 +89,8 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 var pool = filterIntervalsByMaxRest(filteredIntervals, maxRest: maxRestPerInterval)
                 // Gate hill repeats: BASE/SPEED only (strength, then race-specific),
                 // skipping each phase's first week so the runner adapts first.
+                // (The 10K+ hard-quality alternation routes its OWN phase-eligible hills
+                // from filteredIntervals below — it does not read this gated pool.)
                 let hillsAllowed = (phase == .base || phase == .speed) && weekInPhase >= 1
                 if !hillsAllowed {
                     pool = pool.filter { $0.subtype != .hillRepeats }
@@ -208,13 +216,38 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                             prevInterval = interval
                         }
                     } else if !filteredThresholds.isEmpty {
-                        // Apply progression filter to thresholds
-                        let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
-                        let thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
+                        // HARD-quality week. 10K+: alternate every other one to a hill
+                        // session so quality spans hills + threshold (not 100% threshold).
+                        // Hills sit at ~threshold load ⇒ a TYPE swap, not added intensity;
+                        // the remaining threshold weeks still progress. Hills come from
+                        // filteredIntervals (not the gated intervalPool) so they can land on
+                        // a phase-first hard week — already a hard threshold there anyway.
+                        let hillPhaseOK = (phase == .base || phase == .speed || phase == .peak)
+                        var hillsThisWeek = (config.distance >= 10000 && !isDeloading && hillPhaseOK)
+                            ? filteredIntervals.filter { $0.subtype == .hillRepeats }
+                            : []
+                        if hillsThisWeek.count > 1 {
+                            let ramped = rampVariantsByPlanWeek(hillsThisWeek, week: week)
+                            if !ramped.isEmpty { hillsThisWeek = ramped }
+                        }
+                        // Count only hill-ELIGIBLE hard weeks so deload/ineligible weeks
+                        // don't burn a parity slot; 1st eligible stays threshold, then alternate.
+                        let hillsEligible = !hillsThisWeek.isEmpty
+                        let routeToHills = hillsEligible && begHardQualityCount % 2 == 1
+                        if hillsEligible { begHardQualityCount += 1 }
+                        if routeToHills,
+                           let hill = selectWorkoutByTargetV3(workouts: hillsThisWeek, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.3), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                            weekWorkouts.append(("interval", hill))
+                            prevInterval = hill
+                        } else {
+                            // Apply progression filter to thresholds
+                            let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
+                            let thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
 
-                        if let threshold = selectWorkoutByTargetV3(workouts: thresholdPool, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.35), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
-                            weekWorkouts.append(("threshold", threshold))
-                            prevThreshold = threshold
+                            if let threshold = selectWorkoutByTargetV3(workouts: thresholdPool, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.35), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                                weekWorkouts.append(("threshold", threshold))
+                                prevThreshold = threshold
+                            }
                         }
                     }
             }

@@ -616,6 +616,82 @@ check(
     f"missing in weeks: {missing}"
 )
 
+section("Beg quality-TYPE variety — not 100% threshold every quality week")
+
+# Bug: Beg 10K/21K/42K (incl Acc) ran ONE quality TYPE — all threshold — every
+# quality week (the threshold progression 3x8->3x10->2x12->2x15 is sensible, but
+# a beginner did the identical TYPE all season). Fix alternates the quality
+# session between threshold and hill repeats (both beginner-safe LT/strength at
+# similar load). Assert: the set of TRUE hard-quality TYPES across the plan has
+# >=2 distinct types. 5K Beg is fine (already TT+threshold) and is excluded.
+# Other tiers (Int/Adv/Cmp) already vary — kept as a regression guard.
+#
+# "Hard quality" = the day daydump marks 'Q' (the threshold/hills/TT/MP session).
+# Easy+Strides is NOT a Q day (it's a low-load aerobic+neuromuscular filler), so
+# it's correctly excluded — strides crowding the interval slot was the bug.
+
+def quality_types_via_daydump(filter_str, header):
+    """Set of subtypes for daydump 'Q'-marked (hard quality) sessions."""
+    r = subprocess.run([PLAN_DEBUG, "daydump", filter_str],
+                       capture_output=True, text=True, env=os.environ.copy())
+    marker = f'=== {header} DAY-BY-DAY'
+    if marker not in r.stdout:
+        return None
+    sect = r.stdout.split(marker, 1)[1]
+    nxt = re.search(r'\n=== ', sect)
+    if nxt:
+        sect = sect[:nxt.start()]
+    types = []
+    for line in sect.splitlines():
+        m = re.match(r'^\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+Q\s+.+?\[(\w+)\]', line)
+        if m:
+            types.append(m.group(2))
+    return types
+
+# Affected beginner plans — every variant the audit flagged as all-threshold,
+# plus the Acc tier. ALL must now span >=2 quality types.
+BEG_QUALITY_VARIETY = [
+    ("Beg 10K (long, 12w)",    "Beg 10K (long, 12w)"),
+    ("Beg 21K (short, 10w)",   "Beg 21K (short, 10w)"),
+    ("Beg 21K (rec, 14w)",     "Beg 21K (rec, 14w)"),
+    ("Beg 21K (long, 18w)",    "Beg 21K (long, 18w)"),
+    ("Beg 42K (short, 14w)",   "Beg 42K (short, 14w)"),
+    ("Beg 42K (rec, 18w)",     "Beg 42K (rec, 18w)"),
+    ("Beg 42K (long, 22w)",    "Beg 42K (long, 22w)"),
+    ("Acc Beg 21K (rec, 14w)", "Acc Beg 21K (rec, 14w)"),
+    ("Acc Beg 42K (rec, 18w)", "Acc Beg 42K (rec, 18w)"),
+]
+for header, fil in BEG_QUALITY_VARIETY:
+    types = quality_types_via_daydump(fil, header)
+    if types is None:
+        check(f"{header} quality-variety parses", False, "no daydump for plan")
+        continue
+    distinct = sorted(set(types))
+    check(
+        f"{header.split(' (')[0]}: quality TYPES span >=2 (not 100% one type)",
+        len(distinct) >= 2,
+        f"quality types: {types} (distinct={distinct})"
+    )
+
+# Regression guard: other tiers (which already vary) must stay varied.
+OTHER_QUALITY_VARIETY = [
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)"),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)"),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)"),
+]
+for header, fil in OTHER_QUALITY_VARIETY:
+    types = quality_types_via_daydump(fil, header)
+    if types is None:
+        check(f"{header} quality-variety parses", False, "no daydump for plan")
+        continue
+    distinct = sorted(set(types))
+    check(
+        f"{header.split(' (')[0]}: quality TYPES span >=2 (regression guard)",
+        len(distinct) >= 2,
+        f"quality types: {types} (distinct={distinct})"
+    )
+
 section("Adv 42K hits Pfitz 18/55 territory in PEAK")
 
 text = run_pacedump("Adv 42K (long", race_pace=280, easy_pace=380)
