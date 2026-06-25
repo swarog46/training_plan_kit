@@ -523,6 +523,15 @@ class PlanGeneratorV3 {
         w.subtype != .strides && hasZone5(w)
     }
 
+    // Stride rep count = number of Z5 work intervals (the fast finishers) in an
+    // "Easy + Strides" workout. Beginners need 4-6 reps (standard 4-8); the
+    // 2-rep templates are too few.
+    func stridesRepCount(_ w: Workout) -> Int {
+        w.intervals.filter {
+            $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5)
+        }.count
+    }
+
     // Rest cap applies only to density-dependent VO2 subtypes (intervals/
     // pyramid/ladder). Hills/yasso/mile-reps/TTs use long recoveries by
     // design — exempt, or they'd vanish under the 60s advanced cap.

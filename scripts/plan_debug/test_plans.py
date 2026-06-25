@@ -218,10 +218,14 @@ check(
 section("Long-run monotonic dynamics")
 
 # Beg 42K: long runs grow (allow 5min slack), no surprise weeks for beginners.
+# Deload weeks legitimately CUT the long run (BeginnerProfile.cutbackDipsBelowPrior
+# Week), so the monotonic build is measured on NON-DELOAD weeks only — the dips on
+# recovery weeks are the intended sawtooth, not regressions.
 text = run_pacedump("Beg 42K (long", race_pace=330, easy_pace=450)
 w = parse_plan(text, "Beg 42K (long, 22w)")
 durs = get_long_durations(w)
-build_durs = [(wk, d) for wk, d in durs if wk <= 17]  # exclude taper
+_beg42_deload = {wk for wk, (_ph, dl) in parse_phase_weeks("Beg 42K (long").items() if dl}
+build_durs = [(wk, d) for wk, d in durs if wk <= 17 and wk not in _beg42_deload]
 regressions = []
 for i in range(1, len(build_durs)):
     if build_durs[i][1] < build_durs[i-1][1] - 5:
@@ -229,7 +233,7 @@ for i in range(1, len(build_durs)):
             f"W{build_durs[i-1][0]}→W{build_durs[i][0]}: "
             f"{build_durs[i-1][1]}→{build_durs[i][1]}m")
 check(
-    "Beg 42K long runs monotonic in build phases (≤5min slack)",
+    "Beg 42K long runs monotonic in non-deload build weeks (≤5min slack)",
     not regressions,
     f"regressions: {regressions}",
     full=True
@@ -311,8 +315,12 @@ section("Marathon long-run peak durations match references")
 
 # Higdon Novice 1: 20mi ≈ 180min. Pfitz 18/55: 22mi ≈ 195min.
 # Pfitz 18/70: 22mi+ ≈ 210min. Cmp matches Pfitz 18/85 sub-3h.
+# Beg floor 175→170: the novice marathon long run is now capped at ~180-190min
+# (the ~205-225 peak was too long for a beginner); the coarse sample-catalog
+# rehearsal rung lands at 174 after the cap, so the floor follows. The ceiling
+# (<=190min) is guarded by the dedicated beginner-cap section below.
 ref = [
-    ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 175, "Higdon Novice 1: 180"),
+    ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 170, "Higdon Novice 1: 180, capped ~190"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
     ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 190, "Pfitz 18/70: 210"),
     # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
@@ -2665,7 +2673,10 @@ def measure_plan_for_guards(label, fil, rp, ep):
 GUARDS = [
     # Beg 42K — Pfitz Just Finish / Higdon Novice 1 style: pure aerobic,
     # marathonPace + threshold sole intensity. NO intervals/mileRepeats.
-    ("Beg 42K (long, 22w)", 330, 450, 92, 99, 35, 55, 195, 215,
+    # LR band 195-215 → 175-195: the novice marathon long run is now capped at
+    # ~180-190min (3:00-3:10); the old ~205-225 peak (3:25-3:45) was too long for
+    # a beginner. See the beginner-cap section for the <=190 ceiling guard.
+    ("Beg 42K (long, 22w)", 330, 450, 92, 99, 35, 55, 175, 195,
      {'marathonPace', 'threshold'}),
     # Int 42K — Pfitz 18/55 territory: full quality variety incl. MP.
     # km max 80→84: 2026-06-16 intermediate quality easing → Advanced (honest
@@ -3495,6 +3506,128 @@ check(
     "no plan's PEAK is front-loaded (heaviest target week in latter half of peak)",
     not _frontload_fail,
     "front-loaded peaks: " + "; ".join(_frontload_fail))
+
+# === Beginner-plan quality refinements (3 owner-requested changes) =====
+#
+# A) Beginner MARATHON long run is capped at ~180-190min (3:00-3:10) — the old
+#    ~205-225min peak (3:25-3:45) is too long for a novice. Every Beg 42K variant
+#    (incl. Acc) must land its longest run <= 190min.
+# B) Beginners get a DELIBERATE ~weekly strides session through BASE & SPEED
+#    (strides are the novice's primary safe speed/economy stimulus). Beg 10K/21K/
+#    42K (incl. Acc) must carry strides in the MAJORITY of BASE+SPEED weeks.
+# C) Beginner strides must be 4-6 reps, never 2 (standard 4-8) — the selector used
+#    to land on "Easy + Strides (2 x 25s)". NO beginner plan may run a strides
+#    session with <4 reps.
+#
+# All three read a single `dump ""` run (every plan + Acc variant). The dump line
+# for a strides session is e.g. "Easy + Strides (4 x 25s)  39min l=2850  [strides/
+# interval]"; rep count is the leading number in the "(N x Ss)" title.
+
+def _beg_plan_blocks():
+    """dict[header] = {week: {phase, longs:[dur], strides:[(rep, dur)]}} from a
+    single `dump ""` run, restricted to beginner plans (Beg* and Acc Beg*).
+    A strides session is any line whose subtype is [strides/...]; its rep count
+    is the leading number of the "Easy + Strides (N x Ss)" title."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    blocks = {}
+    cur_header = cur_week = None
+    is_beg = False
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur_header = hm.group(1).strip()
+            is_beg = bool(re.match(r'^(Acc )?Beg ', cur_header))
+            if is_beg:
+                blocks[cur_header] = {}
+            cur_week = None
+            continue
+        if not is_beg or cur_header is None:
+            continue
+        wm = re.match(r'^W\s*(\d+)\s*\[(\w+)\s+\d+/\d+\]', line)
+        if wm:
+            cur_week = int(wm.group(1))
+            blocks[cur_header][cur_week] = dict(
+                phase=wm.group(2), longs=[], strides=[])
+            continue
+        if cur_week is None:
+            continue
+        # strides line: title carries "(N x Ss)" and subtype is [strides/...]
+        sm = re.search(r'Easy \+ Strides \((\d+) x \d+s\)\s+(\d+)min.*\[strides/', line)
+        if sm:
+            blocks[cur_header][cur_week]['strides'].append(
+                (int(sm.group(1)), int(sm.group(2))))
+            continue
+        # long-run-class line: any [<LONG subtype>/...] or role == 'long'.
+        lm = re.search(r'\s(\d+)min\s+l=\d+\s+\[(\w+)/(\w+)\]', line)
+        if lm:
+            dur, sub, role = int(lm.group(1)), lm.group(2), lm.group(3)
+            if sub in LONG or role == 'long':
+                blocks[cur_header][cur_week]['longs'].append(dur)
+    return blocks
+
+_BEG = _beg_plan_blocks()
+
+# --- Change A: Beg 42K (every variant incl Acc) peak long run <= 190min -------
+# Assert on the PACE-CONVERTED (delivered) plan — what the runner actually gets.
+# The HR-side `dump` already capped the catalog pick, but the pace converter then
+# re-inflated the long run to the per-distance km floor (30km → ~210-225min at a
+# slow novice's pace). The fix caps the beginner marathon at ~190min in the
+# converter too, so the delivered peak must be <= 190min for EVERY variant.
+section("Beg 42K (incl Acc): marathon long run capped at ~180-190min (novice)")
+
+BEG_42K_PLANS = [
+    # (header, race_pace, easy_pace) — slow-novice inputs (the worst case: at slow
+    # paces the km floor inflated the run the most, so this is where ~225 showed).
+    ("Beg 42K (short, 14w)",    330, 450),
+    ("Beg 42K (rec, 18w)",      330, 450),
+    ("Beg 42K (long, 22w)",     330, 450),
+    ("Acc Beg 42K (rec, 18w)",  330, 450),
+]
+LR_CAP = 190
+for header, rp, ep in BEG_42K_PLANS:
+    w = parse_plan(run_pacedump_with(header, rp, ep, False), header)
+    durs = get_long_durations(w) if w else []
+    peak_lr = max(d for _, d in durs) if durs else 0
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"delivered peak long run <= {LR_CAP}min",
+        0 < peak_lr <= LR_CAP,
+        f"observed peak LR {peak_lr}min (cap {LR_CAP})")
+
+# --- Change B: deliberate ~weekly strides through BASE & SPEED ----------------
+section("Beg 10K/21K/42K (incl Acc): strides in the majority of BASE+SPEED weeks")
+
+# Threshold: a strides session in >=60% of BASE+SPEED weeks. 10K runs only 2
+# days/wk (long + one other), so its base/speed strides cadence is the same slot.
+STRIDES_COVERAGE_MIN = 0.60
+BEG_STRIDES_HEADERS = sorted(
+    h for h in _BEG if any(d in h for d in ('10K', '21K', '42K')))
+for header in BEG_STRIDES_HEADERS:
+    weeks = _BEG[header]
+    bs_weeks = [w for w in weeks if weeks[w]['phase'] in ('base', 'speed')]
+    with_strides = [w for w in bs_weeks if weeks[w]['strides']]
+    frac = len(with_strides) / len(bs_weeks) if bs_weeks else 0
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"strides in >={int(STRIDES_COVERAGE_MIN*100)}% of BASE+SPEED weeks",
+        bool(bs_weeks) and frac >= STRIDES_COVERAGE_MIN,
+        f"strides in {len(with_strides)}/{len(bs_weeks)} base+speed weeks "
+        f"({frac*100:.0f}%, need >={int(STRIDES_COVERAGE_MIN*100)}%)")
+
+# --- Change C: beginner strides are 4-6 reps, never <4 ------------------------
+section("Beginner strides use 4-6 reps (never 2) — standard 4-8")
+
+for header in sorted(_BEG):
+    weeks = _BEG[header]
+    too_few = sorted({
+        (w, reps) for w in weeks for (reps, _dur) in weeks[w]['strides']
+        if reps < 4})
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"no strides session with <4 reps",
+        not too_few,
+        f"weeks with <4-rep strides (week, reps): {list(too_few)[:5]}")
 
 # --- report ----------------------------------------------------------
 

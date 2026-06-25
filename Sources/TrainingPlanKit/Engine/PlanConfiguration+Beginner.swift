@@ -127,8 +127,11 @@ extension PlanConfiguration {
             // (40 mi @ 10:00/mi). Bumped from 140 → 220 to align average ~250.
             initialWeeklyDuration: 285,
             initialLongRunDuration: 90...110,
-            maxLongRunMinutes: 215,
-            longRunProgression: (base: 90, speed: 150, peak: 205, taper: 100),
+            // Novice marathon long run caps at ~190min (3:00-3:10). The old
+            // 205-215 peak (3:25-3:35) was too long for a beginner; the pace
+            // converter also holds the rendered long run to this minute cap.
+            maxLongRunMinutes: 190,
+            longRunProgression: (base: 90, speed: 150, peak: 180, taper: 100),
             baseLoad: 4500
         )
     )

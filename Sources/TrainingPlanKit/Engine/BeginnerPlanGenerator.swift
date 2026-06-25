@@ -161,16 +161,21 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     } else if i == 2 {
                         // Final shakeout 1-2 days before race — short, very easy.
                         // Pfitz prescribes 20-30min of jogging + 4×100m strides.
+                        // Drop <4-rep strides (keep plain easy + 4-6-rep strides) so
+                        // the shakeout never lands on a 2-rep stride.
                         let shakeoutPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                             .filter { $0.duration >= 20 * 60 && $0.duration <= 35 * 60 }
+                            .filter { $0.subtype != .strides || stridesRepCount($0) >= 4 }
                         if let shakeout = selectWorkoutByTargetV3(workouts: shakeoutPool, targetLoad: targetLoad * 0.2, targetDuration: 25, usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("shakeout_race", shakeout))
                         }
                     } else {
                         // Second workout: easy run hard-capped at 50min (pre-filtered
-                        // <= 50min so load scoring can't pick the long ones).
+                        // <= 50min so load scoring can't pick the long ones). Drop
+                        // <4-rep strides so a 2-rep stride never slips into race week.
                         let raceEasyPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                             .filter { $0.duration <= 50 * 60 }
+                            .filter { $0.subtype != .strides || stridesRepCount($0) >= 4 }
                         let raceEasyTarget = min(Int(targetDuration * 0.30), 40 * 60)
                         if let easy = selectWorkoutByTargetV3(workouts: raceEasyPool, targetLoad: targetLoad * 0.5, targetDuration: raceEasyTarget, usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("easy_race", easy))
@@ -520,6 +525,54 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     weekWorkouts.append((isLongRace && isFirstFill ? "medium_long_fill" : "easy_fill", easy))
                 } else {
                     break  // Catalog exhausted
+                }
+            }
+
+            // Beginner strides pool: 4-6 reps only (drop the 2-3-rep templates —
+            // too few; standard is 4-8). The selector elsewhere may still surface a
+            // <4-rep stride incidentally, so we both force from and normalize to
+            // this pool below.
+            let begStridesPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.strides])
+                .filter { stridesRepCount($0) >= 4 }
+
+            // Deliberate weekly strides through BASE & SPEED: strides are the
+            // beginner's primary safe speed/economy stimulus, so program one per
+            // base/speed week (respecting the 1/week cap below) instead of leaving
+            // them incidental. If the week already carries a strides session we
+            // leave it; otherwise convert the lightest easy/recovery FILL slot to a
+            // duration-matched 4-6-rep strides run. PEAK/TAPER keep current behavior.
+            if (phase == .base || phase == .speed) && !begStridesPool.isEmpty
+                && !weekWorkouts.contains(where: { $0.workout.subtype == .strides }) {
+                // Convert a pure easy/recovery slot (never the long run, quality, or
+                // progression) — prefer the shortest so we don't turn a medium-long
+                // fill into strides.
+                let easySlot = weekWorkouts.indices
+                    .filter { weekWorkouts[$0].workout.subtype == .easy
+                           || weekWorkouts[$0].workout.subtype == .recovery }
+                    .min(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration })
+                if let i = easySlot {
+                    let targetMin = Int(weekWorkouts[i].workout.duration / 60)
+                    if let strides = begStridesPool.min(by: {
+                        abs(Int($0.duration / 60) - targetMin) < abs(Int($1.duration / 60) - targetMin)
+                    }) {
+                        weekWorkouts[i] = ("strides", strides)
+                    }
+                }
+            }
+
+            // Change C safety net: any beginner strides session with <4 reps is
+            // swapped for the closest-duration 4-6-rep variant (covers strides the
+            // selector placed incidentally, in any phase).
+            if !begStridesPool.isEmpty {
+                for i in weekWorkouts.indices
+                where weekWorkouts[i].workout.subtype == .strides
+                    && stridesRepCount(weekWorkouts[i].workout) < 4 {
+                    let targetMin = Int(weekWorkouts[i].workout.duration / 60)
+                    if let replacement = begStridesPool.min(by: {
+                        abs(Int($0.duration / 60) - targetMin) < abs(Int($1.duration / 60) - targetMin)
+                    }) {
+                        weekWorkouts[i] = (weekWorkouts[i].type, replacement)
+                    }
                 }
             }
 

@@ -436,7 +436,8 @@ public struct PaceZoneConverter {
         config: PaceProgressionConfig = .intermediate,
         vdotAnchored: Bool = false,
         raceDistanceMeters: Int? = nil,
-        isCompetitive: Bool = false
+        isCompetitive: Bool = false,
+        isBeginner: Bool = false
     ) -> Workout {
         let convertedIntervals = workout.intervals.map { interval in
             convertIntervalToPace(
@@ -474,6 +475,7 @@ public struct PaceZoneConverter {
                                     conversationalPace: conversationalPace,
                                     raceDistanceMeters: raceDistanceMeters,
                                     isCompetitive: isCompetitive,
+                                    isBeginner: isBeginner,
                                     progressionFactor: progressionFactor)
     }
 
@@ -495,6 +497,7 @@ public struct PaceZoneConverter {
         conversationalPace: Int?,
         raceDistanceMeters: Int?,
         isCompetitive: Bool,
+        isBeginner: Bool,
         progressionFactor: Double
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
@@ -509,7 +512,14 @@ public struct PaceZoneConverter {
         let floorKm: Double, capKm: Double
         switch raceDistanceMeters {
         // Competitive marathoners train longer long runs (Pfitz 18/85 ~35-38km).
-        case 42195: (floorKm, capKm) = isCompetitive ? (32, 38) : (30, 34)
+        // Beginner marathoners cap shorter — the long run holds to ~190min (3:00-
+        // 3:10), so a slow novice isn't run for 3.5h+ (see begMarathonLRCapMins).
+        // Beginner marathon is CAP-ONLY (no floor): the HR-side longRunProgression
+        // already ramps the long run 90→180min, so a km floor would inflate the
+        // early base runs up to the cap and flatten the build. Cap (+ the 190min
+        // ceiling below) just holds the top so a slow novice isn't run 3.5h+.
+        case 42195: (floorKm, capKm) = isCompetitive ? (32, 38)
+                                     : isBeginner ? (0, 28) : (30, 34)
         case 21097: (floorKm, capKm) = (16, 21)
         case 10000: (floorKm, capKm) = (0, 16)
         case 5000:  (floorKm, capKm) = (0, 12)
@@ -542,7 +552,15 @@ public struct PaceZoneConverter {
         // long-run minimum (a fast 5K runner's >12km run would otherwise scale
         // under 60min and violate the long-run floor).
         let minSec = Double(min(Int(workout.duration), 60 * 60))
-        let factor = max(targetKm / km, minSec / Double(workout.duration))
+        var factor = max(targetKm / km, minSec / Double(workout.duration))
+        // Hard minute ceiling for the beginner marathon long run: km windows are
+        // pace-relative, so the slowest novice could still cross 190min at the
+        // 28km cap. Clamp the factor so the rendered run never exceeds the cap.
+        if isBeginner, raceDistanceMeters == 42195 {
+            let begMarathonLRCapMins = 190
+            let capFactor = Double(begMarathonLRCapMins * 60) / Double(workout.duration)
+            if capFactor > 0 { factor = min(factor, capFactor) }
+        }
         let newDurationSec = Int((Double(workout.duration) * factor).rounded())
 
         func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
@@ -603,7 +621,8 @@ public struct PaceZoneConverter {
         conversationalPaceEnd: Int? = nil,
         speedPaceEnd: Int? = nil,
         raceDistanceMeters: Int? = nil,
-        isCompetitive: Bool = false
+        isCompetitive: Bool = false,
+        isBeginner: Bool = false
     ) -> [WorkoutEvent] {
         let totalDuration = endDate.timeIntervalSince(startDate)
 
@@ -638,7 +657,8 @@ public struct PaceZoneConverter {
                 config: config,
                 vdotAnchored: vdotAnchored,
                 raceDistanceMeters: raceDistanceMeters,
-                isCompetitive: isCompetitive
+                isCompetitive: isCompetitive,
+                isBeginner: isBeginner
             )
 
             // Create updated event
