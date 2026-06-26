@@ -68,7 +68,10 @@ final class TrainingPlanKitTests: XCTestCase {
     /// No build phase (base/speed/peak) may emit two [deload] weeks back-to-back.
     /// Was broken on phases >= 10w (phase-end deload stacked) and where a 3:1
     /// recovery landed beside the trailing deload. Taper weeks (all deloads) are
-    /// excluded — a taper is a correct progressive deload.
+    /// excluded — a taper is a correct progressive deload. Maintenance is excluded
+    /// too: it runs its OWN recovery cadence whose 2-week opening easy ramp is a
+    /// LEGITIMATE consecutive-light pair (its [deload] tags mark gentle cutbacks,
+    /// not wasted race-build deloads) — checked separately below.
     func testNoConsecutiveBuildPhaseDeloads() {
         // Covers every audit offender (long PEAK/BASE) plus short-phase plans
         // whose 1-week PEAK / 4-week phases must stay exactly as before.
@@ -82,7 +85,6 @@ final class TrainingPlanKitTests: XCTestCase {
             (.competitive42Default, 36, "Cmp 42K max"),
             (.competitive21Default, 32, "Cmp 21K max"),
             (.accessibleAdvanced42Default, 18, "Acc Adv 42K rec"),
-            (.maintenanceBeginner, 12, "Maint Beg"),
             (.accessibleBeginner5Default, 7, "Acc Beg 5K rec"),
         ]
         let buildPhases: Set<TrainingPhase> = [.base, .speed, .peak]
@@ -96,6 +98,24 @@ final class TrainingPlanKitTests: XCTestCase {
                     bothBuildDeload,
                     "\(name): consecutive build-phase deloads at W\(i)/W\(i + 1) "
                     + "(\(prev.phase)/\(cur.phase))")
+            }
+        }
+    }
+
+    /// Maintenance [deload] tags must mark the genuinely light cadence weeks — the
+    /// 2-week opening easy ramp (W1-2) plus every 4th week (W6, W10, …) — and only
+    /// those. This is the maintenance counterpart to the race-build deload guard.
+    func testMaintenanceDeloadTagsMarkLightCadenceWeeks() {
+        for (config, weeks, name) in [
+            (PlanConfiguration.maintenanceBeginner, 12, "Maint Beg"),
+            (PlanConfiguration.maintenanceIntermediate, 12, "Maint Int"),
+            (PlanConfiguration.maintenanceAdvanced, 12, "Maint Adv"),
+        ] {
+            let flags = weeklyDeloadFlags(config, weeks)
+            for (w, f) in flags.enumerated() {
+                XCTAssertEqual(
+                    f.deload, MaintenancePlanGenerator.isLightWeek(week: w),
+                    "\(name) W\(w + 1): [deload] tag must equal the maintenance light-week cadence")
             }
         }
     }

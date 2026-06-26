@@ -192,9 +192,34 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             if config.profile.startsIntervalsInBase && phase == .base {
                 shouldAddIntervals = true // fitter tiers start intervals in Base
             }
+            // VO2 block: VO2 IS the point — carry the Z5 dose into BASE too, but skip
+            // pure onboarding (BASE wk 0) so week 1 isn't a VO2 detonation.
+            let isVO2Onboarding = config.isVO2Max && phase == .base && weekInPhase == 0
+            if config.isVO2Max && phase == .base && weekInPhase >= 1 {
+                shouldAddIntervals = true
+            }
             // TAPER: Still add intervals/threshold but at reduced intensity (handled by targetLoad)
 
             // Helper: Filter thresholds by progression (prefer shorter intervals early, longer later)
+
+            // VO2 block: select a week-indexed Z5 DOSE (ramps ~12→32min) from the
+            // true-Z5 pool — the dose ladder (intervals/ladderIntervals) + fivekPace.
+            // This is the lead quality every non-onboarding week, so MOST weeks carry
+            // a true VO2 session and the dose climbs across the block instead of
+            // pinning at fivekPace's fixed 20min. The dose IS the week's fitness
+            // check, so it takes precedence over the standalone recalibration TT.
+            if shouldAddIntervals, config.isVO2Max, !isVO2Onboarding {
+                let doseTarget = vo2Z5DoseTarget(week: week, isDeloading: isDeloading)
+                let dosePool = vo2DoseMatched(intervalPool, targetMinutes: doseTarget)
+                if !dosePool.isEmpty {
+                    if let interval = selectWorkoutByTargetV3(workouts: dosePool, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.3), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                        weekWorkouts.append(("interval", interval))
+                        prevInterval = interval
+                    }
+                }
+                // Z5 dose placed — skip the standard interval/threshold alternation.
+                if !weekWorkouts.isEmpty { shouldAddIntervals = false }
+            }
 
             if shouldAddIntervals {
                     // Alternate: even weeks = intervals, odd = threshold. On a TT week

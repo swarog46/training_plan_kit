@@ -450,6 +450,72 @@ if w:
         f"first_block_avg={first_block:.0f}, last_block_avg={last_block:.0f}, growth={growth_pct:.0f}%"
     )
 
+# --- Maintenance defects: deload label, onboarding cliff, Beg quality variety -
+# Maintenance runs its OWN recovery cadence (W1-2 easy ramp, every-4th-week
+# deload) but used to pass isDeloading=false to the periodization, so the dump's
+# [deload] tag landed on the HEAVY weeks while the real light weeks went
+# unlabeled; the opening detonated into full quality at W3 (+130-220%); and
+# Maint Beg's quality was 100% threshold. These defend the fixes.
+section("Maintenance — deload label, onboarding ramp, Beg quality variety")
+
+def parse_maint_weeks(label):
+    """dict[week(1-based)] = {load, deload, subs:[(subtype, role)]} from `dump`."""
+    text = run_dump(label)
+    if f'=== {label}' not in text:
+        return {}
+    sect = text.split(f'=== {label}')[1].split('\n=== ')[0]
+    weeks = {}
+    cur = None
+    for line in sect.splitlines():
+        wm = re.match(r'^W\s*(\d+)\s*\[(\w+)[^\]]*\]\s+\d+wkts\s+load=\s*(\d+)\s+\d+min(\s+\[deload\])?', line)
+        if wm:
+            cur = int(wm.group(1))
+            weeks[cur] = {'load': int(wm.group(3)), 'deload': wm.group(4) is not None, 'subs': []}
+            continue
+        sm = re.search(r'\[([a-zA-Z0-9]+)/([a-z_0-9]+)\]', line)
+        if sm and cur is not None:
+            weeks[cur]['subs'].append((sm.group(1), sm.group(2)))
+    return weeks
+
+# Real quality subtypes (excludes easy/long/progression/strides aerobic work).
+MAINT_QUALITY = {'intervals', 'ladderIntervals', 'pyramidIntervals', 'threshold',
+                 'hillRepeats', 'fivekPace', 'tenkPace', 'mileRepeats',
+                 'yasso800', 'timeTrial', 'fartlek'}
+
+import statistics as _stats
+for _label in ("Maint Beg", "Maint Int", "Maint Adv"):
+    _w = parse_maint_weeks(_label)
+    _loads = [_w[k]['load'] for k in sorted(_w)]
+    _median = _stats.median(_loads) if _loads else 0
+    # (1) Every [deload]-labeled week is <= the plan's median load — the tag must
+    # mark a genuinely light week, never a heavy one.
+    _bad = [(k, _w[k]['load']) for k in sorted(_w) if _w[k]['deload'] and _w[k]['load'] > _median]
+    check(f"{_label}: every [deload] week is <= median load ({_median:.0f})",
+          not _bad,
+          f"[deload] tags on ABOVE-median (heavy) weeks: {_bad}; loads={_loads}",
+          full=True)
+    # (2) No week's load jumps >80% vs the prior week — a gradual opening, no
+    # detonation into full quality.
+    _jumps = []
+    _ks = sorted(_w)
+    for _i in range(1, len(_ks)):
+        _p, _c = _w[_ks[_i - 1]]['load'], _w[_ks[_i]]['load']
+        if _p > 0 and (_c - _p) / _p > 0.80:
+            _jumps.append(f"W{_ks[_i-1]}->W{_ks[_i]}: {_p}->{_c} (+{(_c-_p)/_p*100:.0f}%)")
+    check(f"{_label}: no week's load jumps >80% vs prior (smooth onboarding)",
+          not _jumps,
+          f"load detonations: {_jumps}",
+          full=True)
+
+# (3) Maint Beg quality spans >=2 distinct types (not 100% threshold) — give it
+# interval/ladder variety like Maint Int/Adv.
+_wbeg = parse_maint_weeks("Maint Beg")
+_beg_qual = sorted({sub for k in _wbeg for sub, _ in _wbeg[k]['subs'] if sub in MAINT_QUALITY})
+check("Maint Beg quality spans >=2 distinct types (not 100% threshold)",
+      len(_beg_qual) >= 2,
+      f"quality subtypes seen: {_beg_qual}",
+      full=True)
+
 section("5K plans long-run policy (Beg/Int skip, Adv has Daniels Phase II optionals)")
 
 for header, fil, expected_max in [
@@ -2805,6 +2871,75 @@ _badcat = sorted({w.get('title', '?') for w in _cat
 check("Catalog: hillRepeats/timeTrial/fastFinish carry no Z5 work (Z4 retag)",
       not _badcat, f"offenders: {_badcat[:3]}")
 
+# --- VO2 block: a true-Z5 dose that reaches most weeks AND progresses --------
+# The headline VO2 defect: the blocks barely delivered VO2. A true-Z5 session
+# (>=10min of Z5 work, strides exempt) landed in only 2-4 of 8 weeks, and the
+# Z5 dose was pinned at ~20min (every fivekPace template = 20min) — it never
+# ramped. The fix opens the dose ladder (intervals/ladderIntervals) and selects
+# a week-indexed Z5 dose so MOST weeks carry VO2 and the dose climbs across the
+# block. Needs the full catalog (the dose ladder lives there). Z5 minutes are
+# read straight from `dump` (z5=N = Z5 work minutes in the picked template).
+section("VO2 block delivers VO2 — Z5 dose reaches most weeks and progresses")
+
+# A real-VO2 dose floor: strides carry 1-2min of Z5; a genuine VO2 rep block is
+# >=10min. Use the max non-strides Z5 dose in each week as that week's VO2 dose.
+VO2_Z5_FLOOR = 10
+
+def parse_dump_z5_minutes():
+    """dict[plan] = {week: max non-strides Z5 work-minutes that week}."""
+    r = subprocess.run([PLAN_DEBUG, "dump"], capture_output=True, text=True)
+    plans = {}
+    plan = week = None
+    for line in r.stdout.splitlines():
+        m = re.match(r'^=== (.+?)\s+\(\d+w', line)
+        if m:
+            plan = m.group(1); plans[plan] = {}; week = None; continue
+        m = re.match(r'^W\s*(\d+) \[(\w+)', line)
+        if m and plan:
+            week = int(m.group(1)); plans[plan][week] = 0; continue
+        m = re.match(r'^\s{4}.*?\[(\w+)/\S+\] z5=(\d+)', line)
+        if m and plan and week and m.group(1) != 'strides':
+            plans[plan][week] = max(plans[plan][week], int(m.group(2)))
+    return plans
+
+_z5min = parse_dump_z5_minutes()
+for _vo2 in ("VO2 Beg", "VO2 Int", "VO2 Adv"):
+    weeks = _z5min.get(_vo2, {})
+    doses = [weeks[w] for w in sorted(weeks)]                 # per-week VO2 dose
+    n = len(doses) or 1
+    real = [d for d in doses if d >= VO2_Z5_FLOOR]            # weeks with true VO2
+    # (1) Most weeks carry a true-Z5 session — >=6 of 8 (W1 onboarding + the
+    # taper week may legitimately skip it; everything else must deliver VO2).
+    check(f"{_vo2}: true-Z5 session (>={VO2_Z5_FLOOR}min) in >=6 of {n} weeks",
+          len(real) >= 6,
+          f"only {len(real)}/{n} weeks carry a real VO2 dose; per-week z5={doses}",
+          full=True)
+    # (2) The dose PROGRESSES — not pinned to one value. Require >=3 distinct VO2
+    # doses among the true-Z5 weeks, the late dose to exceed the early dose, and
+    # no week to drop more than one ladder rung (~8min) below the running peak
+    # before the taper (a controlled, non-collapsing ramp).
+    real_seq = [d for d in doses if d >= VO2_Z5_FLOOR]
+    distinct = sorted(set(real_seq))
+    progresses = len(distinct) >= 3
+    climbs = bool(real_seq) and real_seq[-1] > real_seq[0]
+    # Non-collapse: scanning the real-Z5 weeks in order, the dose never falls
+    # >8min below the peak seen so far (until the final taper week, excluded).
+    running_peak = 0
+    collapses = []
+    real_weeks_sorted = [w for w in sorted(weeks) if weeks[w] >= VO2_Z5_FLOOR]
+    for i, w in enumerate(real_weeks_sorted):
+        d = weeks[w]
+        running_peak = max(running_peak, d)
+        is_last = (i == len(real_weeks_sorted) - 1)
+        if not is_last and d < running_peak - 8:
+            collapses.append((w, d, running_peak))
+    check(f"{_vo2}: Z5 dose progresses across the block (not pinned at one value)",
+          progresses and climbs and not collapses,
+          f"distinct doses={distinct}, first={real_seq[0] if real_seq else None}, "
+          f"last={real_seq[-1] if real_seq else None}, collapses={collapses}; "
+          f"per-week z5={doses}",
+          full=True)
+
 section("Accessible (\"real life\") tier — lighter than textbook, same structure & safety")
 
 # The app ships a parallel ACCESSIBLE config set (PlanConfiguration.accessible*)
@@ -3738,7 +3873,14 @@ def _consecutive_build_deloads(label_filter):
     for line in r.stdout.splitlines():
         m = re.match(r'^=== (.+?) \(\d+w\):', line)
         if m:
-            flush(); cur = m.group(1); weeks = []; continue
+            flush()
+            # Maintenance runs its OWN recovery cadence — its [deload] tags mark the
+            # gentle cutback weeks, and the 2-week opening easy ramp is a LEGITIMATE
+            # consecutive-light pair (like a taper, not a wasted race-build deload).
+            # Exclude it from this race-periodization consecutive-deload guard.
+            cur = None if m.group(1).startswith('Maint') else m.group(1)
+            weeks = []
+            continue
         wm = re.match(r'^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load.*?(\[deload\])?\s*$', line)
         if wm and cur:
             weeks.append((int(wm.group(1)), wm.group(2), wm.group(3) is not None))

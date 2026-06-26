@@ -344,6 +344,15 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         duration = duration * phaseBoost * progressionFactor
     }
 
+    // Maintenance runs its OWN recovery cadence (opening easy ramp + every-4th-week
+    // cutback) for workout selection, decoupled from the periodization's phase-end/
+    // mid-phase deloads. Align the delivered `isDeloading` flag (and thus the dump's
+    // [deload] label) with that real cadence, so the tag marks the genuinely light
+    // weeks instead of the heavy periodization-deload weeks.
+    if config.distance == 0 {
+        isDeloading = MaintenancePlanGenerator.isLightWeek(week: weekInPlan)
+    }
+
     return WeeklyTargets(load: load, duration: duration, isDeloading: isDeloading, phaseProgression: phaseProgression)
 }
 
@@ -540,6 +549,45 @@ class PlanGeneratorV3 {
     // A "real" Z5 session is any non-stride workout with a Z5 work interval.
     func isRealZ5(_ w: Workout) -> Bool {
         w.subtype != .strides && hasZone5(w)
+    }
+
+    // Total Z5 work minutes in a workout (the VO2 "dose" — what actually
+    // develops VO2max, independent of the session's easy WU/CD bulk).
+    func z5DoseMinutes(_ w: Workout) -> Int {
+        var secs = 0.0
+        for iv in w.intervals where iv.type == .work
+            && iv.target == TargetRange.heartRateZone(zone: 5) {
+            secs += iv.duration
+        }
+        return Int(secs / 60)
+    }
+
+    // Week-indexed VO2 Z5-dose target (minutes) for an 8-week-ish VO2 block.
+    // The headline VO2 fix: the dose must RAMP (~12→30+), not pin at one value.
+    // Ramps linearly with the week's position in the block; injury-sane (opens
+    // low, never front-loads). A deload week still touches Z5 but at a reduced
+    // dose (~75% of the ramp, floored at the VO2 minimum) — a recovery cut that
+    // keeps the stimulus rather than stripping it.
+    func vo2Z5DoseTarget(week: Int, isDeloading: Bool = false) -> Int {
+        let span = max(1, actualWeeksToGenerate - 1)
+        let frac = Double(min(week, span)) / Double(span)   // 0…1 across the block
+        let lo = 12.0, hi = 32.0
+        let target = lo + (hi - lo) * frac
+        return Int((isDeloading ? max(lo, target * 0.75) : target).rounded())
+    }
+
+    // From a candidate pool, return the true-Z5 workout whose Z5 dose is closest
+    // to `targetMinutes` (ties → larger total = more variety). Used by VO2 blocks
+    // so the lead quality lands a week-indexed dose instead of whatever total-
+    // duration scoring happens to pick (which parked on the fixed-20min fivekPace).
+    func vo2DoseMatched(_ pool: [Workout], targetMinutes: Int) -> [Workout] {
+        let z5 = pool.filter { isRealZ5($0) }
+        guard !z5.isEmpty else { return [] }
+        let bestDose = z5.map { z5DoseMinutes($0) }
+            .min(by: { abs($0 - targetMinutes) < abs($1 - targetMinutes) })!
+        // Keep every template at the chosen dose (all durations/segment counts)
+        // so the week-to-week variety + same-workout penalties still operate.
+        return z5.filter { z5DoseMinutes($0) == bestDose }
     }
 
     // Stride rep count = number of Z5 work intervals (the fast finishers) in an
@@ -785,6 +833,12 @@ class PlanGeneratorV3 {
             wk.reduce(0) { $0 + $1.workout.trainingLoad }
         }
 
+        // VO2 block: the deload already arrives at a REDUCED Z5 dose (the selector
+        // cut it ~25%) — preserve that stimulus rather than stripping it to
+        // progression/easy. The week still dips via aerobic-fill drop / LR trim
+        // below; the Z5 session is just protected from the quality-lighten passes.
+        func protectedFromLighten(_ w: Workout) -> Bool { config.isVO2Max && isRealZ5(w) }
+
         // STEP 1 — differentiated initial reshape (unchanged behavior).
         // High-frequency: drop the largest-duration aerobic fill (never the long
         // run, never quality), keeping the week at >= 4 sessions — a real rest day.
@@ -798,7 +852,8 @@ class PlanGeneratorV3 {
             // quality with an easy/progression of similar duration. Guard B: if that
             // quality is the week's ONLY quality, keep a quality body (progression),
             // never strip it to easy.
-            let qualityCands = week.enumerated().filter { qualityTypes.contains($0.element.workout.type) }
+            let qualityCands = week.enumerated()
+                .filter { qualityTypes.contains($0.element.workout.type) && !protectedFromLighten($0.element.workout) }
             if let heaviest = qualityCands.max(by: { $0.element.workout.trainingLoad < $1.element.workout.trainingLoad }) {
                 let targetMins = Int(heaviest.element.workout.duration / 60)
                 let soleQuality = qualityCands.count == 1
@@ -851,7 +906,8 @@ class PlanGeneratorV3 {
             // 2b. Lighten the heaviest quality body that HAS a lighter, duration-matched
             // progression (keeps a stimulus, sheds intensity). Replacing with a
             // progression always preserves a quality body, so the floor is never broken.
-            let qIdxs = week.indices.filter { isQualityBody(week[$0].workout) }
+            // VO2 blocks protect the (already-reduced) Z5 dose from this pass.
+            let qIdxs = week.indices.filter { isQualityBody(week[$0].workout) && !protectedFromLighten(week[$0].workout) }
             let progressionPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
             var lightenedQuality = false
             for qIdx in qIdxs.sorted(by: { week[$0].workout.trainingLoad > week[$1].workout.trainingLoad }) {
@@ -969,7 +1025,7 @@ class PlanGeneratorV3 {
         // Each plan type narrows its own quality pools (default: keep everything).
         (filteredIntervals, filteredThresholds) = config.profile.qualityPools(
             intervals: intervals, thresholds: thresholds, allWorkouts: workoutPool,
-            isVO2Max: config.isVO2Max, hasZone5: hasZone5)
+            isVO2Max: config.isVO2Max, isMaintenance: isMaintenance, hasZone5: hasZone5)
 
         for week in 0..<actualWeeksToGenerate {
             buildWeek(week: week)

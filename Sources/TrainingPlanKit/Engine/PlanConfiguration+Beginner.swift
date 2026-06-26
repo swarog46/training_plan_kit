@@ -152,16 +152,29 @@ public struct BeginnerProfile: PlanProfile {
         switch phase { case .base: 23; case .speed: 28; case .peak: 30; case .taper: 25; case .race: 22 }
     }
     public func qualityPools(intervals: [Workout], thresholds: [Workout],
-                             allWorkouts: [Workout], isVO2Max: Bool,
+                             allWorkouts: [Workout], isVO2Max: Bool, isMaintenance: Bool,
                              hasZone5: (Workout) -> Bool) -> (intervals: [Workout], thresholds: [Workout]) {
         if isVO2Max {
-            // VO2 block: keep the Z5 stimulus (hills, 5K-pace reps, TT) on a threshold base.
-            let ints: Set<WorkoutSubtype> = [.hillRepeats, .timeTrial, .fivekPace]
+            // VO2 block: the Z5 dose ladder (intervals + ladderIntervals, 10→34min
+            // of true Z5) is the engine of the block — include it alongside the
+            // fixed-dose fivekPace and the supporting hills/TT, on a threshold base.
+            // (Without intervals/ladderIntervals the dose pinned at fivekPace's 20min.)
+            let ints: Set<WorkoutSubtype> = [.intervals, .ladderIntervals,
+                                             .hillRepeats, .timeTrial, .fivekPace]
             return (intervals.filter { ints.contains($0.subtype) },
                     thresholds.filter { $0.subtype == .threshold })
         }
-        // Beginner quality = strides + hills + TT (no Z5 reps), on threshold/MP only.
         let thr: Set<WorkoutSubtype> = [.threshold, .marathonPace]
+        if isMaintenance {
+            // Maintenance is open-ended upkeep, not a race build — give the beginner
+            // the same interval/ladder variety the Int/Adv maintenance plans get, so
+            // its quality isn't 100% threshold. Z5-tagged reps stay out (kept gentle;
+            // the maint generator caps interval sessions to <=40min anyway).
+            let ints: Set<WorkoutSubtype> = [.intervals, .ladderIntervals, .hillRepeats, .timeTrial]
+            return (intervals.filter { ints.contains($0.subtype) && !hasZone5($0) },
+                    thresholds.filter { !hasZone5($0) && thr.contains($0.subtype) })
+        }
+        // Beginner quality = strides + hills + TT (no Z5 reps), on threshold/MP only.
         return (filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.hillRepeats, .timeTrial, .strides]),
                 thresholds.filter { !hasZone5($0) && thr.contains($0.subtype) })
     }

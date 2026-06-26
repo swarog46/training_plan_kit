@@ -37,9 +37,11 @@ public protocol PlanProfile {
     /// sharpens, and the fitter tiers sustain longer sessions.
     func minIntervalMinutes(phase: TrainingPhase) -> Int
     /// Narrows the interval + threshold pools to what this plan type should use.
-    /// Default keeps everything; only the gentler tiers restrict.
+    /// Default keeps everything; only the gentler tiers restrict. `isMaintenance`
+    /// lets a tier widen its pool for upkeep blocks (the beginner maintenance plan
+    /// wants interval/ladder variety its race plans deliberately omit).
     func qualityPools(intervals: [Workout], thresholds: [Workout],
-                      allWorkouts: [Workout], isVO2Max: Bool,
+                      allWorkouts: [Workout], isVO2Max: Bool, isMaintenance: Bool,
                       hasZone5: (Workout) -> Bool) -> (intervals: [Workout], thresholds: [Workout])
 }
 
@@ -52,7 +54,7 @@ public extension PlanProfile {
     var longRunSnapLoadFraction: Double { 0.35 }
     func minIntervalMinutes(phase: TrainingPhase) -> Int { 22 }   // competitive/default
     func qualityPools(intervals: [Workout], thresholds: [Workout],
-                      allWorkouts: [Workout], isVO2Max: Bool,
+                      allWorkouts: [Workout], isVO2Max: Bool, isMaintenance: Bool,
                       hasZone5: (Workout) -> Bool) -> (intervals: [Workout], thresholds: [Workout]) {
         (intervals, thresholds)   // fitter tiers use the full pools
     }

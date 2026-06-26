@@ -10,6 +10,15 @@
 import Foundation
 
 final class MaintenancePlanGenerator: PlanGeneratorV3 {
+    // The maintenance recovery cadence's LIGHT weeks: the opening easy ramp (W1-2)
+    // plus every 4th week thereafter (W6, W10, …). The single source of truth for
+    // "is this a cutback week" — read by the generator (workout selection) AND by
+    // calculateWeeklyTargetsV3 (so the dump's [deload] label marks these same weeks,
+    // not the periodization's heavy phase-end weeks). 0-based week index.
+    static func isLightWeek(week: Int) -> Bool {
+        week < 2 || (week >= 4 && week % 4 == 1)   // W1-2 ramp; W6, W10, …
+    }
+
     override func buildWeek(week: Int) {
         // `repeat { … } while false` lets `continue` (end of the maintenance block)
         // skip the rest of the body and fall through, as it did in the former
@@ -124,7 +133,9 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
             // easy ramp; every 4th week deload; all other weeks 1 long + 1 quality
             // (alternating interval/threshold) + easy fill, scaled to days/week.
             do {
-                let isRecoveryRamp = week < 2
+                // Light-week cadence (single source of truth: isLightWeek). The opening
+                // two weeks ramp (W1 easy, W2 easy+progression); every 4th week is a
+                // cutback. Both are gentle — see the branches below.
                 let isDeloadWeek = week >= 4 && week % 4 == 1  // weeks 5, 9, 13, ...
 
                 // Easy / progression duration progression
@@ -151,8 +162,8 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                 let effectiveIntervalPool = easyIntervalPool.isEmpty ? intervalPool : easyIntervalPool
                 let longPool = longRuns.filter { $0.duration >= 60 * 60 && $0.duration <= longRunMaxMinutes * 60 }
 
-                if isRecoveryRamp {
-                    // Weeks 0-1: pure easy — doubles as post-marathon recovery.
+                if week == 0 {
+                    // Week 1: pure easy — gentlest onboarding / post-marathon recovery.
                     for _ in 0..<maxWorkoutsPerWeek {
                         if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.4, targetDuration: 25, usedIds: &usedIds, isMaintenance: true) {
                             weekWorkouts.append(("easy_recovery", easy))
@@ -160,11 +171,38 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                             break
                         }
                     }
+                } else if week == 1 {
+                    // Week 2: easy + a single progression — a small step up from W1's
+                    // pure easy (no long run / hard quality yet). Ramps the opening so
+                    // W3's first full quality week isn't a load detonation off pure easy.
+                    if !progressivePool.isEmpty,
+                       let prog = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: progTargetMin, usedIds: &usedIds, isMaintenance: true) {
+                        weekWorkouts.append(("progressive_ramp", prog))
+                    }
+                    while weekWorkouts.count < maxWorkoutsPerWeek {
+                        if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.3, targetDuration: easyTargetMin, usedIds: &usedIds, isMaintenance: true) {
+                            weekWorkouts.append(("easy_ramp", easy))
+                        } else {
+                            break
+                        }
+                    }
                 } else if isDeloadWeek {
-                    // Deload: easy runs only, no quality. Prevents accumulated
-                    // fatigue from the prior 3 quality weeks.
-                    for _ in 0..<maxWorkoutsPerWeek {
-                        if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.35, targetDuration: easyTargetMin, usedIds: &usedIds, isMaintenance: true) {
+                    // Every-4th-week cutback: a GENTLE cutback, not a stop. Keep an
+                    // aerobic spine — a long run (when room) + a progression — so the
+                    // week stays well below the quality weeks yet the rebound into the
+                    // next full week isn't a load detonation. The hard threshold/interval
+                    // is what's dropped, not all the volume.
+                    if maxWorkoutsPerWeek >= 3, !longPool.isEmpty,
+                       let lr = selectWorkoutByTargetV3(workouts: longPool, targetLoad: targetLoad * 0.3, targetDuration: min(55, longRunMaxMinutes - 10), usedIds: &usedIds, isMaintenance: true) {
+                        weekWorkouts.append(("long_deload", lr))
+                    }
+                    if weekWorkouts.count < maxWorkoutsPerWeek, !progressivePool.isEmpty,
+                       let prog = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: progTargetMin, usedIds: &usedIds, isMaintenance: true) {
+                        weekWorkouts.append(("progressive_deload", prog))
+                    }
+                    // Fill the rest with easy.
+                    while weekWorkouts.count < maxWorkoutsPerWeek {
+                        if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.3, targetDuration: easyTargetMin, usedIds: &usedIds, isMaintenance: true) {
                             weekWorkouts.append(("easy_deload", easy))
                         } else {
                             break
@@ -179,6 +217,13 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
 
                     let canFitBoth = maxWorkoutsPerWeek >= 3
 
+                    // First quality week (the week right after the 2-week opening ramp):
+                    // long + ONE quality, no 3rd progression slot, and bias the quality
+                    // lighter — so the first full week ramps IN off the W2 easy+prog week
+                    // instead of detonating straight to a full long+threshold+progression.
+                    let isFirstQualityWeek = week == 2
+                    let qualityLoadMult = isFirstQualityWeek ? 0.22 : 0.3
+
                     // LONG RUN
                     let shouldAddLong = canFitBoth || isLongWeek
                     if shouldAddLong, !longPool.isEmpty {
@@ -191,12 +236,12 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                     let shouldAddQuality = canFitBoth || !isLongWeek
                     if shouldAddQuality, weekWorkouts.count < maxWorkoutsPerWeek {
                         if useInterval && !effectiveIntervalPool.isEmpty {
-                            if let intv = selectWorkoutByTargetV3(workouts: effectiveIntervalPool, targetLoad: targetLoad * 0.3, targetDuration: 30, usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: false, isMaintenance: true) {
+                            if let intv = selectWorkoutByTargetV3(workouts: effectiveIntervalPool, targetLoad: targetLoad * qualityLoadMult, targetDuration: 30, usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: false, isMaintenance: true) {
                                 weekWorkouts.append(("interval", intv))
                                 prevInterval = intv
                             }
                         } else if !filteredThresholds.isEmpty {
-                            if let th = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: 35, usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: false, isMaintenance: true) {
+                            if let th = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * qualityLoadMult, targetDuration: isFirstQualityWeek ? 28 : 35, usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: false, isMaintenance: true) {
                                 weekWorkouts.append(("threshold", th))
                                 prevThreshold = th
                             } else if let prog = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: progTargetMin, usedIds: &usedIds, isMaintenance: true) {
@@ -206,8 +251,9 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                         }
                     }
 
-                    // Optional progression slot for 3+ day weeks
-                    if maxWorkoutsPerWeek >= 3 && weekWorkouts.count < maxWorkoutsPerWeek {
+                    // Optional progression slot for 3+ day weeks (skipped on the first
+                    // quality week — that week ramps in with just long + 1 quality).
+                    if maxWorkoutsPerWeek >= 3 && !isFirstQualityWeek && weekWorkouts.count < maxWorkoutsPerWeek {
                         if let prog = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: progTargetMin, usedIds: &usedIds, isMaintenance: true) {
                             weekWorkouts.append(("progressive", prog))
                         }

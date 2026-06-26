@@ -185,7 +185,17 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         // fitter tiers alternate a milestone subtype in BASE; beginners stay plain
                         return config.profile.alternatesMilestoneInBase && weekInPhase % 2 == 1
                     }()
+                    // VO2 block: the lead quality is a week-indexed Z5 DOSE (ramps
+                    // ~12→32min) off the dose ladder (intervals/ladderIntervals/
+                    // fivekPace) — so MOST weeks carry true VO2 and the dose climbs,
+                    // instead of the selector parking on fivekPace's fixed 20min. Skips
+                    // pure BASE onboarding. Takes precedence over the TT/yasso rotation.
+                    let isVO2Onboarding = config.isVO2Max && phase == .base && weekInPhase == 0
                     let preferredPool: [Workout] = {
+                        if config.isVO2Max && !isVO2Onboarding {
+                            let dose = vo2DoseMatched(intervalPool, targetMinutes: vo2Z5DoseTarget(week: week, isDeloading: isDeloading))
+                            if !dose.isEmpty { return dose }
+                        }
                         // PEAK milestone weeks: prefer the milestone subtype (Yasso /
                         // TT) so it isn't under-picked. See IntermediatePlanGenerator.
                         if phase == .peak && yassoWeek {
