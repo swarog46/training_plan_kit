@@ -391,11 +391,16 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     return workout.duration >= minLongRunMins * 60
                 }
 
-                // Marathon PEAK: ramp the Race-Rehearsal MP segment up across the
-                // peak weeks (60→75→90) so it doesn't park on the largest rung.
+                // PEAK: ramp the Race-Rehearsal race-pace segment up across the peak
+                // weeks (M 60→75→90; HM 15→20→25→30) so it doesn't park on the
+                // largest rung — nor regress. The 10K rehearsal has its OWN PEAK
+                // placement (the alternation above), so it only caps the rung
+                // (force/windowGate off) — forcing it would add rehearsals on the
+                // aerobic weeks and inflate load past the Accessible-tier margin.
                 if phase == .peak {
+                    let force10K = config.distance != 10000
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: true)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: force10K, windowGate: force10K)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's

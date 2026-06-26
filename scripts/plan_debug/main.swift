@@ -865,6 +865,24 @@ if mode == "progress" {
     print("VDOT_START=\(String(format: "%.1f", v0.value))"); print("VDOT_END=\(String(format: "%.1f", vEnd.value))")
 }
 
+// usedladders: print the distinct `key`s of every ladderIntervals workout that
+// any plan in `cases` actually delivers. Used to safely cull never-selected
+// ladder templates from the catalog (cull = catalog templates whose key never
+// appears here). Honors the same filter/WEEKS/ADAPTIVE env as the other modes.
+if mode == "usedladders" {
+    var usedKeys = Set<String>()
+    for c in filtered {
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        for (_, weekWorkouts) in plan {
+            for (_, w) in weekWorkouts where w.subtype == .ladderIntervals {
+                usedKeys.insert(w.key)
+            }
+        }
+    }
+    for k in usedKeys.sorted() { print(k) }
+    FileHandle.standardError.write("# \(usedKeys.count) distinct ladder keys delivered\n".data(using: .utf8)!)
+}
+
 // phases: for each filtered plan, print the phase split + per-week load target
 // and multiplier. Shows how phase durations are derived and how load is balanced.
 if mode == "phases" {

@@ -276,8 +276,23 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         phaseBoost = targetPhaseBoost
     }
     
-    // Check if deloading (end of phase)
-    let isPhaseEndDeload = phaseProgression >= TrainingModel.phaseEndDeloadThreshold
+    // Phase-end deload: ONLY the final week of a build phase, and only when the
+    // phase is long enough to earn one (its last week crosses the threshold).
+    // Was: every week with phaseProgression >= 0.8 — which stacked 2-3 trailing
+    // deloads on phases >= 10 weeks. Gating to the last week alone keeps the
+    // single trailing deload, de-stagnates the base, and stops wasting peak-load
+    // weeks; the peak week is unaffected. The threshold gate keeps short phases
+    // (<=4w, e.g. a 1-week PEAK) deload-free exactly as before.
+    let isBuildPhase = phase == .base || phase == .speed || phase == .peak
+    let isPhaseEndDeload = isBuildPhase
+        && weekInPhase == phaseDuration - 1
+        && phaseProgression >= TrainingModel.phaseEndDeloadThreshold
+
+    // Does this build phase earn a trailing phase-end deload at all? (Its last
+    // week must cross the threshold — true for phases >= 5w, false for <= 4w.)
+    let lastWeekProgression = Double(phaseDuration - 1) / Double(safePhasePhase)
+    let phaseHasEndDeload = isBuildPhase
+        && lastWeekProgression >= TrainingModel.phaseEndDeloadThreshold
 
     // Mid-phase recovery: phase-relative 3:1 build:recovery within any phase
     // >= 4 weeks. Skips race/taper (already deloaded) and the smooth-transition ramp.
@@ -285,13 +300,17 @@ func calculateWeeklyTargetsV3(weekInPlan: Int, weekInPhase: Int, phase: Training
         guard phase != .race, phase != .taper, !isPhaseEndDeload else { return false }
         guard phaseDuration >= 4 else { return false }   // Skip on short phases
         guard weekInPhase >= 2 else { return false }     // Skip during smooth-transition ramp
+        // Suppress the 3:1 when this phase's trailing deload lands on the very
+        // next week — a phase emits at most one trailing deload, never two
+        // back-to-back. (No-op when the phase has no end deload, e.g. <=4w.)
+        if phaseHasEndDeload && weekInPhase == phaseDuration - 2 { return false }
         return weekInPhase % 3 == 2                      // Every 3rd week within phase
     }()
 
     var isDeloading = isPhaseEndDeload || isMidPhaseRecovery
 
     let load: Double
-    if phaseProgression >= TrainingModel.phaseEndDeloadThreshold {
+    if isPhaseEndDeload {
         // Phase-end deload - cap at 25%
         let deloadPercent = min(25.0, (config.phaseFinishDeloadPercent.lowerBound + config.phaseFinishDeloadPercent.upperBound) / 2)
         load = baseLoad * phaseBoost * (1.0 + TrainingModel.phaseEndDeloadLoadProgressionCoeff * phaseProgression) * (1.0 - deloadPercent / 100)
@@ -573,40 +592,86 @@ class PlanGeneratorV3 {
     // Pfitz-style, instead of parking on the largest rung every rehearsal week.
     static let rehearsalMPLadder = [60, 75, 90, 105]
 
-    // Count of prior PEAK weeks that already carry a marathon race rehearsal —
-    // the occurrence index used to step the MP-segment ladder. Reads the weeks
-    // built so far (buildWeek runs sequentially, writing workoutsByWeek per week).
+    // Half / 10K rehearsal race-pace-segment ladders (minutes). Same idea, scaled
+    // to the shorter race: the HMP block builds toward ~30min, the 10KP toward
+    // ~20min, stepping up by occurrence so the segment ramps and never regresses.
+    static let rehearsalHMPLadder = [15, 20, 25, 30]
+    static let rehearsal10KLadder = [10, 15, 20]
+
+    // The race-pace (goal-effort) block in a rehearsal: Z4 for the 10K rehearsal
+    // (its 10KP block is threshold-zone), Z3 for the marathon/half (MP/HMP block).
+    static func rehearsalSegmentZone(_ subtype: WorkoutSubtype) -> Int {
+        subtype == .raceRehearsal10K ? 4 : 3
+    }
+
+    static func rehearsalSegmentLadder(_ subtype: WorkoutSubtype) -> [Int] {
+        switch subtype {
+        case .raceRehearsalHM: return rehearsalHMPLadder
+        case .raceRehearsal10K: return rehearsal10KLadder
+        default:                return rehearsalMPLadder
+        }
+    }
+
+    // Race-pace-segment minutes for a rehearsal of the given subtype (sum of the
+    // segment-zone work-interval durations). Generalizes marathonPaceMinutes.
+    func rehearsalSegmentMinutes(_ w: Workout, subtype: WorkoutSubtype) -> Int {
+        let zone = PlanGeneratorV3.rehearsalSegmentZone(subtype)
+        var secs: Double = 0
+        for iv in w.intervals where iv.type == .work
+            && iv.target == TargetRange.heartRateZone(zone: zone) {
+            secs += iv.duration
+        }
+        return Int(secs / 60)
+    }
+
+    // Every race-rehearsal subtype. eligibleDistances pins at most one of these to
+    // a given plan, so "the plan's rehearsal" is well-defined.
+    static let rehearsalSubtypes: Set<WorkoutSubtype> = [
+        .raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K,
+    ]
+
+    // The rehearsal subtype present in a pool (M/HM/10K), or nil. At most one
+    // exists per plan (distance-pinned), so first match is unambiguous.
+    func rehearsalSubtype(in pool: [Workout]) -> WorkoutSubtype? {
+        pool.first { PlanGeneratorV3.rehearsalSubtypes.contains($0.subtype) }?.subtype
+    }
+
+    // Count of prior PEAK weeks that already carry a race rehearsal (any
+    // M/HM/10K) — the occurrence index used to step the segment ladder. Reads the
+    // weeks built so far (buildWeek runs sequentially, writing workoutsByWeek).
     func priorPeakRehearsalCount(beforeWeek week: Int, baseDur: Int, speedDur: Int) -> Int {
         var count = 0
         for w in (baseDur + speedDur)..<week {
             if let wk = workoutsByWeek[w],
-               wk.contains(where: { $0.workout.subtype == .raceRehearsalM }) {
+               wk.contains(where: { PlanGeneratorV3.rehearsalSubtypes.contains($0.workout.subtype) }) {
                 count += 1
             }
         }
         return count
     }
 
-    // Number of marathon MP-rehearsal weeks placed at the end of PEAK (Pfitz runs
-    // 3-4 MP long runs in the final build block). Bounded so the segment can ramp
-    // across distinct ladder rungs without a long peak stacking many identical 90s.
+    // Number of MP-rehearsal weeks placed at the end of PEAK (Pfitz runs 3-4 MP
+    // long runs in the final build block). Bounded so the segment can ramp across
+    // distinct ladder rungs without a long peak stacking many identical rungs.
     static let peakRehearsalWeeks = 4
 
-    // Ramp the marathon Race-Rehearsal MP segment UP the ladder by occurrence (1st=60,
-    // 2nd=75, 3rd=90, 4th+ hold) so it doesn't park on the largest rung every rehearsal
-    // week (the 4× identical 90min MP defect); occurrence is monotonic ⇒ non-decreasing.
-    // `force`: make the occurrence rung THIS week's long run (else a small early rung
-    // loses on duration) — Int/Adv/Cmp; Beginner stays force=false (one aerobic-tier
-    // rehearsal, more MP crashes its share). `windowGate`: force only in the last
-    // `peakRehearsalWeeks`, dropping earlier emergent rehearsals (Int/Adv) — Competitive
-    // gates its own weeks so passes false. No-op unless `.raceRehearsalM` is in the pool.
+    // Ramp the Race-Rehearsal race-pace segment UP its ladder by occurrence (M:
+    // 60→75→90→105; HM: 15→20→25→30; 10K: 10→15→20; then hold) so it doesn't park
+    // on the largest rung — nor REGRESS — every rehearsal week; occurrence is
+    // monotonic ⇒ the segment is non-decreasing. Auto-detects the plan's rehearsal
+    // subtype (M/HM/10K). `force`: make the occurrence rung THIS week's long run
+    // (else a small early rung loses on duration) — Int/Adv/Cmp; Beginner stays
+    // force=false (one aerobic-tier rehearsal, more race-pace crashes its share).
+    // `windowGate`: force only in the last `peakRehearsalWeeks`, dropping earlier
+    // emergent rehearsals (Int/Adv) — Competitive gates its own weeks so passes
+    // false. No-op unless a rehearsal subtype is in the pool.
     func rampRehearsalMPSegment(_ pool: [Workout], peakWeekIndex: Int, peakDur: Int,
                                 priorRehearsalCount: Int, force: Bool, windowGate: Bool) -> [Workout] {
-        let rehearsals = pool.filter { $0.subtype == .raceRehearsalM }
-        guard !rehearsals.isEmpty else { return pool }
-        let available = Array(Set(rehearsals.map(marathonPaceMinutes))).sorted()
+        guard let sub = rehearsalSubtype(in: pool) else { return pool }
+        let rehearsals = pool.filter { $0.subtype == sub }
+        let available = Array(Set(rehearsals.map { rehearsalSegmentMinutes($0, subtype: sub) })).sorted()
         guard available.count >= 2 else { return pool }
-        let ladder = PlanGeneratorV3.rehearsalMPLadder
+        let ladder = PlanGeneratorV3.rehearsalSegmentLadder(sub)
         let ladderTarget = ladder[min(priorRehearsalCount, ladder.count - 1)]
         // Snap the ladder target to the nearest available catalog rung.
         guard let targetSize = available.min(by: {
@@ -617,19 +682,19 @@ class PlanGeneratorV3 {
             if peakWeekIndex < firstRehearsalWeek {
                 // Before the window: drop rehearsals (plain aerobic LR) so they don't
                 // fire early and inflate the occurrence index.
-                let plain = pool.filter { $0.subtype != .raceRehearsalM }
+                let plain = pool.filter { $0.subtype != sub }
                 return plain.isEmpty ? pool : plain
             }
         }
         if force {
             // FORCE the occurrence-rung rehearsal as this week's long run.
             let forced = pool.filter {
-                $0.subtype == .raceRehearsalM && marathonPaceMinutes($0) == targetSize
+                $0.subtype == sub && rehearsalSegmentMinutes($0, subtype: sub) == targetSize
             }
             return forced.isEmpty ? pool : forced
         }
         // Beginner (force=false): cap an emergent rehearsal's rung, keep plain longs.
-        return pool.filter { $0.subtype != .raceRehearsalM || marathonPaceMinutes($0) == targetSize }
+        return pool.filter { $0.subtype != sub || rehearsalSegmentMinutes($0, subtype: sub) == targetSize }
     }
 
     // Helper: Filter thresholds by progression (prefer shorter intervals early, longer later)
@@ -875,8 +940,12 @@ class PlanGeneratorV3 {
         easySubtypes = [.easy, .strides, .recovery, .mediumLong].filter(isSubtypeEligible)
 
         isMaintenance = config.distance == 0  // no race target
+        // Drop strides sessions whose rep is <20s — too short to be a real
+        // neuromuscular stride (20-30s is the standard). All tiers. The stride
+        // rep is the short Z5 work segment (the easy warm-up is Z2).
+        let stridesFiltered = self.allWorkouts.filter { !Self.hasShortStrideRep($0) }
         // Exclude short progression runs (<40min) from race plans (maintenance-only).
-        workoutPool = isMaintenance ? self.allWorkouts : self.allWorkouts.filter {
+        workoutPool = isMaintenance ? stridesFiltered : stridesFiltered.filter {
             !($0.subtype == .progression && $0.duration < 40 * 60)
         }
         let intervals = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: intervalSubtypes)
@@ -918,6 +987,17 @@ class PlanGeneratorV3 {
         }
 
         return workoutsByWeek
+    }
+
+    /// True if this strides workout has a stride rep shorter than 20s. The rep is
+    /// a short (<60s) Z5 work segment; the easy warm-up portion is Z2, so it's not
+    /// mistaken for a rep. Non-strides workouts are never flagged.
+    static func hasShortStrideRep(_ w: Workout) -> Bool {
+        guard w.subtype == .strides else { return false }
+        return w.intervals.contains { iv in
+            iv.type == .work && iv.target == .heartRateZone(zone: 5)
+                && iv.duration < 20
+        }
     }
 
     /// Abstract seam: each plan type overrides this. The base is never

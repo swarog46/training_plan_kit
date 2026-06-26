@@ -3629,6 +3629,292 @@ for header in sorted(_BEG):
         not too_few,
         f"weeks with <4-rep strides (week, reps): {list(too_few)[:5]}")
 
+# === FIX 1: Progression Run must show a real easy->fast spread ========
+#
+# On 5K/10K (race pace ~= 5K speed) the catalog's `Z3->Z4` "Progression Run"
+# templates collapse: Z3 renders at exact race pace and Z4 (threshold) is
+# floored at race pace, so both blocks land within ~1s/km (e.g. [4:45, 4:46]).
+# A progression run with a sub-15s/km span is degenerate — it isn't a
+# progression at all. After the fix, 5K/10K plans select only the easy->race
+# `Z2->Z3` shape, so every delivered progression spans a real easy->fast range.
+#
+# Drive the REAL app path = projection mode (current->projected VDOT anchors),
+# which is where the owner observed the collapse.
+section("FIX 1: 5K/10K Progression Run spans a real easy->fast range (>=15s/km)")
+
+def _progress_anchors(dist, time, level, target, weeks):
+    """Run `progress` to get the 6 projection anchors a real plan renders with."""
+    env = os.environ.copy()
+    env.update(DIST=str(dist), TIME=str(time), LEVEL=level,
+               TARGET=str(target), WEEKS=str(weeks))
+    out = subprocess.run([PLAN_DEBUG, "progress"], capture_output=True,
+                         text=True, env=env).stdout
+    a = {}
+    for k in ("RACE_PACE", "EASY_PACE", "SPEED_PACE",
+              "RACE_PACE_END", "EASY_PACE_END", "SPEED_PACE_END"):
+        m = re.search(rf"^{k}=(\d+)$", out, re.M)
+        if m:
+            a[k] = m.group(1)
+    return a
+
+def _progression_spans(label, anchors, weeks):
+    """Return [(week_hint, span_secs, pace_str)] for every delivered progression
+    workout in `label`, rendered with the given projection anchors."""
+    env = os.environ.copy()
+    env.update(anchors)
+    env["WEEKS"] = str(weeks)
+    out = subprocess.run([PLAN_DEBUG, "pacedump", label], capture_output=True,
+                         text=True, env=env).stdout
+    w = parse_plan(out, f"{label.split(' (')[0]} ({weeks}w)") or {}
+    spans = []
+    for wk in sorted(w):
+        for sub, _dur, pace in w[wk]:
+            if sub != 'progression':
+                continue
+            secs = sorted(s for s in (get_pace_secs(p.strip())
+                          for p in pace.strip('[]').split(',')) if s is not None)
+            span = (secs[-1] - secs[0]) if len(secs) >= 2 else 0
+            spans.append((wk, span, pace))
+    return spans
+
+PROG_SPAN_MIN = 15  # s/km: a real easy->fast progression, not a 1s collapse
+# (dist, time, level, target_dist, weeks) — 5K and 10K, where race ~= 5K speed.
+PROG_CASES = [
+    ("Beg 5K",  5000, 1500, "beg",  5000,  7),
+    ("Int 5K",  5000, 1500, "int",  5000,  7),
+    ("Adv 5K",  5000, 1500, "adv",  5000,  7),
+    ("Beg 10K", 10000, 3000, "beg", 10000, 9),
+    ("Int 10K", 10000, 3000, "int", 10000, 9),
+    ("Adv 10K", 10000, 3000, "adv", 10000, 9),
+]
+for label, dist, time, lvl, tgt, wk in PROG_CASES:
+    anchors = _progress_anchors(dist, time, lvl, tgt, wk)
+    spans = _progression_spans(label, anchors, wk)
+    bad = [(w, s, p) for (w, s, p) in spans if s < PROG_SPAN_MIN]
+    check(
+        f"{label} Progression Run spans >={PROG_SPAN_MIN}s/km (no race-pace collapse)",
+        not bad,
+        f"degenerate progressions (week,span_s,pace): {bad[:4]} "
+        f"(of {len(spans)} total progression workouts)",
+        full=True)
+
+# === FIX 2: no consecutive build-phase deloads =========================
+#
+# Two deload triggers used to stack: `isPhaseEndDeload` fired for EVERY week
+# with phaseProgression >= 0.8 (so a >=10w phase ate 2-3 trailing deloads), and
+# the 3:1 mid-phase recovery (weekInPhase % 3 == 2) could land right beside it.
+# Result: long-phase plans showed 2-3 [deload] weeks back-to-back in BASE/PEAK
+# (e.g. Adv 42K W14+15, Cmp 21K-max W9-11, Cmp 42K-max W14-16) — wasted peak-
+# load weeks / stagnant base. After the fix a build phase emits at most one
+# trailing deload before the next phase. Taper weeks are excluded (taper IS a
+# progressive deload, correctly consecutive).
+section("FIX 2: no 2+ consecutive build-phase [deload] weeks (taper excluded)")
+
+BUILD_PHASES = {'BASE', 'SPEED', 'PEAK'}
+
+def _consecutive_build_deloads(label_filter):
+    """For each plan matching label_filter, return dict[plan]=[runs] where each
+    run is a list of (week, phase) of >=2 consecutive build-phase deload weeks."""
+    r = subprocess.run([PLAN_DEBUG, "phases", label_filter],
+                       capture_output=True, text=True, env=os.environ.copy())
+    out = {}
+    cur, weeks = None, []
+    def flush():
+        if cur is None:
+            return
+        runs, i = [], 0
+        while i < len(weeks):
+            if weeks[i][2] and weeks[i][1] in BUILD_PHASES:
+                j = i
+                while j < len(weeks) and weeks[j][2] and weeks[j][1] in BUILD_PHASES:
+                    j += 1
+                if j - i >= 2:
+                    runs.append([(w[0], w[1]) for w in weeks[i:j]])
+                i = j
+            else:
+                i += 1
+        if runs:
+            out[cur] = runs
+    for line in r.stdout.splitlines():
+        m = re.match(r'^=== (.+?) \(\d+w\):', line)
+        if m:
+            flush(); cur = m.group(1); weeks = []; continue
+        wm = re.match(r'^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load.*?(\[deload\])?\s*$', line)
+        if wm and cur:
+            weeks.append((int(wm.group(1)), wm.group(2), wm.group(3) is not None))
+    flush()
+    return out
+
+_consec = _consecutive_build_deloads("")
+check(
+    "no plan has 2+ consecutive build-phase deload weeks",
+    not _consec,
+    "plans with back-to-back build deloads: " +
+    "; ".join(f"{k} {v}" for k, v in sorted(_consec.items())))
+
+# Spot-check the worst offenders the audit named are individually clean.
+for plan in ["Adv 42K (rec", "Cmp 21K (max", "Cmp 42K (max", "Beg 42K (rec"]:
+    runs = _consecutive_build_deloads(plan)
+    check(
+        f"{plan} has no consecutive build-phase deloads",
+        not runs,
+        f"runs: {runs}")
+
+# === FIX 3: HM/10K race-rehearsal segment is ramped (non-decreasing) ====
+#
+# `rampRehearsalMPSegment` only filtered `.raceRehearsalM`, so the marathon's
+# MP block ramped 60→75→90 while the HALF/10K rehearsal block was free to
+# regress (e.g. Cmp 21K HMP 30→30→25, Adv 21K 30→25→30→25→20→15). Parameterized
+# on subtype, the HMP/10KP segment now ramps by occurrence and never steps down
+# across the PEAK rehearsal weeks. Segment minutes read from the dump's interval
+# structure line: Z3 block for HM/M, Z4 block for 10K.
+section("FIX 3: HM/10K race-rehearsal race-pace segment is non-decreasing in PEAK")
+
+def _rehearsal_segments(label):
+    """dict[plan_header] = [(week, seg_min, subtype)] for every delivered HM/10K
+    rehearsal, in week order. Segment = the race-pace block (Z3 for HM, Z4 for
+    10K). Keyed per plan-header so a substring `label` that matches several
+    plans (e.g. plain + Acc) doesn't conflate their week sequences."""
+    r = subprocess.run([PLAN_DEBUG, "dump", label], capture_output=True,
+                       text=True, env=os.environ.copy())
+    lines = r.stdout.splitlines()
+    out, cur, wk = {}, None, None
+    for i, line in enumerate(lines):
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur = hm.group(1).strip(); out.setdefault(cur, []); wk = None; continue
+        m = re.match(r'^(W\s*\d+)\s+\[(\w+)', line)
+        if m:
+            wk = int(re.sub(r'\D', '', m.group(1)))
+        rm = re.search(r'\[(raceRehearsalHM|raceRehearsal10K)/', line)
+        if rm and wk is not None and cur is not None:
+            zone = 'Z4' if rm.group(1) == 'raceRehearsal10K' else 'Z3'
+            struct = lines[i + 1] if i + 1 < len(lines) else ''
+            seg = sum(int(x) for x in re.findall(rf'(\d+):00 @ {zone}\b', struct))
+            out[cur].append((wk, seg, rm.group(1)))
+    return out
+
+# Every plan that delivers an HM or 10K rehearsal (21K all tiers, 10K Int/Adv).
+REHEARSAL_PLANS = [
+    "Cmp 21K (long", "Cmp 21K (rec", "Cmp 21K (short", "Cmp 21K (max",
+    "Adv 21K (long", "Adv 21K (rec", "Int 21K (long", "Int 21K (rec",
+    "Beg 21K (long", "Beg 21K (rec",
+    "Adv 10K (long", "Adv 10K (rec", "Int 10K (long", "Int 10K (rec",
+    "Acc Adv 21K (rec", "Acc Int 21K (rec", "Acc Adv 10K (rec", "Acc Int 10K (rec",
+]
+for plan in REHEARSAL_PLANS:
+    for header, seq in sorted(_rehearsal_segments(plan).items()):
+        # Step-down across consecutive rehearsal weeks of the same subtype.
+        regress, by_sub = [], {}
+        for w, seg, sub in sorted(seq):
+            prev = by_sub.get(sub)
+            if prev is not None and seg < prev[1]:
+                regress.append((prev, (w, seg)))
+            by_sub[sub] = (w, seg)
+        check(
+            f"{header} rehearsal race-pace segment never steps down in PEAK",
+            not regress,
+            f"regressions (prev (wk,min) -> (wk,min)): {regress}  full seq: {sorted(seq)}",
+            full=True)
+
+# === FIX 4: Int 21K carries >=1 raceRehearsalHM in PEAK ================
+#
+# Int 21K's maxLongRunMinutes=100 let steadyLong/fastFinish out-score the
+# heavier raceRehearsalHM, so the textbook Int 21K delivered ZERO half
+# rehearsals (Adv/Beg/Cmp 21K all carried them). The PEAK forcing hook (the
+# generalized rampRehearsalMPSegment with force=true for the half) now lands the
+# dedicated HMP rehearsal at least once before taper, for every textbook Int 21K
+# variant. (The Accessible 21K tier caps the long run at 72min — below the
+# shortest 75min HM rehearsal — by deliberate lighter-tier design, so it is out
+# of scope here; that cap predates this fix and is a locked tier characteristic.)
+section("FIX 4: textbook Int 21K (all variants) carries >=1 raceRehearsalHM in PEAK")
+
+def _peak_rehearsal_count(label_filter, subtype):
+    """dict[plan_header] = count of `subtype` workouts delivered in PEAK weeks."""
+    r = subprocess.run([PLAN_DEBUG, "dump", label_filter], capture_output=True,
+                       text=True, env=os.environ.copy())
+    out, cur, in_peak = {}, None, False
+    for line in r.stdout.splitlines():
+        h = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if h:
+            cur = h.group(1).strip(); out.setdefault(cur, 0); in_peak = False; continue
+        wm = re.match(r'^W\s*\d+\s+\[(\w+)', line)
+        if wm:
+            in_peak = (wm.group(1) == 'peak')
+        if cur and in_peak and f'[{subtype}/' in line:
+            out[cur] += 1
+    return out
+
+# Textbook Int 21K only (exclude the Accessible twin via the header check).
+for header, n in sorted(_peak_rehearsal_count("Int 21K", "raceRehearsalHM").items()):
+    if header.startswith("Acc "):
+        continue
+    check(
+        f"{header} carries >=1 raceRehearsalHM in PEAK",
+        n >= 1,
+        f"got {n} raceRehearsalHM in PEAK",
+        full=True)
+
+# === FIX 5: strides reps are >=20s (no 15s neuromuscular reps) ==========
+#
+# 15s is too short for a neuromuscular stride. 18 catalog templates carried 15s
+# work reps and "Easy + Strides (2 x 15s)" shipped ~55x. Filtering the strides
+# pool to >=20s work reps across all tiers drops the 15s sessions; every
+# delivered strides session is now >=20s/rep. Rep duration is the "(N x Ss)" in
+# the strides title.
+section("FIX 5: no plan delivers a strides session with a <20s rep")
+
+def _short_stride_sessions():
+    """dict[plan_header] = [(week, rep_secs)] for delivered strides with <20s reps."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True,
+                       text=True, env=os.environ.copy())
+    out, cur, wk = {}, None, None
+    for line in r.stdout.splitlines():
+        h = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if h:
+            cur = h.group(1).strip(); out.setdefault(cur, []); wk = None; continue
+        wm = re.match(r'^W\s*(\d+)\s+\[', line)
+        if wm:
+            wk = int(wm.group(1))
+        sm = re.search(r'Strides \(\d+ x (\d+)s\).*\[strides/', line)
+        if sm and cur is not None and int(sm.group(1)) < 20:
+            out[cur].append((wk, int(sm.group(1))))
+    return out
+
+_short = {k: v for k, v in _short_stride_sessions().items() if v}
+check(
+    "no plan uses a strides session with a <20s rep",
+    not _short,
+    "plans with <20s strides (header -> [(week, rep_s)]): " +
+    "; ".join(f"{k} {v[:4]}" for k, v in sorted(_short.items())))
+
+# === FIX 6: ladder catalog is culled to the delivered + structural set =
+#
+# `ladderIntervals` held 122 templates but only ~18 distinct bodies ever ship;
+# the rest were WU/CD/recovery-padding duplicates. The catalog was culled to the
+# delivered set + a few "structural" templates the selector's variety penalty
+# needs to keep the delivered output byte-identical (25 prod / 2 sample). This
+# guard keeps the bloat from creeping back: ladder count must stay <= 40 (the
+# old 122 fails). The byte-identical-dump proof lives in the cull verification.
+section("FIX 6: ladderIntervals catalog count is reasonable (no padding bloat)")
+
+import json as _json
+_catalog_path = os.environ.get(
+    "WORKOUTS_PATH",
+    os.path.join(ROOT, "Sources/TrainingPlanKit/Catalog/sample_catalog.json"))
+try:
+    _cat = _json.load(open(_catalog_path))
+    _ws = _cat if isinstance(_cat, list) else _cat.get("workouts", _cat)
+    _lad = sum(1 for w in _ws if w.get("subtype") == "ladderIntervals")
+    LADDER_CAP = 40
+    check(
+        f"ladderIntervals templates <= {LADDER_CAP} (culled, not 122-bloat)",
+        0 < _lad <= LADDER_CAP,
+        f"catalog has {_lad} ladderIntervals templates "
+        f"({os.path.basename(_catalog_path)}); expected <= {LADDER_CAP}")
+except (OSError, ValueError) as e:
+    check("ladderIntervals catalog readable", False, f"{e}")
+
 # --- report ----------------------------------------------------------
 
 print(f"\n{'='*60}")

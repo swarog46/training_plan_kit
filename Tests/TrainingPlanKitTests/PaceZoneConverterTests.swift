@@ -175,4 +175,67 @@ final class PaceZoneConverterTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - FIX 1: Z3→Z4 progression doesn't collapse on 5K/10K
+
+    /// A `Z3→Z4` progression (no easy opener) on 5K/10K used to render both
+    /// blocks at ≈race pace (Z3 = race, Z4 race-floored) → ~1s/km span. The Z3
+    /// block is now demoted to easy so the run spans a real easy→fast range.
+    private func paceProgressionWork(_ zones: [Int]) -> Workout {
+        var ivs: [WorkoutInterval] = [WorkoutInterval(
+            id: 0, type: .warmup, duration: 180, distance: 0,
+            targetType: .noTarget, target: .noRange(noValue: true))]
+        for (i, z) in zones.enumerated() {
+            ivs.append(WorkoutInterval(
+                id: Int64(i + 1), type: .work, duration: 1200, distance: 0,
+                targetType: .heartRate, target: .heartRateZone(zone: z)))
+        }
+        return Workout(
+            id: 1, title: "Progression Run", type: .progressionRun,
+            subtype: .progression, trainingType: .timeBased, targetType: .heartRate,
+            duration: 2000, distance: 0, key: "test", trainingLoad: 5000,
+            intervals: ivs, workRestRatio: 1, workDuration: 1200 * Int64(zones.count),
+            restDuration: 0, workDistance: 0, restDistance: 0)
+    }
+
+    private func workPaces(_ w: Workout) -> [Int] {
+        w.intervals.filter { $0.type == .work }.compactMap {
+            if case .paceTarget(let base, let rel) = $0.target { return Int(Double(base) * rel) }
+            return nil
+        }
+    }
+
+    func testZ3ToZ4ProgressionDoesNotCollapseOn5K10K() {
+        // 10K runner: race ≈ 5K speed (both ~300/289). The collapse case.
+        for dist in [5000, 10000] {
+            let w = PaceZoneConverter.convertHRWorkoutToPace(
+                workout: paceProgressionWork([3, 4]),
+                racePace: 300, conversationalPace: 360, speedPace: 289,
+                progressionFactor: 0.5, config: .intermediate,
+                raceDistanceMeters: dist)
+            let paces = workPaces(w).sorted()
+            XCTAssertEqual(paces.count, 2, "\(dist)m: two work paces expected")
+            let span = (paces.last ?? 0) - (paces.first ?? 0)
+            XCTAssertGreaterThanOrEqual(
+                span, 15, "\(dist)m Z3→Z4 progression must span ≥15s/km (got \(span)s, paces \(paces))")
+        }
+    }
+
+    func testZ2ToZ3ProgressionAndLongRaceProgressionUntouched() {
+        // Z2→Z3 already spreads → must be unchanged (still 2 work paces, wide span).
+        let z2z3 = PaceZoneConverter.convertHRWorkoutToPace(
+            workout: paceProgressionWork([2, 3]),
+            racePace: 300, conversationalPace: 360, speedPace: 289,
+            progressionFactor: 0.5, config: .intermediate, raceDistanceMeters: 10000)
+        XCTAssertGreaterThanOrEqual((workPaces(z2z3).max() ?? 0) - (workPaces(z2z3).min() ?? 0), 15)
+        // Z3→Z4 on a MARATHON: Z4 stays faster than race, so DON'T demote Z3.
+        // The Z3 (MP) block must still render near race pace (≈4:16 for racePace
+        // 256) — NOT slowed to the easy floor (300) the way a demoted block would.
+        let mara = PaceZoneConverter.convertHRWorkoutToPace(
+            workout: paceProgressionWork([3, 4]),
+            racePace: 256, conversationalPace: 300, speedPace: 230,
+            progressionFactor: 0.5, config: .intermediate, raceDistanceMeters: 42195)
+        let mp = workPaces(mara).min() ?? 0  // the faster (Z3 MP / Z4) block
+        XCTAssertLessThan(mp, 270, "Marathon Z3 progression block stays MP-fast (not demoted to easy ~300)")
+    }
 }

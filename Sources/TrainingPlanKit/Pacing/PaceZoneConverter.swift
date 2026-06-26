@@ -426,6 +426,32 @@ public struct PaceZoneConverter {
 
     // MARK: - Workout Conversion
 
+    /// On 5K/10K, a `progression` workout whose Work blocks are Z3 then Z4 (no
+    /// easy Z2 opener) collapses at render: Z3 lands at race pace and Z4 is
+    /// race-floored, so both blocks are ≈1s/km apart. Demote the Z3 Work
+    /// block(s) to Z2 so the run renders as a genuine easy→fast progression.
+    /// No-op for: non-progressions, distances > 10K (Z4 stays faster than race),
+    /// and progressions that already contain a Z2 Work block.
+    private static func degenerateZ3ToZ4ProgressionFix(
+        workout: Workout, raceDistanceMeters: Int?
+    ) -> [WorkoutInterval] {
+        guard workout.subtype == .progression,
+              let dist = raceDistanceMeters, dist <= 10000 else { return workout.intervals }
+        let workZones: [Int] = workout.intervals.compactMap { iv in
+            guard iv.type == .work, case .heartRateZone(let z) = iv.target else { return nil }
+            return z
+        }
+        // Only the pure Z3→Z4 shape (has Z3 and Z4, no Z2 opener) collapses.
+        guard workZones.contains(3), workZones.contains(4), !workZones.contains(2)
+        else { return workout.intervals }
+        return workout.intervals.map { iv in
+            guard iv.type == .work, iv.target == .heartRateZone(zone: 3) else { return iv }
+            return WorkoutInterval(
+                id: iv.id, type: iv.type, duration: iv.duration, distance: iv.distance,
+                targetType: iv.targetType, target: .heartRateZone(zone: 2))
+        }
+    }
+
     /// Converts an HR-based workout to pace-based with progression
     public static func convertHRWorkoutToPace(
         workout: Workout,
@@ -439,7 +465,15 @@ public struct PaceZoneConverter {
         isCompetitive: Bool = false,
         isBeginner: Bool = false
     ) -> Workout {
-        let convertedIntervals = workout.intervals.map { interval in
+        // 5K/10K race pace ≈ 5K speed, so a Z3 (MP) block renders at race pace and
+        // an adjacent Z4 (threshold) block is race-floored too — a `Z3→Z4`
+        // "Progression Run" collapses to a ~1s/km span (both blocks ≈ race). When
+        // such a progression has no easy (Z2) opener, demote its Z3 block(s) to Z2
+        // so it reads as a real easy→fast progression. Longer races are untouched
+        // (their Z4 stays faster than race), as are shapes that already open easy.
+        let sourceIntervals = degenerateZ3ToZ4ProgressionFix(
+            workout: workout, raceDistanceMeters: raceDistanceMeters)
+        let convertedIntervals = sourceIntervals.map { interval in
             convertIntervalToPace(
                 interval: interval,
                 racePace: racePace,
