@@ -503,7 +503,8 @@ if mode == "pacedump" {
             racePaceEnd: racePaceEnd, conversationalPaceEnd: easyPaceEnd, speedPaceEnd: speedPaceEnd,
             raceDistanceMeters: Int(c.config.distance),
             isCompetitive: c.config.runnerLevel == .competitive,
-            isBeginner: c.config.runnerLevel == .beginner
+            isBeginner: c.config.runnerLevel == .beginner,
+            isAdvanced: c.config.runnerLevel == .advanced
         )
 
         // Group by week

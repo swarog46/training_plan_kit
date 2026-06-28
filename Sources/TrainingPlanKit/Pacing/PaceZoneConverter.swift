@@ -463,7 +463,8 @@ public struct PaceZoneConverter {
         vdotAnchored: Bool = false,
         raceDistanceMeters: Int? = nil,
         isCompetitive: Bool = false,
-        isBeginner: Bool = false
+        isBeginner: Bool = false,
+        isAdvanced: Bool = false
     ) -> Workout {
         // 5K/10K race pace ≈ 5K speed, so a Z3 (MP) block renders at race pace and
         // an adjacent Z4 (threshold) block is race-floored too — a `Z3→Z4`
@@ -510,6 +511,7 @@ public struct PaceZoneConverter {
                                     raceDistanceMeters: raceDistanceMeters,
                                     isCompetitive: isCompetitive,
                                     isBeginner: isBeginner,
+                                    isAdvanced: isAdvanced,
                                     progressionFactor: progressionFactor)
     }
 
@@ -532,6 +534,7 @@ public struct PaceZoneConverter {
         raceDistanceMeters: Int?,
         isCompetitive: Bool,
         isBeginner: Bool,
+        isAdvanced: Bool,
         progressionFactor: Double
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
@@ -595,6 +598,14 @@ public struct PaceZoneConverter {
             let capFactor = Double(begMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
+        // Advanced marathon long run: hold to ~190-195min (3:10-3:15). The 30km
+        // km floor re-inflates a slow runner's long run past 210min (pace-relative),
+        // a touch too long — clamp the factor so it never exceeds the ceiling.
+        if isAdvanced, raceDistanceMeters == 42195 {
+            let advMarathonLRCapMins = 195
+            let capFactor = Double(advMarathonLRCapMins * 60) / Double(workout.duration)
+            if capFactor > 0 { factor = min(factor, capFactor) }
+        }
         let newDurationSec = Int((Double(workout.duration) * factor).rounded())
 
         func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
@@ -656,7 +667,8 @@ public struct PaceZoneConverter {
         speedPaceEnd: Int? = nil,
         raceDistanceMeters: Int? = nil,
         isCompetitive: Bool = false,
-        isBeginner: Bool = false
+        isBeginner: Bool = false,
+        isAdvanced: Bool = false
     ) -> [WorkoutEvent] {
         let totalDuration = endDate.timeIntervalSince(startDate)
 
@@ -692,7 +704,8 @@ public struct PaceZoneConverter {
                 vdotAnchored: vdotAnchored,
                 raceDistanceMeters: raceDistanceMeters,
                 isCompetitive: isCompetitive,
-                isBeginner: isBeginner
+                isBeginner: isBeginner,
+                isAdvanced: isAdvanced
             )
 
             // Create updated event

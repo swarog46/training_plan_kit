@@ -322,7 +322,7 @@ section("Marathon long-run peak durations match references")
 ref = [
     ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 170, "Higdon Novice 1: 180, capped ~190"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
-    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 190, "Pfitz 18/70: 210"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 190, "Pfitz 18/70 ~210; capped ~195"),
     # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
     # run at 38km — at 5:00/km easy that's ~190min, which already exceeds Pfitz
     # 18/85's 22mi (~35km/177min). Old 200min floor was pace-blind. Govern by km.
@@ -2755,8 +2755,11 @@ GUARDS = [
     # and lands 4 marathonPace sessions in PEAK (Pfitz "12mi @ MP"
     # signature workout) where previously it had 0. Aerobic share drops
     # to ~77% (more Z3 time from dedicated MP runs) — Pfitz "general
-    # aerobic 75-80%" aligned.
-    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 195, 215,
+    # aerobic 75-80%" aligned. LR band 195-215 → 185-195: the advanced
+    # marathon long run is now held to ~190-195min (3:10-3:15); the old
+    # ~210min peak was a touch long. See the Adv-cap section for the <=195
+    # ceiling guard.
+    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 185, 195,
      {'marathonPace', 'threshold'}),
     # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
     # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),
@@ -3729,6 +3732,32 @@ for header, rp, ep in BEG_42K_PLANS:
         f"delivered peak long run <= {LR_CAP}min",
         0 < peak_lr <= LR_CAP,
         f"observed peak LR {peak_lr}min (cap {LR_CAP})")
+
+# --- Adv 42K (every variant incl Acc) peak long run <= 195min ------------------
+# Mirror of the beginner cap, one tier up. The HR-side dump tops out at ~150min,
+# but the pace converter then re-inflated the marathon long run to the 30km floor
+# (~210-225min at a slow runner's pace) — a touch too long. The fix adds a 195min
+# ceiling to the converter's advanced-marathon clamp, so the DELIVERED peak holds
+# to ~190-195min (3:10-3:15) for EVERY advanced-marathon variant, incl Acc. Slow-
+# runner inputs are the worst case (the km floor inflated the run the most there).
+section("Adv 42K (incl Acc): marathon long run capped at ~190-195min")
+
+ADV_42K_PLANS = [
+    # (header, race_pace, easy_pace) — slow inputs surface the worst-case inflation.
+    ("Adv 42K (rec, 18w)",      330, 450),
+    ("Adv 42K (long, 22w)",     330, 450),
+    ("Acc Adv 42K (rec, 18w)",  330, 450),
+]
+ADV_LR_CAP = 195
+for header, rp, ep in ADV_42K_PLANS:
+    w = parse_plan(run_pacedump_with(header, rp, ep, False), header)
+    durs = get_long_durations(w) if w else []
+    peak_lr = max(d for _, d in durs) if durs else 0
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"delivered peak long run <= {ADV_LR_CAP}min",
+        0 < peak_lr <= ADV_LR_CAP,
+        f"observed peak LR {peak_lr}min (cap {ADV_LR_CAP})")
 
 # --- Change B: deliberate ~weekly strides through BASE & SPEED ----------------
 section("Beg 10K/21K/42K (incl Acc): strides in the majority of BASE+SPEED weeks")
