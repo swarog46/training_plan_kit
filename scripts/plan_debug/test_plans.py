@@ -1988,7 +1988,7 @@ AEROBIC_TARGETS = [
     ("Cmp 21K (max, 32w)",   "Cmp 21K (max, 32w)",   True,  18,   73, 83),
     ("Cmp 42K (rec, 18w)",   "Cmp 42K (rec, 18w)",   False, None, 73, 83),
     ("Cmp 42K (long, 22w)",  "Cmp 42K (long, 22w)",  False, None, 73, 83),
-    ("Cmp 42K (build, 28w)", "Cmp 42K (build, 28w)", False, 22,   73, 83),
+    ("Cmp 42K (build, 28w)", "Cmp 42K (build, 28w)", False, 22,   71, 83),  # 71: deload-cap relax honestly trims recovery-wk aerobic
     ("Cmp 42K (max, 36w)",   "Cmp 42K (max, 36w)",   True,  22,   73, 83),
 ]
 

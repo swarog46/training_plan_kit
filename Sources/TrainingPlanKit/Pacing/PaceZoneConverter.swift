@@ -604,10 +604,12 @@ public struct PaceZoneConverter {
         // (short) generated length so the build shows; only the late-peak long runs
         // are brought up to race-relevant distance for slow runners. Taper: floor 0.
         let floorRamp = min(1.0, progressionFactor / 0.60)
-        // Recovery (deload) weeks keep their ~20% long-run cut: relax the floor so it
-        // can't re-inflate the dip back to the build distance (P0 regression guard).
+        // Recovery (deload) weeks keep their ~20% long-run cut. The cap relaxes ×0.80
+        // (recoveryRelax, used below for the cap + minute ceilings), but the FLOOR turns
+        // OFF entirely on recovery weeks: a relaxed-but-nonzero floor still lifts a short
+        // recovery run back up, eating the dip (Int/Adv 42K rendered only ~10%, W11 rose).
         let recoveryRelax = isRecoveryWeek ? 0.80 : 1.0
-        let effectiveFloor = progressionFactor < 0.85 ? floorKm * floorRamp * recoveryRelax : 0
+        let effectiveFloor = (progressionFactor < 0.85 && !isRecoveryWeek) ? floorKm * floorRamp : 0
         // Size off the CONVERTED workout's rendered pace, not raw easy pace: a
         // long run renders ~15s/km faster (and MP/fast-finish segments faster
         // still), so duration/easyPace under-measures and the run overshoots
@@ -622,7 +624,12 @@ public struct PaceZoneConverter {
             return paceSec > 0 ? acc + iv.duration / paceSec : acc
         }
         guard km > 0 else { return workout }
-        let targetKm = min(max(km, effectiveFloor), capKm)
+        // Recovery weeks relax the CAP too, not just the floor: for fast / competitive
+        // runners the HR-side long run exceeds the cap, so a flat cap pins the LR at
+        // race distance even on deload weeks (masking the cut — Cmp 42K showed a flat
+        // 8-week peak). ~20% relax lets the deload dip show. Completes the P0 floor relax.
+        let effectiveCap = capKm * recoveryRelax
+        let targetKm = min(max(km, effectiveFloor), effectiveCap)
         guard abs(targetKm - km) >= 0.1 else { return workout }
 
         // Scaling every interval's duration by this factor scales rendered km by
@@ -636,7 +643,7 @@ public struct PaceZoneConverter {
         // pace-relative, so the slowest novice could still cross 190min at the
         // 28km cap. Clamp the factor so the rendered run never exceeds the cap.
         if isBeginner, raceDistanceMeters == 42195 {
-            let begMarathonLRCapMins = 190
+            let begMarathonLRCapMins = Int(190.0 * recoveryRelax)
             let capFactor = Double(begMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
@@ -644,7 +651,7 @@ public struct PaceZoneConverter {
         // km floor re-inflates a slow runner's long run past 210min (pace-relative),
         // a touch too long — clamp the factor so it never exceeds the ceiling.
         if isAdvanced, raceDistanceMeters == 42195 {
-            let advMarathonLRCapMins = 195
+            let advMarathonLRCapMins = Int(195.0 * recoveryRelax)
             let capFactor = Double(advMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
@@ -728,7 +735,7 @@ public struct PaceZoneConverter {
         var recoveryDates = Set<Date>()
         var prevBuildLR: Int64? = nil
         for ev in events.filter({ longRunSubtypes.contains($0.workout.subtype) }).sorted(by: { $0.date < $1.date }) {
-            if let prev = prevBuildLR, Double(ev.workout.duration) < 0.88 * Double(prev) {
+            if let prev = prevBuildLR, Double(ev.workout.duration) < 0.92 * Double(prev) {  // 8%+ dip = deload (catches shallow ~9% cuts)
                 recoveryDates.insert(ev.date)
             } else {
                 prevBuildLR = ev.workout.duration

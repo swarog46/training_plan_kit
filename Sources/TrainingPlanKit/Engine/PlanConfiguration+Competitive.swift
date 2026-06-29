@@ -84,8 +84,10 @@ extension PlanConfiguration {
             // selector's ~15% volume undershoot.
             initialWeeklyDuration: 560,
             initialLongRunDuration: 110...125,
-            maxLongRunMinutes: 220,
-            longRunProgression: (base: 100, speed: 160, peak: 210, taper: 110),
+            // LR config matches the render: the km-clamp caps the marathon LR at
+            // ~35km/~160min, so HR-side peak >165 just leaks if the render path changes.
+            maxLongRunMinutes: 170,
+            longRunProgression: (base: 100, speed: 160, peak: 165, taper: 110),
             baseLoad: 20000, loadScaleBaselineWeeks: 18
         )
     )
