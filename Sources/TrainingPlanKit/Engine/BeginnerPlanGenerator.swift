@@ -165,7 +165,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                         // the shakeout never lands on a 2-rep stride.
                         let shakeoutPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                             .filter { $0.duration >= 20 * 60 && $0.duration <= 35 * 60 }
-                            .filter { $0.subtype != .strides || stridesRepCount($0) >= 4 }
+                            .filter { $0.subtype != .strides || stridesRepCount($0) >= 3 }
                         if let shakeout = selectWorkoutByTargetV3(workouts: shakeoutPool, targetLoad: targetLoad * 0.2, targetDuration: 25, usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("shakeout_race", shakeout))
                         }
@@ -175,7 +175,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                         // <4-rep strides so a 2-rep stride never slips into race week.
                         let raceEasyPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                             .filter { $0.duration <= 50 * 60 }
-                            .filter { $0.subtype != .strides || stridesRepCount($0) >= 4 }
+                            .filter { $0.subtype != .strides || stridesRepCount($0) >= 3 }
                         let raceEasyTarget = min(Int(targetDuration * 0.30), 40 * 60)
                         if let easy = selectWorkoutByTargetV3(workouts: raceEasyPool, targetLoad: targetLoad * 0.5, targetDuration: raceEasyTarget, usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("easy_race", easy))
@@ -558,7 +558,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             // <4-rep stride incidentally, so we both force from and normalize to
             // this pool below.
             let begStridesPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.strides])
-                .filter { stridesRepCount($0) >= 4 }
+                .filter { stridesRepCount($0) >= 3 }
 
             // Deliberate weekly strides through BASE & SPEED: strides are the
             // beginner's primary safe speed/economy stimulus, so program one per

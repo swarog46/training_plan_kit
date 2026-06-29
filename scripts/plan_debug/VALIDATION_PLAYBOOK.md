@@ -270,12 +270,13 @@ Per-week paces drift down across the plan (5:35→6:00 early→late) from VDOT e
 not per-workout. **Invariant:** in any one week, all pure-aerobic Z2 long/easy/MLR
 runs share one rendered pace; only Z3+ tails diverge.
 
-### C6 — Strides ≥20s; ladder catalog is ~80% padding bloat (catalog hygiene)
-- **Strides:** the catalog has 15s/20s/25s stride segments; **18 templates use
-  15s**, and `2 x 15s` strides DO ship (55 occurrences of "Easy + Strides (2 x 15s)"
-  across plans; 31 in Int, 22 in Adv). 15s is too short for a neuromuscular stride
-  — **floor stride work-segments at 20s** (prefer 20-30s).
-  Check: `WORKOUTS_PATH=$PROD ./plan_debug dump "" | grep -c "0:15 @ Z5"`.
+### C6 — Strides: ≥15s rep, ≥3 reps (UPDATED 2026-06-28); ladder catalog is ~80% bloat
+- **Strides policy (current):** rep duration **15/20/25s — 15s is allowed** (Daniels'
+  short end, a legitimate light stride). Rep count **3–6 — 3 is allowed** as a lighter
+  option; only **2-rep strides** are still under-dosed. So do NOT flag 15s or 3-rep
+  strides — they're intentional variety. The engine floors stride reps at ≥15s
+  (`hasShortStrideRep < 15`) and beginners at ≥3 reps.
+  Check: `WORKOUTS_PATH=$PROD ./plan_debug dump "" | grep -c "0:1[0-4] @ Z5"` (only <15s is a fail).
 - **Ladder bloat:** `ladderIntervals` = **122 templates but only ~40 distinct
   work-duration sequences** (the rest differ only by WU/CD/recovery padding the
   engine treats as interchangeable). Across ALL delivered plans only **~19 distinct
@@ -283,3 +284,52 @@ runs share one rendered pace; only Z3+ tails diverge.
   0 in prod (pyramids live under `ladderIntervals`). Only a handful are meaningful;
   the catalog could shed most of the 122 without changing any delivered plan.
   Check: `WORKOUTS_PATH=$PROD ./plan_debug dump "" | grep -A1 ladderIntervals | grep "↳" | sed -E 's/.*↳ //;s/WU [0-9]+min · //;s/ · CD.*//' | sort | uniq -c`.
+
+---
+
+## Round 4 — rendered long-run build, 5-min tick, ordering (2026-06-28)
+
+These caught a **systemic** bug: 35/72 plan variants had long runs that didn't build.
+The lesson threaded through all of them — **validate the RENDERED plan on the SHIPPING
+tier, not the HR-side dump of the textbook tier.**
+
+### R4-1 — Long runs must BUILD in RENDERED minutes (the Acc-Beg-21K class)
+The km-clamp **floor**, applied flat across build weeks, pinned the long run at the
+floor distance (30km M / 16km HM) from week 1 — erasing the HR-side build; easy-easing
+then made the rendered **minutes** decline (`128→121`). Fixed by ramping the floor with
+plan progression (0→full by the PEAK phase).
+- **Validate on `pacedump` (rendered), not `dump` (HR-side).** The HR-side was flat-OK;
+  the inversion only exists after rendering.
+- **Invariant:** every 21K/42K long run peaks LATE (final ~third of build), never at
+  week 1. Fitter runners' minute-curves compress (km build shows less in minutes) —
+  flat-but-late-peak is OK; **early-peak-then-decline is the bug.**
+- Check (CI gate, exits 1 on regression, all tier×distance×level): `bash scripts/plan_debug/audit_long_runs.sh`
+
+### R4-2 — Aerobic-run durations on a 5-min tick
+`easy/recovery/long/steadyLong/mediumLong/progressiveLong/progression` render at
+multiples of 5min (no 1-min jitter: `128/126/125` was wrong; `120/115/110` is right).
+Quality/interval/race-rehearsal durations stay dose-exact (NOT ticked).
+
+### R4-3 — Progression paces in EXECUTION order (slow→fast)
+Progressions are stored slow→fast (Z2→Z3). The rendered pace array reads `[5:00, 4:45]`
+(slow→fast, as run), NOT sorted fast-first `[4:45, 5:00]`. (= Gemini's "progressive long
+run pace inversion".)
+
+### R4-4 — Validate the SHIPPING tier, not textbook
+`PlanConfiguration.shipAccessibleTier = true` → the app serves the **accessible** configs
+(`accessible{Beg,Int,Adv}*`), NOT the textbook ones. Audits + eyeballs MUST target
+accessible (+ competitive / VO2 / maintenance). The Acc Beg 21K bug hid because reviews
+only looked at the textbook matrices users never see.
+
+### R4-5 — Beginner long-run ceilings
+Beg **half** peak ≤ ~110min (~13km — not a 2h novice half; half floor is beginner-aware
+13km vs 16km). Beg **marathon** peak ≤ ~190min.
+
+### Gemini triage — what to validate vs ignore
+- **VALIDATE:** long-run build (R4-1); progression order (R4-3); beginner ceilings (R4-5);
+  per-tier peak heights sane (Int marathon ~30km, not absurdly longer than Adv).
+- **INTENDED, not a flag:** progression runs finishing faster than MP (they finish at
+  threshold/HM by design); aerobic easy/long/MLR sharing one pace (differ by duration);
+  long-run-every-other-week (deload sawtooth).
+- **NON-ISSUES:** "Slow" label = different VDOT per tier (app keys off VDOT, not the label);
+  1-min total-volume wobble between adjacent weeks; Yasso/time-based WU-CD split.

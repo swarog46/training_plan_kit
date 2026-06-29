@@ -535,17 +535,21 @@ if mode == "pacedump" {
                         }
                     }
                 }
-                // Also collect distinct paces across work intervals
-                var paceSet = Set<Int>()
+                // Collect distinct work-interval paces in EXECUTION order (first
+                // seen → last), not sorted: a progression is stored slow→fast, so
+                // sorting by sec/km renders it fast-first (reads like a reverse
+                // progression). Preserve order so it reads as actually run.
+                var orderedPaces: [Int] = []
                 for iv in ev.workout.intervals where iv.type == .work {
                     if case .paceTarget(let base, let rel) = iv.target {
-                        paceSet.insert(Int(Double(base) * rel))
+                        let p = Int(Double(base) * rel)
+                        if !orderedPaces.contains(p) { orderedPaces.append(p) }
                     }
                 }
                 let paceStr: String
-                if paceSet.count > 1 {
-                    let sortedPaces = paceSet.sorted().map { fmtPace($0) }.joined(separator: ", ")
-                    paceStr = "[\(sortedPaces)]"
+                if orderedPaces.count > 1 {
+                    let ordered = orderedPaces.map { fmtPace($0) }.joined(separator: ", ")
+                    paceStr = "[\(ordered)]"
                 } else if let p = bestPace {
                     paceStr = fmtPace(p)
                 } else {

@@ -147,11 +147,11 @@ final class TrainingPlanKitTests: XCTestCase {
                              PlanGeneratorV3.rehearsal10KLadder.max()!)
     }
 
-    // MARK: - FIX 5: strides reps must be >=20s
+    // MARK: - FIX 5: strides reps must be >=15s
 
-    /// 15s strides reps are too short; the pool filter drops any strides whose
-    /// Z5 rep is <20s (the easy Z2 warm-up never counts). A whole-plan check
-    /// (no delivered <20s strides) lives in the python suite.
+    /// <15s strides reps are too short; the pool filter drops any strides whose
+    /// Z5 rep is <15s (the easy Z2 warm-up never counts). 15s is Daniels' short
+    /// end and is allowed. A whole-plan check lives in the python suite.
     func testHasShortStrideRepFlagsSub20sRepsOnly() {
         func strides(repSecs: Double) -> Workout {
             let ivs = [
@@ -169,10 +169,10 @@ final class TrainingPlanKitTests: XCTestCase {
                 workRestRatio: 1, workDuration: 1530, restDuration: 0,
                 workDistance: 0, restDistance: 0)
         }
-        XCTAssertTrue(PlanGeneratorV3.hasShortStrideRep(strides(repSecs: 15)),
-                      "15s rep must be flagged short")
-        XCTAssertFalse(PlanGeneratorV3.hasShortStrideRep(strides(repSecs: 20)),
-                       "20s rep is OK (>=20s standard)")
+        XCTAssertTrue(PlanGeneratorV3.hasShortStrideRep(strides(repSecs: 10)),
+                      "10s rep must be flagged short (<15s)")
+        XCTAssertFalse(PlanGeneratorV3.hasShortStrideRep(strides(repSecs: 15)),
+                       "15s rep is OK (Daniels' short end)")
         XCTAssertFalse(PlanGeneratorV3.hasShortStrideRep(strides(repSecs: 25)),
                        "25s rep is OK")
     }

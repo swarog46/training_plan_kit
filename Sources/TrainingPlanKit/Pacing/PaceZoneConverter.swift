@@ -464,7 +464,8 @@ public struct PaceZoneConverter {
         raceDistanceMeters: Int? = nil,
         isCompetitive: Bool = false,
         isBeginner: Bool = false,
-        isAdvanced: Bool = false
+        isAdvanced: Bool = false,
+        isRecoveryWeek: Bool = false
     ) -> Workout {
         // 5K/10K race pace ≈ 5K speed, so a Z3 (MP) block renders at race pace and
         // an adjacent Z4 (threshold) block is race-floored too — a `Z3→Z4`
@@ -506,13 +507,43 @@ public struct PaceZoneConverter {
             restDistance: workout.restDistance
         )
 
-        return clampLongRunDistance(converted,
+        let clamped = clampLongRunDistance(converted,
                                     conversationalPace: conversationalPace,
                                     raceDistanceMeters: raceDistanceMeters,
                                     isCompetitive: isCompetitive,
                                     isBeginner: isBeginner,
                                     isAdvanced: isAdvanced,
+                                    isRecoveryWeek: isRecoveryWeek,
                                     progressionFactor: progressionFactor)
+        return quantizeAerobicDuration(clamped)
+    }
+
+    /// Aerobic continuous runs read as round numbers by nature — quantize their
+    /// rendered minutes to a 5-min tick so a plan reads 120/115/110, not the 1-min
+    /// jitter that pace-easing + clamp scaling produce. Excludes structured work
+    /// (intervals, threshold, race rehearsals) whose minutes are dose-driven.
+    private static let fiveMinTickSubtypes: Set<WorkoutSubtype> = [
+        .easy, .recovery, .long, .steadyLong, .mediumLong, .progressiveLong, .progression
+    ]
+
+    private static func quantizeAerobicDuration(_ w: Workout) -> Workout {
+        guard fiveMinTickSubtypes.contains(w.subtype), w.duration > 0 else { return w }
+        let tick = 300.0  // 5 min
+        let target = Int64((Double(w.duration) / tick).rounded() * tick)
+        guard target > 0, target != w.duration else { return w }
+        let factor = Double(target) / Double(w.duration)
+        func s(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
+        let intervals = w.intervals.map { iv in
+            WorkoutInterval(id: iv.id, type: iv.type, duration: iv.duration * factor,
+                            distance: iv.distance, targetType: iv.targetType, target: iv.target)
+        }
+        return Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,
+                       trainingType: w.trainingType, targetType: w.targetType,
+                       duration: target, distance: w.distance, key: w.key,
+                       trainingLoad: s(w.trainingLoad), intervals: intervals,
+                       workRestRatio: w.workRestRatio, workDuration: s(w.workDuration),
+                       restDuration: s(w.restDuration), workDistance: w.workDistance,
+                       restDistance: w.restDistance)
     }
 
     /// Long-run subtypes whose duration is generated pace-blind (in minutes)
@@ -535,6 +566,7 @@ public struct PaceZoneConverter {
         isCompetitive: Bool,
         isBeginner: Bool,
         isAdvanced: Bool,
+        isRecoveryWeek: Bool,
         progressionFactor: Double
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
@@ -555,17 +587,27 @@ public struct PaceZoneConverter {
         // already ramps the long run 90→180min, so a km floor would inflate the
         // early base runs up to the cap and flatten the build. Cap (+ the 190min
         // ceiling below) just holds the top so a slow novice isn't run 3.5h+.
-        case 42195: (floorKm, capKm) = isCompetitive ? (32, 38)
+        case 42195: (floorKm, capKm) = isCompetitive ? (32, 35)
                                      : isBeginner ? (0, 28) : (30, 34)
-        case 21097: (floorKm, capKm) = (16, 21)
+        // Beginner half peaks shorter (~13km / ~100min at slow pace) — a 16km
+        // floor runs a slow novice ~2h, too long for a first half.
+        case 21097: (floorKm, capKm) = isBeginner ? (13, 18) : (16, 21)
         case 10000: (floorKm, capKm) = (0, 16)
         case 5000:  (floorKm, capKm) = (0, 12)
         default:    (floorKm, capKm) = (0, 34)
         }
 
-        // Floor applies only in build phases — extending a taper/race-week long
-        // run up to the floor would flatten the taper (it's meant to be short).
-        let effectiveFloor = progressionFactor < 0.85 ? floorKm : 0
+        // Floor RAMPS with the plan, it is NOT flat across the build. A flat floor
+        // pins every build week at the floor distance from week 1, erasing the
+        // HR-side long-run build (renders a flat/declining minute curve once easy-
+        // easing kicks in). Ramp it 0→full by ~70% in: early base runs keep their
+        // (short) generated length so the build shows; only the late-peak long runs
+        // are brought up to race-relevant distance for slow runners. Taper: floor 0.
+        let floorRamp = min(1.0, progressionFactor / 0.60)
+        // Recovery (deload) weeks keep their ~20% long-run cut: relax the floor so it
+        // can't re-inflate the dip back to the build distance (P0 regression guard).
+        let recoveryRelax = isRecoveryWeek ? 0.80 : 1.0
+        let effectiveFloor = progressionFactor < 0.85 ? floorKm * floorRamp * recoveryRelax : 0
         // Size off the CONVERTED workout's rendered pace, not raw easy pace: a
         // long run renders ~15s/km faster (and MP/fast-finish segments faster
         // still), so duration/easyPace under-measures and the run overshoots
@@ -680,6 +722,19 @@ public struct PaceZoneConverter {
         // legacy fixed-anchor behavior.
         let vdotAnchored = racePaceEnd != nil
 
+        // Recovery-week long runs (deload cuts): a long run whose HR-side duration
+        // dips clearly below the prior BUILD long run. The km-floor must not re-inflate
+        // them (that erases the recovery dip), so flag them to relax the floor.
+        var recoveryDates = Set<Date>()
+        var prevBuildLR: Int64? = nil
+        for ev in events.filter({ longRunSubtypes.contains($0.workout.subtype) }).sorted(by: { $0.date < $1.date }) {
+            if let prev = prevBuildLR, Double(ev.workout.duration) < 0.88 * Double(prev) {
+                recoveryDates.insert(ev.date)
+            } else {
+                prevBuildLR = ev.workout.duration
+            }
+        }
+
         return events.map { event in
             // Calculate progression factor: 0.0 at plan start → 1.0 at plan end
             let elapsed = event.date.timeIntervalSince(startDate)
@@ -705,7 +760,8 @@ public struct PaceZoneConverter {
                 raceDistanceMeters: raceDistanceMeters,
                 isCompetitive: isCompetitive,
                 isBeginner: isBeginner,
-                isAdvanced: isAdvanced
+                isAdvanced: isAdvanced,
+                isRecoveryWeek: recoveryDates.contains(event.date)
             )
 
             // Create updated event

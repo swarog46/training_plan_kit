@@ -322,11 +322,11 @@ section("Marathon long-run peak durations match references")
 ref = [
     ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 170, "Higdon Novice 1: 180, capped ~190"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
-    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 190, "Pfitz 18/70 ~210; capped ~195"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 175, "floor-ramp built peak ~180; capped ~195"),
     # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
     # run at 38km — at 5:00/km easy that's ~190min, which already exceeds Pfitz
     # 18/85's 22mi (~35km/177min). Old 200min floor was pace-blind. Govern by km.
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 185, "Pfitz 18/85 ~35km; km-capped 38km"),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 160, "Pfitz 18/85 longest ~22mi/35km; km-capped 35km"),
 ]
 for header, fil, rp, ep, expected_min, ref_str in ref:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)
@@ -919,8 +919,8 @@ if w:
     durs = get_long_durations(w)
     peak_lr = max(d for _, d in durs) if durs else 0
     check(
-        "Cmp 42K 28w peak LR caps at ~220m (no runaway scaling)",
-        180 <= peak_lr <= 230,
+        "Cmp 42K 28w peak LR caps at ~35km/~165m (no runaway; Pfitz longest ~22mi)",
+        140 <= peak_lr <= 185,
         f"peak_lr={peak_lr}m"
     )
     week_vols = {wk: sum(d for _,d,_ in w[wk]) for wk in w}
@@ -2755,11 +2755,10 @@ GUARDS = [
     # and lands 4 marathonPace sessions in PEAK (Pfitz "12mi @ MP"
     # signature workout) where previously it had 0. Aerobic share drops
     # to ~77% (more Z3 time from dedicated MP runs) — Pfitz "general
-    # aerobic 75-80%" aligned. LR band 195-215 → 185-195: the advanced
-    # marathon long run is now held to ~190-195min (3:10-3:15); the old
-    # ~210min peak was a touch long. See the Adv-cap section for the <=195
-    # ceiling guard.
-    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 185, 195,
+    # aerobic 75-80%" aligned. LR band now 175-195: the floor-ramp (2026-06-28)
+    # builds the long run progressively, so the peak is a *built* ~180min, not a
+    # flat-floored cap. See the Adv-cap section for the <=195 ceiling guard.
+    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 175, 195,
      {'marathonPace', 'threshold'}),
     # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
     # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),
@@ -3779,17 +3778,17 @@ for header in BEG_STRIDES_HEADERS:
         f"strides in {len(with_strides)}/{len(bs_weeks)} base+speed weeks "
         f"({frac*100:.0f}%, need >={int(STRIDES_COVERAGE_MIN*100)}%)")
 
-# --- Change C: beginner strides are 4-6 reps, never <4 ------------------------
-section("Beginner strides use 4-6 reps (never 2) — standard 4-8")
+# --- Change C: beginner strides are 3-6 reps, never <3 ------------------------
+section("Beginner strides use 3-6 reps (never 2) — standard 4-8, 3 as light option")
 
 for header in sorted(_BEG):
     weeks = _BEG[header]
     too_few = sorted({
         (w, reps) for w in weeks for (reps, _dur) in weeks[w]['strides']
-        if reps < 4})
+        if reps < 3})
     check(
         f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
-        f"no strides session with <4 reps",
+        f"no strides session with <3 reps",
         not too_few,
         f"weeks with <4-rep strides (week, reps): {list(too_few)[:5]}")
 
@@ -4026,14 +4025,12 @@ for header, n in sorted(_peak_rehearsal_count("Int 21K", "raceRehearsalHM").item
         f"got {n} raceRehearsalHM in PEAK",
         full=True)
 
-# === FIX 5: strides reps are >=20s (no 15s neuromuscular reps) ==========
+# === FIX 5: strides reps are >=15s (Daniels' short end) ==========
 #
-# 15s is too short for a neuromuscular stride. 18 catalog templates carried 15s
-# work reps and "Easy + Strides (2 x 15s)" shipped ~55x. Filtering the strides
-# pool to >=20s work reps across all tiers drops the 15s sessions; every
-# delivered strides session is now >=20s/rep. Rep duration is the "(N x Ss)" in
-# the strides title.
-section("FIX 5: no plan delivers a strides session with a <20s rep")
+# 15s is the short end of Daniels' 15-20s stride range — a legitimate light
+# stride. The engine floors stride reps at >=15s (only <15s is dropped). Rep
+# duration is the "(N x Ss)" in the strides title.
+section("FIX 5: no plan delivers a strides session with a <15s rep")
 
 def _short_stride_sessions():
     """dict[plan_header] = [(week, rep_secs)] for delivered strides with <20s reps."""
@@ -4048,13 +4045,13 @@ def _short_stride_sessions():
         if wm:
             wk = int(wm.group(1))
         sm = re.search(r'Strides \(\d+ x (\d+)s\).*\[strides/', line)
-        if sm and cur is not None and int(sm.group(1)) < 20:
+        if sm and cur is not None and int(sm.group(1)) < 15:
             out[cur].append((wk, int(sm.group(1))))
     return out
 
 _short = {k: v for k, v in _short_stride_sessions().items() if v}
 check(
-    "no plan uses a strides session with a <20s rep",
+    "no plan uses a strides session with a <15s rep",
     not _short,
     "plans with <20s strides (header -> [(week, rep_s)]): " +
     "; ".join(f"{k} {v[:4]}" for k, v in sorted(_short.items())))

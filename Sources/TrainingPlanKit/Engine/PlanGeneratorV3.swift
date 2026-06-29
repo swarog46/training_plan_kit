@@ -999,7 +999,13 @@ class PlanGeneratorV3 {
         // Drop strides sessions whose rep is <20s — too short to be a real
         // neuromuscular stride (20-30s is the standard). All tiers. The stride
         // rep is the short Z5 work segment (the easy warm-up is Z2).
-        let stridesFiltered = self.allWorkouts.filter { !Self.hasShortStrideRep($0) }
+        let stridesFiltered = self.allWorkouts.filter { w in
+            if Self.hasShortStrideRep(w) { return false }            // <15s rep
+            // 2-rep strides are negligible stimulus — floor race-plan strides at 3
+            // reps (3-6 allowed). Maintenance keeps the fuller variety.
+            if !isMaintenance, w.subtype == .strides, stridesRepCount(w) < 3 { return false }
+            return true
+        }
         // Exclude short progression runs (<40min) from race plans (maintenance-only).
         workoutPool = isMaintenance ? stridesFiltered : stridesFiltered.filter {
             !($0.subtype == .progression && $0.duration < 40 * 60)
@@ -1045,14 +1051,14 @@ class PlanGeneratorV3 {
         return workoutsByWeek
     }
 
-    /// True if this strides workout has a stride rep shorter than 20s. The rep is
+    /// True if this strides workout has a stride rep shorter than 15s. The rep is
     /// a short (<60s) Z5 work segment; the easy warm-up portion is Z2, so it's not
     /// mistaken for a rep. Non-strides workouts are never flagged.
     static func hasShortStrideRep(_ w: Workout) -> Bool {
         guard w.subtype == .strides else { return false }
         return w.intervals.contains { iv in
             iv.type == .work && iv.target == .heartRateZone(zone: 5)
-                && iv.duration < 20
+                && iv.duration < 15
         }
     }
 
