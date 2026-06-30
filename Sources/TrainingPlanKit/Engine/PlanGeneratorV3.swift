@@ -474,6 +474,9 @@ class PlanGeneratorV3 {
     // generate() call), so empty/nil/0 initial values suffice; generate()
     // also resets them up front to be safe.
     var workoutsByWeek: [Int: [(type: String, workout: Workout)]] = [:]
+    /// BUILD-phase deload week indices (taper excluded), in the RETURNED plan's indexing.
+    /// Surfaced so the render can clamp deload long runs to ~0.80x the prior delivered run.
+    var deloadWeeks: Set<Int> = []
     var usedIds: [String: Int] = [:]
     var prevInterval: Workout? = nil
     var prevThreshold: Workout? = nil
@@ -1037,6 +1040,22 @@ class PlanGeneratorV3 {
             buildWeek(week: week)
         }
 
+        // Capture the REAL build-phase deload weeks (taper excluded) so the render can
+        // clamp their long runs. Mirrors each buildWeek's own determinePhaseV3 +
+        // calculateWeeklyTargetsV3; re-indexed to the trimmed plan below.
+        var rawDeloads = Set<Int>()
+        for week in 0..<actualWeeksToGenerate {
+            let pi = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
+            guard pi.phase == .base || pi.phase == .speed || pi.phase == .peak else { continue }
+            if calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: pi.weekInPhase, phase: pi.phase,
+                                        phaseDurations: phaseDurations, config: config).isDeloading {
+                rawDeloads.insert(week)
+            }
+        }
+        deloadWeeks = weeksToTrim > 0
+            ? Set(rawDeloads.compactMap { $0 >= weeksToTrim ? $0 - weeksToTrim : nil })
+            : rawDeloads
+
         // Trim early weeks if plan was too short
         if weeksToTrim > 0 {
             var trimmedPlan: [Int: [(type: String, workout: Workout)]] = [:]
@@ -1078,6 +1097,14 @@ public func generatePlanV3(config: PlanConfiguration, totalWeeks: Int, allWorkou
     PlanGeneratorV3.make(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive).generate()
 }
 
+/// Like `generatePlanV3` but also returns the build-phase deload week indices, so the
+/// caller can tag each event's `isDeloadWeek` for the render's deload long-run clamp.
+public func generatePlanV3WithDeloads(config: PlanConfiguration, totalWeeks: Int, allWorkouts: [Workout], adaptive: Bool = true) -> (plan: [Int: [(type: String, workout: Workout)]], deloadWeeks: Set<Int>) {
+    let gen = PlanGeneratorV3.make(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
+    let plan = gen.generate()
+    return (plan, gen.deloadWeeks)
+}
+
 // MARK: - Integration with existing createMarathonPlan
 
 public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
@@ -1093,7 +1120,7 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
     let totalWeeks = Int(max(1, ceil(Double(days) / 7)))
     
     // Generate plan using Python-ported logic
-    let planByWeek = generatePlanV3(config: config, totalWeeks: totalWeeks, allWorkouts: workouts)
+    let (planByWeek, deloadWeeks) = generatePlanV3WithDeloads(config: config, totalWeeks: totalWeeks, allWorkouts: workouts)
     
     var events: [WorkoutEvent] = []
     
@@ -1243,7 +1270,10 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
         for (workout, dayOfWeek) in assignedWorkouts {
             if let workoutDate = getDateForWeekday(weekStartDate: weekStartDate, weekdayIndex: dayOfWeek) {
                 if workoutDate >= normalizedStartDate && workoutDate < normalizedRaceDate {
-                    events.append(WorkoutEvent(workout: workout, planId: planId, date: workoutDate))
+                    var ev = WorkoutEvent(workout: workout, planId: planId, date: workoutDate)
+                    ev.isDeloadWeek = deloadWeeks.contains(weekIndex)
+                    ev.planWeekIndex = weekIndex
+                    events.append(ev)
                 }
             }
         }

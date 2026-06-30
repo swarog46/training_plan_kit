@@ -381,7 +381,7 @@ if mode == "pace" {
     print("=====================================")
 
     for c in filtered {
-        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let (plan, deloadWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let hrEvents = plan.flatMap { _, ws in ws.map { $0.workout } }
 
         // Build a fake events array so PaceZoneConverter has dates to use
@@ -392,7 +392,10 @@ if mode == "pace" {
         for (weekIdx, weekWorkouts) in plan.sorted(by: { $0.key < $1.key }) {
             let dayDate = Calendar.current.date(byAdding: .day, value: weekIdx * 7, to: startDate)!
             for (_, w) in weekWorkouts {
-                events.append(WorkoutEvent(workout: w, planId: UUID(), date: dayDate))
+                var ev = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
+                ev.isDeloadWeek = deloadWeeks.contains(weekIdx)
+                ev.planWeekIndex = weekIdx
+                events.append(ev)
             }
         }
 
@@ -467,7 +470,7 @@ if mode == "pacedump" {
     print("================================\n")
 
     for c in filtered {
-        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let (plan, deloadWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let startDate = Date()
         let endDate = Calendar.current.date(byAdding: .weekOfYear, value: c.weeks, to: startDate)!
 
@@ -476,7 +479,9 @@ if mode == "pacedump" {
         for (weekIdx, weekWorkouts) in plan.sorted(by: { $0.key < $1.key }) {
             let dayDate = Calendar.current.date(byAdding: .day, value: weekIdx * 7, to: startDate)!
             for (_, w) in weekWorkouts {
-                let event = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
+                var event = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
+                event.isDeloadWeek = deloadWeeks.contains(weekIdx)
+                event.planWeekIndex = weekIdx
                 dayOfWorkout[event.id] = dayDate
                 events.append(event)
             }

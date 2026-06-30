@@ -735,20 +735,7 @@ public struct PaceZoneConverter {
         // legacy fixed-anchor behavior.
         let vdotAnchored = racePaceEnd != nil
 
-        // Recovery-week long runs (deload cuts): a long run whose HR-side duration
-        // dips clearly below the prior BUILD long run. The km-floor must not re-inflate
-        // them (that erases the recovery dip), so flag them to relax the floor.
-        var recoveryDates = Set<Date>()
-        var prevBuildLR: Int64? = nil
-        for ev in events.filter({ longRunSubtypes.contains($0.workout.subtype) }).sorted(by: { $0.date < $1.date }) {
-            if let prev = prevBuildLR, Double(ev.workout.duration) < 0.92 * Double(prev) {  // 8%+ dip = deload (catches shallow ~9% cuts)
-                recoveryDates.insert(ev.date)
-            } else {
-                prevBuildLR = ev.workout.duration
-            }
-        }
-
-        return events.map { event in
+        let rendered = events.map { event in
             // Calculate progression factor: 0.0 at plan start → 1.0 at plan end
             let elapsed = event.date.timeIntervalSince(startDate)
             let progressionFactor = max(0, min(1.0, elapsed / totalDuration))
@@ -774,7 +761,7 @@ public struct PaceZoneConverter {
                 isCompetitive: isCompetitive,
                 isBeginner: isBeginner,
                 isAdvanced: isAdvanced,
-                isRecoveryWeek: recoveryDates.contains(event.date)
+                isRecoveryWeek: false  // deload long-run dips are handled by the clamp below, on the real tag
             )
 
             // Create updated event
@@ -782,6 +769,55 @@ public struct PaceZoneConverter {
             updatedEvent.workout = convertedWorkout
             return updatedEvent
         }
+
+        // #171 — Deload long-run clamp. Each BUILD-phase deload week's long run renders
+        // at ~0.80x the prior non-deload week's DELIVERED long run: an exact ~20% dip
+        // across tiers AND fitness levels, reaching weeks whose HR-side long run didn't
+        // dip (cut-vs-trajectory, or a reused MP rehearsal) that a render coefficient
+        // can't. Keys on the generator's real deload flag (event.isDeloadWeek).
+        var out = rendered
+        // The long run = the LONGEST long-run-subtype workout in a week (a week can also
+        // hold a short mid-week run of the same subtype). Group by plan week so the clamp
+        // and the prior-week reference both key off the real long run, not the short one.
+        var longestIdxByWeek: [Int: Int] = [:]
+        for (i, e) in out.enumerated() where longRunSubtypes.contains(e.workout.subtype) {
+            if let cur = longestIdxByWeek[e.planWeekIndex], out[cur].workout.duration >= e.workout.duration { continue }
+            longestIdxByWeek[e.planWeekIndex] = i
+        }
+        var prevNonDeloadLongSec: Int64? = nil
+        for wk in longestIdxByWeek.keys.sorted() {
+            let i = longestIdxByWeek[wk]!
+            if out[i].isDeloadWeek {
+                if let prev = prevNonDeloadLongSec {
+                    // ~20% cut, but never below the 60-min aerobic long-run floor (base-phase
+                    // deloads off a short prior run would otherwise dip under it).
+                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: max(Int64(3600), Int64((Double(prev) * 0.80).rounded())))
+                }
+            } else {
+                prevNonDeloadLongSec = out[i].workout.duration
+            }
+        }
+        return out
+    }
+
+    /// Scale a workout to an exact target duration (seconds) — intervals + load scaled —
+    /// then 5-min-ticking aerobic runs. Used by the deload long-run clamp.
+    private static func scaleWorkout(_ w: Workout, toSeconds target: Int64) -> Workout {
+        guard w.duration > 0, target > 0, target != w.duration else { return w }
+        let factor = Double(target) / Double(w.duration)
+        func s(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
+        let intervals = w.intervals.map { iv in
+            WorkoutInterval(id: iv.id, type: iv.type, duration: iv.duration * factor,
+                            distance: iv.distance, targetType: iv.targetType, target: iv.target)
+        }
+        let scaled = Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,
+                             trainingType: w.trainingType, targetType: w.targetType,
+                             duration: target, distance: w.distance, key: w.key,
+                             trainingLoad: s(w.trainingLoad), intervals: intervals,
+                             workRestRatio: w.workRestRatio, workDuration: s(w.workDuration),
+                             restDuration: s(w.restDuration), workDistance: w.workDistance,
+                             restDistance: w.restDistance)
+        return quantizeAerobicDuration(scaled)
     }
 
     // MARK: - Helper Functions
