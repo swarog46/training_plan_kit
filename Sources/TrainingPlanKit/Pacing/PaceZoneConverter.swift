@@ -605,12 +605,17 @@ public struct PaceZoneConverter {
         // are brought up to race-relevant distance for slow runners. Taper: floor 0.
         let floorRamp = min(1.0, progressionFactor / 0.60)
         // Recovery (deload) weeks keep their ~20% long-run cut. The cap relaxes ×0.80
-        // (recoveryRelax, used below for the cap + minute ceilings); the FLOOR relaxes
-        // ×0.60 — tuned: ×0.80 leaves the floor lifting the trough (~10% dip, too
-        // shallow), ×0 (off) lets recovery render super-short vs a cap-inflated build
-        // (35-66% over-swing). ×0.60 lands the rendered dip near the ~15-20% HR intent.
+        // (recoveryRelax, below, for the cap + minute ceilings). The FLOOR relax is
+        // PER-TIER: one global value can't land ~20% across paces (×0.60 rendered Int
+        // ~34% but Adv ~9% — the floor binds differently per pace). Exact-per-level
+        // would need a prior-delivered-LR clamp (#171); these land each tier near ~20%.
         let recoveryRelax = isRecoveryWeek ? 0.80 : 1.0
-        let effectiveFloor = progressionFactor < 0.85 ? floorKm * floorRamp * (isRecoveryWeek ? 0.60 : 1.0) : 0
+        let floorRelax: Double = !isRecoveryWeek ? 1.0
+            : isCompetitive ? 0.60      // Cmp: already 18-23%, keep
+            : isAdvanced ? 0.60         // Adv: floor is NOT the lever here — the HR-side cut is
+                                        // shallow vs the prior week, so render can't deepen it (#171)
+            : 0.72                      // Int/Beg: shallow the floor-lifted ~34% W11 down to ~21%
+        let effectiveFloor = progressionFactor < 0.85 ? floorKm * floorRamp * floorRelax : 0
         // Size off the CONVERTED workout's rendered pace, not raw easy pace: a
         // long run renders ~15s/km faster (and MP/fast-finish segments faster
         // still), so duration/easyPace under-measures and the run overshoots
