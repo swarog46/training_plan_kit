@@ -481,6 +481,9 @@ class PlanGeneratorV3 {
     /// suppresses the km-floor there (else the first taper week inflates to floor distance).
     var taperWeeks: Set<Int> = []
     var usedIds: [String: Int] = [:]
+    /// A PEAK rehearsal slot suppressed by a deload week; the next non-deload peak
+    /// week takes it, so short plans don't lose ladder rungs to the 3:1 cadence.
+    var pendingRehearsalSlot = false
     var prevInterval: Workout? = nil
     var prevThreshold: Workout? = nil
     var prevPhase: TrainingPhase? = nil
@@ -720,8 +723,15 @@ class PlanGeneratorV3 {
     // emergent rehearsals (Int/Adv) — Competitive gates its own weeks so passes
     // false. No-op unless a rehearsal subtype is in the pool.
     func rampRehearsalMPSegment(_ pool: [Workout], peakWeekIndex: Int, peakDur: Int,
-                                priorRehearsalCount: Int, force: Bool, windowGate: Bool) -> [Workout] {
+                                priorRehearsalCount: Int, force: Bool, windowGate: Bool,
+                                isDeloading: Bool = false) -> [Workout] {
         guard let sub = rehearsalSubtype(in: pool) else { return pool }
+        // Deload week: never force (or keep) a rehearsal — the down week runs a plain
+        // aerobic long. The rung ladder resumes on the next build week.
+        if isDeloading {
+            let plain = pool.filter { $0.subtype != sub }
+            return plain.isEmpty ? pool : plain
+        }
         let rehearsals = pool.filter { $0.subtype == sub }
         let available = Array(Set(rehearsals.map { rehearsalSegmentMinutes($0, subtype: sub) })).sorted()
         guard available.count >= 2 else { return pool }
@@ -796,8 +806,14 @@ class PlanGeneratorV3 {
         // the down-week LR drops but stays continuous.
         if isDeloading, phase == .base || phase == .speed || phase == .peak {
             let floor = recoveryLongRunTarget(prevLongRunMins, isDeloading: true, phase: phase)
-            let floored = pool.filter { Int($0.duration / 60) >= floor }
-            return floored.isEmpty ? pool : floored
+            // Deload long run is plain aerobic: no race-rehearsal / fast-finish on a
+            // down week — those repeat the prior week's key session as a lighter copy
+            // (classics cut the stressor; a rehearsal IS the stressor).
+            let rehearsals: Set<WorkoutSubtype> = [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K, .fastFinish]
+            let aerobic = pool.filter { !rehearsals.contains($0.subtype) }
+            let candidates = aerobic.isEmpty ? pool : aerobic
+            let floored = candidates.filter { Int($0.duration / 60) >= floor }
+            return floored.isEmpty ? candidates : floored
         }
         let monotonicPool: [Workout]
         switch phase {

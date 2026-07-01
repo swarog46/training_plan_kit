@@ -687,6 +687,11 @@ public struct PaceZoneConverter {
 
     // MARK: - Plan Post-Processing (Progressive Conversion)
 
+    // LAYER CONTRACT: generation (PlanGeneratorV3) owns STRUCTURE — which workout,
+    // which week, deload/taper flags. This render pass owns FIT-TO-RUNNER — zone→pace,
+    // km window, deload ~20% long-run dip, taper floor-off, 5-min tick. Duration policy
+    // lives HERE only; don't add a second copy generation-side (and vice versa).
+
     /// Converts all HR-based workout events to pace-based with progressive intensity.
     /// Each event gets a progressionFactor based on its position in the plan.
     /// Earlier workouts are more conservative, later workouts are more aggressive.

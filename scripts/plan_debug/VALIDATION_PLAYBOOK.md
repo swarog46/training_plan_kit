@@ -17,7 +17,7 @@ cd training_plan_kit
 ./scripts/plan_debug/build.sh        # swiftc, no Xcode/SPM; ~10s
 ```
 
-Always drive plans with the **production catalog** (804 workouts), not the 60-
+Always drive plans with the **production catalog** (713 workouts), not the 60-
 workout sample baked into the binary:
 
 ```bash
@@ -118,7 +118,7 @@ re-derive the expected value and measure the gap:
 
 Garbage in → garbage findings. Confirm:
 ```bash
-grep -h "Loaded" /tmp/plan_audit/*.txt | sort -u      # every file = 804 workouts
+grep -h "Loaded" /tmp/plan_audit/*.txt | sort -u      # every file = 713 workouts
 grep -liE "FAILED|fatal|nil" /tmp/plan_audit/*.txt    # expect none
 # pace outlier scan: flag <2:50 or >10:30 /km
 # spot-check: slow easy compressed (not 9:xx), easy < race, long run grows,
@@ -178,7 +178,7 @@ Suggested slices:
 
 Checks distilled from a manual Intermediate/Advanced read (2026-06). Each is a
 standing invariant to re-verify after engine/catalog/pace-math changes. Prod
-catalog only (`WORKOUTS_PATH=$PROD`, currently 810 workouts). Anchors via
+catalog only (`WORKOUTS_PATH=$PROD`, currently 713 workouts). Anchors via
 `vdotpaces` (typical VDOT ~40, plus a fast runner where noted). Verdicts as
 found at review time — re-confirm, don't assume.
 
@@ -333,3 +333,23 @@ Beg **half** peak ≤ ~110min (~13km — not a 2h novice half; half floor is beg
   long-run-every-other-week (deload sawtooth).
 - **NON-ISSUES:** "Slow" label = different VDOT per tier (app keys off VDOT, not the label);
   1-min total-volume wobble between adjacent weeks; Yasso/time-based WU-CD split.
+
+## Round 5 — deload long-run policy (2026-07-01)
+
+**R5-1 · Deload build weeks are plain aerobic.** Every `[deload]`-tagged BASE/SPEED/PEAK
+week's long run must be `steadyLong`/`progressiveLong` — never `raceRehearsal*`/`fastFinish`.
+A down week cuts the stressor; the rehearsal IS the stressor. Enforced in
+`applyLongRunMonotonic` (pool filter), `rampRehearsalMPSegment(isDeloading:)`, and the
+per-generator `isMPSegmentWeek`/forced-rehearsal guards. Taper `[deload]` tags are exempt
+(taper has its own shape).
+
+**R5-2 · Skipped rungs shift, not drop.** A rehearsal slot suppressed by a deload fires on
+the next non-deload peak week (`pendingRehearsalSlot`), so short plans keep their ladder:
+Cmp 42K rec-18w must show all three MP rungs (60→70→90); short-14w at least 60→70.
+Check: `pacedump | grep "Race Rehearsal"` per plan — rungs monotonic, no dups, none on a
+`[deload]` week.
+
+**R5-3 · Deload dip stays ~18–22%** (render clamp, unchanged by R5-1) — the swapped-in
+aerobic long run still lands at ~0.80× the prior delivered LR; 60-min floor on early base.
+
+Aerobic-share re-bless from R5-1: Cmp 42K rec 83→85 (measured 83.9%), Adv 42K 82→84.

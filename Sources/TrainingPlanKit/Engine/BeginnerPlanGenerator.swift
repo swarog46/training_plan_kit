@@ -337,7 +337,13 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     // runner doesn't reach race day having never run at goal pace
                     // (the selector picks steady aerobic every week otherwise).
                     let rehearsalWeekIdx = max(1, (peakDur - 1) / 2)
-                    if peakWeekIndex == rehearsalWeekIdx {
+                    // Deload weeks skip the forced rehearsal; it shifts to the next
+                    // non-deload peak week so the runner still gets goal-pace exposure.
+                    let scheduledRehearsal = peakWeekIndex == rehearsalWeekIdx
+                    let forceRehearsal = !isDeloading && (scheduledRehearsal || pendingRehearsalSlot)
+                    if isDeloading && scheduledRehearsal { pendingRehearsalSlot = true }
+                    else if forceRehearsal { pendingRehearsalSlot = false }
+                    if forceRehearsal {
                         // Drop fastFinish too: at the half's shorter peak-LR target it
                         // out-matches raceRehearsalHM and the half never gets a rehearsal.
                         longRunTypes.removeAll {
@@ -377,7 +383,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 // peak weeks (60→75→90) so it doesn't park on the largest rung.
                 if phase == .peak {
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: false, windowGate: false)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: false, windowGate: false, isDeloading: isDeloading)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's

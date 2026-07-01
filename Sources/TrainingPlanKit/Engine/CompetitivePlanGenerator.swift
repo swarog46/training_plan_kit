@@ -370,10 +370,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // recovery aerobic week.
                 let peakWeekIndex = week - baseDur - speedDur
                 if peakDur >= 3 {
-                    // NB: deload weeks stay MP here (unlike Adv/Int) — the deload clamp already
-                    // lightens the rehearsal (~0.80x), and dropping MP entirely pushes the Pro
-                    // aerobic share past its 83% band. Residual repeat-title is a known cosmetic.
-                    let isMPSegmentWeek = peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
+                    // Deload weeks never force MP — a down week runs a plain aerobic long
+                    // (cut the stressor; the rehearsal IS the stressor). A slot a deload
+                    // suppresses shifts to the next non-deload peak week (rung not lost).
+                    let scheduledMP = peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
+                    let isMPSegmentWeek = !isDeloading && (scheduledMP || pendingRehearsalSlot)
+                    if isDeloading && scheduledMP { pendingRehearsalSlot = true }
+                    else if isMPSegmentWeek { pendingRehearsalSlot = false }
                     if isMPSegmentWeek {
                         // Force a race-rehearsal-style pick.
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
@@ -424,7 +427,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // peak weeks (60→75→90) so it doesn't park on the largest rung.
                 if phase == .peak {
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false, isDeloading: isDeloading)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's

@@ -1986,7 +1986,7 @@ AEROBIC_TARGETS = [
     ("Cmp 21K (short, 12w)",   "Cmp 21K (short, 12w)",   False, None, 73, 83),
     ("Cmp 21K (long, 18w)",  "Cmp 21K (long, 18w)",  False, None, 73, 83),
     ("Cmp 21K (max, 32w)",   "Cmp 21K (max, 32w)",   True,  18,   73, 83),
-    ("Cmp 42K (rec, 18w)",   "Cmp 42K (rec, 18w)",   False, None, 73, 83),
+    ("Cmp 42K (rec, 18w)",   "Cmp 42K (rec, 18w)",   False, None, 73, 85),  # 85: deload LRs plain aerobic (no MP on down weeks, 2026-07-01)
     ("Cmp 42K (long, 22w)",  "Cmp 42K (long, 22w)",  False, None, 73, 83),
     ("Cmp 42K (build, 28w)", "Cmp 42K (build, 28w)", False, 22,   71, 83),  # 71: deload-cap relax honestly trims recovery-wk aerobic
     ("Cmp 42K (max, 36w)",   "Cmp 42K (max, 36w)",   True,  22,   73, 83),
@@ -2758,7 +2758,8 @@ GUARDS = [
     # aerobic 75-80%" aligned. LR band now 175-195: the floor-ramp (2026-06-28)
     # builds the long run progressively, so the peak is a *built* ~180min, not a
     # flat-floored cap. See the Adv-cap section for the <=195 ceiling guard.
-    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 175, 195,
+    # Aerobic cap 84: deload LRs plain aerobic (no MP rehearsal on down weeks, 2026-07-01).
+    ("Adv 42K (long, 22w)", 280, 380, 72, 84, 85, 110, 175, 195,
      {'marathonPace', 'threshold'}),
     # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
     # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),

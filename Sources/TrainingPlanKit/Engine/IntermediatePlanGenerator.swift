@@ -371,7 +371,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     // 10K: alternate raceRehearsal10K with plain steady in PEAK to
                     // guarantee the tune-up exposure (selector picks steady otherwise).
                     // Drop fastFinish on MP-segment weeks or it out-scores the rehearsal.
-                    let isMPSegmentWeek = peakWeekIndex % 2 == 0
+                    // Deload weeks skip the slot; it shifts to the next non-deload week.
+                    let scheduledMP = peakWeekIndex % 2 == 0
+                    let isMPSegmentWeek = !isDeloading && (scheduledMP || pendingRehearsalSlot)
+                    if isDeloading && scheduledMP { pendingRehearsalSlot = true }
+                    else if isMPSegmentWeek { pendingRehearsalSlot = false }
                     if isMPSegmentWeek {
                         longRunTypes.removeAll {
                             $0 == .steadyLong || $0 == .long
@@ -404,7 +408,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 if phase == .peak {
                     let force10K = config.distance != 10000
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: force10K, windowGate: force10K)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: force10K, windowGate: force10K, isDeloading: isDeloading)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's
