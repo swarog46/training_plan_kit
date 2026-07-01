@@ -381,7 +381,7 @@ if mode == "pace" {
     print("=====================================")
 
     for c in filtered {
-        let (plan, deloadWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let (plan, deloadWeeks, taperWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let hrEvents = plan.flatMap { _, ws in ws.map { $0.workout } }
 
         // Build a fake events array so PaceZoneConverter has dates to use
@@ -394,6 +394,7 @@ if mode == "pace" {
             for (_, w) in weekWorkouts {
                 var ev = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
                 ev.isDeloadWeek = deloadWeeks.contains(weekIdx)
+                ev.isTaperWeek = taperWeeks.contains(weekIdx)
                 ev.planWeekIndex = weekIdx
                 events.append(ev)
             }
@@ -470,7 +471,7 @@ if mode == "pacedump" {
     print("================================\n")
 
     for c in filtered {
-        let (plan, deloadWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let (plan, deloadWeeks, taperWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let startDate = Date()
         let endDate = Calendar.current.date(byAdding: .weekOfYear, value: c.weeks, to: startDate)!
 
@@ -481,6 +482,7 @@ if mode == "pacedump" {
             for (_, w) in weekWorkouts {
                 var event = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
                 event.isDeloadWeek = deloadWeeks.contains(weekIdx)
+                event.isTaperWeek = taperWeeks.contains(weekIdx)
                 event.planWeekIndex = weekIdx
                 dayOfWorkout[event.id] = dayDate
                 events.append(event)

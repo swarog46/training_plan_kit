@@ -38,6 +38,10 @@ public struct WorkoutEvent: Identifiable, Codable, Hashable {
     /// (one long run per week) instead of mis-tracking a short mid-week run. Not persisted.
     public var planWeekIndex: Int = -1
 
+    /// Transient: this week is in the TAPER/race phase → the render suppresses the km-floor
+    /// so the long run declines instead of inflating to floor distance. Not persisted.
+    public var isTaperWeek: Bool = false
+
     private enum CodingKeys: String, CodingKey {
         case workout, id, planId, date, isCompleted, completionDate, hkWorkoutId
         case actualDistance, actualDuration, isCancelled, originalDate, isSwapped

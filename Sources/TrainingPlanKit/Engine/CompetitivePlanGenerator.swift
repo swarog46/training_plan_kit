@@ -370,6 +370,9 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // recovery aerobic week.
                 let peakWeekIndex = week - baseDur - speedDur
                 if peakDur >= 3 {
+                    // NB: deload weeks stay MP here (unlike Adv/Int) — the deload clamp already
+                    // lightens the rehearsal (~0.80x), and dropping MP entirely pushes the Pro
+                    // aerobic share past its 83% band. Residual repeat-title is a known cosmetic.
                     let isMPSegmentWeek = peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
                     if isMPSegmentWeek {
                         // Force a race-rehearsal-style pick.

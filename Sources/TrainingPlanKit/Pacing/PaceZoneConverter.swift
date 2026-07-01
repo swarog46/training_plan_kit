@@ -465,7 +465,7 @@ public struct PaceZoneConverter {
         isCompetitive: Bool = false,
         isBeginner: Bool = false,
         isAdvanced: Bool = false,
-        isRecoveryWeek: Bool = false
+        isTaperWeek: Bool = false
     ) -> Workout {
         // 5K/10K race pace ≈ 5K speed, so a Z3 (MP) block renders at race pace and
         // an adjacent Z4 (threshold) block is race-floored too — a `Z3→Z4`
@@ -513,7 +513,7 @@ public struct PaceZoneConverter {
                                     isCompetitive: isCompetitive,
                                     isBeginner: isBeginner,
                                     isAdvanced: isAdvanced,
-                                    isRecoveryWeek: isRecoveryWeek,
+                                    isTaperWeek: isTaperWeek,
                                     progressionFactor: progressionFactor)
         return quantizeAerobicDuration(clamped)
     }
@@ -566,7 +566,7 @@ public struct PaceZoneConverter {
         isCompetitive: Bool,
         isBeginner: Bool,
         isAdvanced: Bool,
-        isRecoveryWeek: Bool,
+        isTaperWeek: Bool,
         progressionFactor: Double
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
@@ -604,18 +604,12 @@ public struct PaceZoneConverter {
         // (short) generated length so the build shows; only the late-peak long runs
         // are brought up to race-relevant distance for slow runners. Taper: floor 0.
         let floorRamp = min(1.0, progressionFactor / 0.60)
-        // Recovery (deload) weeks keep their ~20% long-run cut. The cap relaxes ×0.80
-        // (recoveryRelax, below, for the cap + minute ceilings). The FLOOR relax is
-        // PER-TIER: one global value can't land ~20% across paces (×0.60 rendered Int
-        // ~34% but Adv ~9% — the floor binds differently per pace). Exact-per-level
-        // would need a prior-delivered-LR clamp (#171); these land each tier near ~20%.
-        let recoveryRelax = isRecoveryWeek ? 0.80 : 1.0
-        let floorRelax: Double = !isRecoveryWeek ? 1.0
-            : isCompetitive ? 0.60      // Cmp: already 18-23%, keep
-            : isAdvanced ? 0.60         // Adv: floor is NOT the lever here — the HR-side cut is
-                                        // shallow vs the prior week, so render can't deepen it (#171)
-            : 0.72                      // Int/Beg: shallow the floor-lifted ~34% W11 down to ~21%
-        let effectiveFloor = progressionFactor < 0.85 ? floorKm * floorRamp * floorRelax : 0
+        // No floor in the TAPER. The km-floor exists for aerobic development during the
+        // BUILD; in the taper the long run must decline. The pf<0.85 cutoff alone let the
+        // FIRST taper week (pf~0.83 in an 18wk/3wk plan) still take the full 30km floor —
+        // rendering the plan's LONGEST run ~2 weeks pre-race for slow runners. Gate on the
+        // real taper flag. (Deload long-run cuts live in the #171 clamp, applyPaceProgression.)
+        let effectiveFloor = (progressionFactor < 0.85 && !isTaperWeek) ? floorKm * floorRamp : 0
         // Size off the CONVERTED workout's rendered pace, not raw easy pace: a
         // long run renders ~15s/km faster (and MP/fast-finish segments faster
         // still), so duration/easyPace under-measures and the run overshoots
@@ -630,11 +624,7 @@ public struct PaceZoneConverter {
             return paceSec > 0 ? acc + iv.duration / paceSec : acc
         }
         guard km > 0 else { return workout }
-        // Recovery weeks relax the CAP too, not just the floor: for fast / competitive
-        // runners the HR-side long run exceeds the cap, so a flat cap pins the LR at
-        // race distance even on deload weeks (masking the cut — Cmp 42K showed a flat
-        // 8-week peak). ~20% relax lets the deload dip show. Completes the P0 floor relax.
-        let effectiveCap = capKm * recoveryRelax
+        let effectiveCap = capKm
         let targetKm = min(max(km, effectiveFloor), effectiveCap)
         guard abs(targetKm - km) >= 0.1 else { return workout }
 
@@ -649,7 +639,7 @@ public struct PaceZoneConverter {
         // pace-relative, so the slowest novice could still cross 190min at the
         // 28km cap. Clamp the factor so the rendered run never exceeds the cap.
         if isBeginner, raceDistanceMeters == 42195 {
-            let begMarathonLRCapMins = Int(190.0 * recoveryRelax)
+            let begMarathonLRCapMins = 190
             let capFactor = Double(begMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
@@ -657,7 +647,7 @@ public struct PaceZoneConverter {
         // km floor re-inflates a slow runner's long run past 210min (pace-relative),
         // a touch too long — clamp the factor so it never exceeds the ceiling.
         if isAdvanced, raceDistanceMeters == 42195 {
-            let advMarathonLRCapMins = Int(195.0 * recoveryRelax)
+            let advMarathonLRCapMins = 195
             let capFactor = Double(advMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
@@ -761,7 +751,7 @@ public struct PaceZoneConverter {
                 isCompetitive: isCompetitive,
                 isBeginner: isBeginner,
                 isAdvanced: isAdvanced,
-                isRecoveryWeek: false  // deload long-run dips are handled by the clamp below, on the real tag
+                isTaperWeek: event.isTaperWeek  // no km-floor in the taper (see clampLongRunDistance)
             )
 
             // Create updated event
