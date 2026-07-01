@@ -71,16 +71,10 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         case .tenK: return 8
         case .halfMarathon: return 12
         case .marathon: return 14
-        // Competitive minimums match the engine's phase-distribution
-        // minimums (sum of minBase/Speed/Peak/Taper in PlanConfiguration),
-        // so any plan within [minWeeks, maxWeeks] respects all phase
-        // constraints. Below these values phases get truncated and PEAK
-        // ends up shorter than TAPER, breaking the build curve.
-        // 12-week minimum for both competitive plans: at sub-3:20 marathon
-        // / sub-1:35 half fitness the runner already has aerobic base, so
-        // we can compress phases to base 2 / speed 3 / peak 5 / taper 2
-        // (marathon) or 2 / 3 / 5 / 2 (half) and still preserve a real
-        // PEAK > TAPER build curve.
+        // Competitive minimums match the engine's phase-distribution minimums
+        // (sum of minBase/Speed/Peak/Taper in PlanConfiguration); below these,
+        // phases truncate and PEAK ends up shorter than TAPER, breaking the
+        // build curve. 12 weeks still preserves a real PEAK > TAPER curve.
         case .halfMarathonCompetitive: return 12
         case .marathonCompetitive: return 12
         case .recovery: return 3
@@ -151,13 +145,10 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// Preferred workout subtypes for this category. Used by the plan-detail
-    /// "Types of runs" chip row — shows runners what their plan actually
-    /// schedules. Aligned against `plan_debug dump` output so the chips
-    /// reflect what the engine produces for Int/Adv variants of each
-    /// category. Generic `.intervals` is kept alongside specific subtypes
-    /// (hillRepeats, mileRepeats, yasso800, etc.) because the engine
-    /// schedules both. Order: easy → long → quality.
+    /// Preferred workout subtypes for the plan-detail "Types of runs" chip row.
+    /// Aligned against `plan_debug dump` so the chips reflect what the engine
+    /// actually schedules. Generic `.intervals` stays alongside specific
+    /// subtypes because the engine schedules both. Order: easy → long → quality.
     public var preferredWorkoutTypes: [WorkoutSubtype] {
         switch self {
         case .maintenance:
@@ -183,25 +174,13 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    // MARK: Color
-
-    /// Canonical accent color per category. Single source of truth — replaces
-    /// the older `DistanceUtils.planColor(for: Int)` which had a meters/km
-    /// switch bug (callers passed km, switch keyed on meters → everything
-    /// fell through to indigo). Use `plan.category?.color` everywhere.
-
     // MARK: Helpers
 
-    /// Best-fit category for the legacy `Plan.raceDistance` value.
-    /// Despite the field's misleading earlier docstring, plans actually store
-    /// the race distance in **meters** (5000, 10000, 21097, 42195, or 0 for
-    /// maintenance) — see PlanConfigurationView, which sets `raceDistance`
-    /// from `planDefinition.distance` (meters). Returns nil for unrecognized
-    /// values.
-    ///
-    /// Note: This init returns the base category (.marathon / .halfMarathon),
-    /// not the competitive variants — distinguishing those requires the
-    /// `difficultyLevel`, handled by `Plan.category` (see `Plan` struct).
+    /// Best-fit category for the `Plan.raceDistance` value (stored in METERS:
+    /// 5000 / 10000 / 21097 / 42195, or 0 for maintenance). Returns nil for
+    /// unrecognized values, and the base category (.marathon / .halfMarathon)
+    /// for competitive distances — `Plan.category` adds the competitive variant
+    /// via `difficultyLevel`.
     public init?(raceDistanceMeters meters: Int) {
         switch meters {
         case 5000:  self = .fiveK
@@ -257,14 +236,10 @@ public struct Plan: Identifiable, Codable, Hashable {
         self.raceDistance = raceDistance
     }
 
-    /// Type-safe view of `raceDistance`. Use `category?.color` instead of
-    /// switching on the raw Int.
-    ///
-    /// Competitive plans (Sub-3 Marathon / Sub-1:30 Half) are detected by
-    /// the `difficultyLevel == .competitive` marker — `raceDistance` alone
-    /// is the same 21097 / 42195 as the base plans, so this disambiguation
-    /// has to live somewhere. We do it here so every caller of `.category`
-    /// gets the right variant without thinking about it.
+    /// Type-safe view of `raceDistance` (prefer this over switching on the raw
+    /// Int). Competitive plans share the same 21097 / 42195 as the base plans,
+    /// so they're disambiguated here via the `difficultyLevel == .competitive`
+    /// marker — every `.category` caller gets the right variant for free.
     public var category: PlanCategory? {
         if difficultyLevel == .competitive {
             switch raceDistance {

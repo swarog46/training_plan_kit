@@ -9,17 +9,9 @@ import Foundation
 
 // MARK: - Workout Pace Tolerance
 //
-// The "on target" pace window shown on the Apple Watch during a workout.
-// Single source of truth — referenced by:
-//   * the watch tracker view (paints green/red pace zones around target)
-//   * the plan detail view (displays target ± tolerance to the runner)
-//   * the engine regression tests (asserts generated paces land inside
-//     the same window the runner would see as on-target on race day)
-//
-// Tolerance is symmetric in seconds-per-km, not a percentage — runners
-// at 4:00/km and 7:00/km both get the same ±15s window because that is
-// what a wrist-worn pace display can resolve in real time regardless of
-// absolute pace.
+// The "on target" pace window shown during a workout. Symmetric in
+// seconds-per-km (not a percentage) — a wrist-worn display resolves the
+// same ±15s regardless of absolute pace.
 public enum WorkoutPaceTolerance {
     public static let seconds: Double = 15.0
 }
@@ -144,16 +136,8 @@ public struct PaceZoneConverter {
 
     // MARK: - Standard HR Zone to Pace Multiplier Mapping
 
-    /// Returns the standard (unadjusted) pace multiplier for a given HR zone
-    /// - Parameter zone: Heart rate zone (1-5)
-    /// - Returns: Base multiplier to apply to race pace
-    ///
-    /// Zone mappings:
-    /// - Zone 1 (50-60% max HR): Easy recovery - 1.25x race pace (slower)
-    /// - Zone 2 (60-70% max HR): Conversational - 1.15x race pace
-    /// - Zone 3 (70-80% max HR): Marathon pace - 1.0x race pace
-    /// - Zone 4 (80-90% max HR): Tempo - 0.93x race pace (faster)
-    /// - Zone 5 (90-100% max HR): Intervals - 0.85x race pace (much faster)
+    /// Standard (unadjusted) pace multiplier for an HR zone (1-5), applied to
+    /// race pace. Z1 recovery (slowest) → Z5 intervals (fastest); see values.
     public static func baseMultiplier(for zone: Int) -> Double {
         switch zone {
         case 1: return 1.25    // Easy recovery
@@ -180,7 +164,8 @@ public struct PaceZoneConverter {
         racePace: Int,
         conversationalPace: Int?,
         progressionFactor: Double,
-        config: PaceProgressionConfig
+        config: PaceProgressionConfig,
+        vdotAnchored: Bool = false
     ) -> Double {
         let base = baseMultiplier(for: zone)
 
@@ -202,14 +187,26 @@ public struct PaceZoneConverter {
         // e.g., 370/300 = 1.233 → 23% gap
         let gapRatio = Double(convPace) / Double(racePace)
 
-        // Easy-pace freeze fix: when the runner's REAL easy is faster than the
-        // generic 1.15×race base, max(base, gapRatio) used to freeze easy at base
-        // and discard their input — over-slowing slow runners (whose race pace is
-        // already near their easy, e.g. an 8:05 easy rendered 8:59) and elite goal
-        // paces alike. Anchor to their real easy (floored at race). Slower-easy
-        // runners (gapRatio >= base) keep the gap-blend below. (Quality Z>=3 above.)
-        if gapRatio < base {
-            return max(1.0, gapRatio) * (base / 1.15)
+        // Easy/recovery: anchor to the runner's VDOT-derived easy (never the
+        // generic 1.15×race). Take this path for non-competitive, or when easy
+        // is at/under base, or for the AT-GOAL competitive config (its gap-blend
+        // has zero movement and would otherwise freeze easy flat). The build-band
+        // (initialAdjustment 0.5) keeps the gap-blend so easy converges toward
+        // goal as fitness builds. Floored at race; recovery (Z1) scaled by base/1.15.
+        if base > 1.0, (!config.qualityZonesAlwaysAtTarget || gapRatio < base || config.initialAdjustment == 0) {
+            let flat = max(1.0, gapRatio) * (base / 1.15)
+            // VDOT mode: the easy anchor (conversationalPace) is already interpolated
+            // current→projected VDOT upstream, so the fitness progression lives in the
+            // anchor — return the flat gap and let the moving anchor carry it.
+            if vdotAnchored { return flat }
+            // Legacy mode: ~6.5% easing over the WHOLE plan as a modeled slice of the
+            // projected fitness gain (same effort, pace drifts down as the runner
+            // adapts). 5s-quantized downstream. Guardrail, not a target.
+            // Clamp at 1.0 (race pace): when easy↔race headroom is below the 6.5%
+            // easing (gapRatio−1 < 0.065 — at-goal competitive, slow runners), the
+            // eased aerobic pace would otherwise underflow race. Easy must be ≥ race.
+            let p = max(0, min(1.0, progressionFactor))
+            return max(1.0, flat * (1.0 - 0.065 * p))
         }
 
         let gapFactor = max(0, min(1.0, (gapRatio - 1.0) / 0.20))
@@ -260,13 +257,25 @@ public struct PaceZoneConverter {
         for zone: Int,
         progressionFactor: Double,
         config: PaceProgressionConfig,
-        tenK: Bool = false
+        tenK: Bool = false,
+        z5Target: Double? = nil
     ) -> Double {
-        // 10K-pace work sits between 5K pace (Z5 1.00) and threshold (Z4 1.06).
-        let target: Double = tenK ? 1.04 : ((zone >= 5) ? 1.00 : 1.06)   // 5K / 10K / threshold
-        // Competitive/build-band lock quality at goal pace from day 1 (no easing).
+        // Anchored to 5K SPEED, progressing toward a sharper target over the
+        // block, never sagging to race. Z4 threshold progresses true LT (wk 1,
+        // 1.07) → sharp 10K tempo (race wk, 1.02) over a FULL span for EVERY
+        // level — the sharpening IS the point, not a level-gated ease-in. The
+        // caller's Z4 race floor keeps the true-LT end from dropping below race.
+        if zone == 4, !tenK {
+            let sharp = 1.02, trueLT = 1.07
+            if config.qualityZonesAlwaysAtTarget { return sharp }
+            return trueLT + (sharp - trueLT) * max(0, min(1.0, progressionFactor))
+        }
+        // Z5 VO2 (rep-length-aware) + 10K-pace work ease in over a small band,
+        // depth per level via initialAdjustment.
+        let target: Double = tenK ? 1.01 : (z5Target ?? 0.96)
+        let band: Double = 0.06
         if config.qualityZonesAlwaysAtTarget { return target }
-        let slow: Double   = tenK ? 1.14 : ((zone >= 5) ? 1.12 : 1.16)   // conservative start
+        let slow: Double = target + band
         let p = max(0, min(1.0, progressionFactor))
         let adjustment = config.initialAdjustment +
             (config.finalAdjustment - config.initialAdjustment) * p
@@ -284,9 +293,16 @@ public struct PaceZoneConverter {
         speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
         config: PaceProgressionConfig = .intermediate,
-        subtype: WorkoutSubtype? = nil
+        subtype: WorkoutSubtype? = nil,
+        vdotAnchored: Bool = false
     ) -> WorkoutInterval {
-        let newTarget: TargetRange
+        var newTarget: TargetRange
+        var roundToFive = true   // quantize pace to 5s; OFF for Z3 (exact goal pace)
+        // Easy/recovery (Z1/Z2) anchored to race: the multiplier is already floored
+        // at race, but 5s-quantization can round a race-pace easy DOWN to the next
+        // lower 5s (256→255), i.e. faster than race. Floor the rounded pace at race
+        // so the aerobic floor survives rounding. Only the easy/noRange branches set this.
+        var floorAtBasePace = false
         switch interval.target {
         case .heartRateZone(let zone):
             if let speedPace = speedPace, zone >= 4 {
@@ -295,50 +311,107 @@ public struct PaceZoneConverter {
                 // 15K-HM pace and an interval is 5K pace whether the goal is a 5K
                 // or a marathon (Daniels/Pfitzinger). Anchoring these to goal pace
                 // made marathon "intervals" run at marathon pace.
-                var relative = qualitySpeedMultiplier(
-                    for: zone, progressionFactor: progressionFactor, config: config,
-                    tenK: subtype == .tenkPace)
-                // Threshold floor (half/marathon only): clamp the eased threshold
-                // to TRUE threshold (1.06×speed), which is faster than race for
-                // these distances — so every threshold week is a real LT stimulus,
-                // not race effort (beginners otherwise pin AT race the whole plan).
-                // The ease-in lives in VOLUME (rep length grows), not pace. 5K/10K
-                // (threshold correctly slower than race) fail the guard, untouched.
-                if subtype == .threshold, Double(speedPace) * 1.06 < Double(racePace) {
-                    relative = min(relative, 1.06)
-                }
-                // Z5 (VO2/5K-pace) floor: 5K pace is ≤ race at every distance, so
-                // a VO2 interval must never ease in slower than race. On 5K/10K
-                // (speed ≈ race) the 1.12 ease-in start otherwise lands W1 work
-                // 30-47s/km slower than race. Caps the ease-in at race; half/
-                // marathon keep easing down toward true 5K pace.
-                if zone >= 5 {
-                    relative = min(relative, Double(racePace) / Double(speedPace))
+                let relative: Double
+                if subtype == .fastFinish, interval.type == .work {
+                    // Fast-finish tail is tagged Z4 (HR≈LT) but the intent is a
+                    // 5K-effort surge — render FLAT at ~5K pace so it reads faster
+                    // than threshold. The easy portion (Z2) stays easy below.
+                    relative = 1.00
+                } else if subtype == .strides {
+                    // Strides are short neuromuscular accelerations (leg-speed/form),
+                    // not a VO2 stimulus — price FLAT at ~0.85× 5K speed (≈800m–mile
+                    // effort). The Z5 tag means "fast turnover", not "5K-pace aerobic".
+                    relative = 0.85
+                } else if subtype == .timeTrial {
+                    // A time trial is a sustained race-effort test — render FLAT at
+                    // ~5K pace so it reads faster than its paired threshold run
+                    // instead of colliding at the same Z4 pace.
+                    relative = 1.00
+                } else {
+                    let isTenK = subtype == .tenkPace || subtype == .raceRehearsal10K
+                    // Hill repeats are tagged Z4 (hill HR≈LT) but the effect is
+                    // VO2/power — route through the Z5 path at I-pace (0.96) so they
+                    // read faster than threshold instead of colliding with it.
+                    let isHills = subtype == .hillRepeats
+                    let effZone = isHills ? 5 : zone
+                    // Z5 VO2 is REP-LENGTH-AWARE: short reps run R/I-pace (faster),
+                    // long reps ~I-pace. ≤90s→0.88, ≤3min→0.92, longer→0.96 (I).
+                    let z5Target: Double? = isHills ? 0.96
+                        : ((zone >= 5 && !isTenK)
+                            ? (interval.duration <= 90 ? 0.88
+                                : (interval.duration <= 180 ? 0.92 : 0.96))
+                            : nil)
+                    var r = qualitySpeedMultiplier(
+                        for: effZone, progressionFactor: progressionFactor, config: config,
+                        tenK: isTenK, z5Target: z5Target)
+                    // 10K-pace floor: "10K Pace" / 10K race-rehearsal work must not ease
+                    // in slower than race. On a 10K plan (race ≈ 10K pace) it pins at
+                    // race; half/marathon (10K pace faster than race) stay untouched.
+                    if isTenK {
+                        r = min(r, Double(racePace) / Double(speedPace))
+                    }
+                    // Z5 VO2 (and hills) never sag slower than race pace (5K/10K,
+                    // where speed ≈ race).
+                    if effZone >= 5 {
+                        r = min(r, Double(racePace) / Double(speedPace))
+                    }
+                    // Z4 threshold race floor for 10K-and-longer (racePace slower
+                    // than 5K speed): the true-LT (1.07) end would otherwise render
+                    // early 10K threshold/mile-reps at/below 10K race pace. No-op on
+                    // 5K (race==speed) and half/marathon (Z4 already faster than race).
+                    if zone == 4, !isHills, racePace > speedPace {
+                        r = min(r, Double(racePace) / Double(speedPace))
+                    }
+                    relative = r
                 }
                 newTarget = .paceTarget(basePace: speedPace, relative: relative)
             } else {
                 // Z1/Z2 (easy) and Z3 (marathon pace) stay anchored to race pace.
+                // Z3 = the EXACT race-day goal pace; keep it exact (don't 5s-round).
+                if zone == 3 { roundToFive = false }
+                // Easy/recovery is the aerobic floor — never let quantization round it
+                // faster than race (Z3 MP is meant to sit AT race, so it's exempt).
+                if zone <= 2 { floorAtBasePace = true }
                 let relative = progressiveMultiplier(
                     for: zone,
                     racePace: racePace,
                     conversationalPace: conversationalPace,
                     progressionFactor: progressionFactor,
-                    config: config
+                    config: config,
+                    vdotAnchored: vdotAnchored
                 )
                 newTarget = .paceTarget(basePace: racePace, relative: relative)
             }
         case .noRange:
             // Assign easy pace (zone 2 equivalent) for warmup/rest/cooldown with no target
+            floorAtBasePace = true
             let easyRelative = progressiveMultiplier(
                 for: 2,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
                 progressionFactor: progressionFactor,
-                config: config
+                config: config,
+                vdotAnchored: vdotAnchored
             )
             newTarget = .paceTarget(basePace: racePace, relative: easyRelative)
         default:
             newTarget = interval.target
+        }
+
+        // Quantize the displayed pace to the nearest 5s so every progressing target
+        // steps cleanly (6:25→6:20→…, 5:18→5:20) instead of drifting 1s/week.
+        // Nearest (not strict round-up) keeps 5K/10K VO2 from rounding ONTO race
+        // pace. Z3 goal pace and non-pace (HR) targets pass through untouched.
+        if roundToFive, case let .paceTarget(basePace, relative) = newTarget, basePace > 0 {
+            var rounded = (Double(basePace) * relative / 5.0).rounded() * 5.0
+            // Aerobic floor: a race-anchored easy/recovery pace must never render
+            // faster than race. When 5s-rounding pulls it below race (e.g. 256→255),
+            // pin it AT race instead. Only binds in the low-headroom zone (easy≈race);
+            // typical runners round well above race and are untouched.
+            if floorAtBasePace, rounded < Double(basePace) { rounded = Double(basePace) }
+            // +0.5 so the downstream Int(basePace × relative) floors back to the
+            // exact 5s multiple instead of one second under (380 → 6:20, not 6:19).
+            newTarget = .paceTarget(basePace: basePace, relative: (rounded + 0.5) / Double(basePace))
         }
 
         return WorkoutInterval(
@@ -353,6 +426,32 @@ public struct PaceZoneConverter {
 
     // MARK: - Workout Conversion
 
+    /// On 5K/10K, a `progression` workout whose Work blocks are Z3 then Z4 (no
+    /// easy Z2 opener) collapses at render: Z3 lands at race pace and Z4 is
+    /// race-floored, so both blocks are ≈1s/km apart. Demote the Z3 Work
+    /// block(s) to Z2 so the run renders as a genuine easy→fast progression.
+    /// No-op for: non-progressions, distances > 10K (Z4 stays faster than race),
+    /// and progressions that already contain a Z2 Work block.
+    private static func degenerateZ3ToZ4ProgressionFix(
+        workout: Workout, raceDistanceMeters: Int?
+    ) -> [WorkoutInterval] {
+        guard workout.subtype == .progression,
+              let dist = raceDistanceMeters, dist <= 10000 else { return workout.intervals }
+        let workZones: [Int] = workout.intervals.compactMap { iv in
+            guard iv.type == .work, case .heartRateZone(let z) = iv.target else { return nil }
+            return z
+        }
+        // Only the pure Z3→Z4 shape (has Z3 and Z4, no Z2 opener) collapses.
+        guard workZones.contains(3), workZones.contains(4), !workZones.contains(2)
+        else { return workout.intervals }
+        return workout.intervals.map { iv in
+            guard iv.type == .work, iv.target == .heartRateZone(zone: 3) else { return iv }
+            return WorkoutInterval(
+                id: iv.id, type: iv.type, duration: iv.duration, distance: iv.distance,
+                targetType: iv.targetType, target: .heartRateZone(zone: 2))
+        }
+    }
+
     /// Converts an HR-based workout to pace-based with progression
     public static func convertHRWorkoutToPace(
         workout: Workout,
@@ -360,9 +459,23 @@ public struct PaceZoneConverter {
         conversationalPace: Int? = nil,
         speedPace: Int? = nil,
         progressionFactor: Double = 0.5,
-        config: PaceProgressionConfig = .intermediate
+        config: PaceProgressionConfig = .intermediate,
+        vdotAnchored: Bool = false,
+        raceDistanceMeters: Int? = nil,
+        isCompetitive: Bool = false,
+        isBeginner: Bool = false,
+        isAdvanced: Bool = false,
+        isTaperWeek: Bool = false
     ) -> Workout {
-        let convertedIntervals = workout.intervals.map { interval in
+        // 5K/10K race pace ≈ 5K speed, so a Z3 (MP) block renders at race pace and
+        // an adjacent Z4 (threshold) block is race-floored too — a `Z3→Z4`
+        // "Progression Run" collapses to a ~1s/km span (both blocks ≈ race). When
+        // such a progression has no easy (Z2) opener, demote its Z3 block(s) to Z2
+        // so it reads as a real easy→fast progression. Longer races are untouched
+        // (their Z4 stays faster than race), as are shapes that already open easy.
+        let sourceIntervals = degenerateZ3ToZ4ProgressionFix(
+            workout: workout, raceDistanceMeters: raceDistanceMeters)
+        let convertedIntervals = sourceIntervals.map { interval in
             convertIntervalToPace(
                 interval: interval,
                 racePace: racePace,
@@ -370,11 +483,12 @@ public struct PaceZoneConverter {
                 speedPace: speedPace,
                 progressionFactor: progressionFactor,
                 config: config,
-                subtype: workout.subtype
+                subtype: workout.subtype,
+                vdotAnchored: vdotAnchored
             )
         }
 
-        return Workout(
+        let converted = Workout(
             id: workout.id,
             title: workout.title,
             type: workout.type,
@@ -392,11 +506,183 @@ public struct PaceZoneConverter {
             workDistance: workout.workDistance,
             restDistance: workout.restDistance
         )
+
+        let clamped = clampLongRunDistance(converted,
+                                    conversationalPace: conversationalPace,
+                                    raceDistanceMeters: raceDistanceMeters,
+                                    isCompetitive: isCompetitive,
+                                    isBeginner: isBeginner,
+                                    isAdvanced: isAdvanced,
+                                    isTaperWeek: isTaperWeek,
+                                    progressionFactor: progressionFactor)
+        return quantizeAerobicDuration(clamped)
     }
 
-    /// Batch convert all workouts (no progression - for backward compatibility)
-    public static func convertWorkoutsArrayToPace(workouts: [Workout], racePace: Int, conversationalPace: Int? = nil) -> [Workout] {
-        return workouts.map { convertHRWorkoutToPace(workout: $0, racePace: racePace, conversationalPace: conversationalPace) }
+    /// Aerobic continuous runs read as round numbers by nature — quantize their
+    /// rendered minutes to a 5-min tick so a plan reads 120/115/110, not the 1-min
+    /// jitter that pace-easing + clamp scaling produce. Excludes structured work
+    /// (intervals, threshold, race rehearsals) whose minutes are dose-driven.
+    private static let fiveMinTickSubtypes: Set<WorkoutSubtype> = [
+        .easy, .recovery, .long, .steadyLong, .mediumLong, .progressiveLong, .progression
+    ]
+
+    private static func quantizeAerobicDuration(_ w: Workout) -> Workout {
+        guard fiveMinTickSubtypes.contains(w.subtype), w.duration > 0 else { return w }
+        let tick = 300.0  // 5 min
+        let target = Int64((Double(w.duration) / tick).rounded() * tick)
+        guard target > 0, target != w.duration else { return w }
+        let factor = Double(target) / Double(w.duration)
+        func s(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
+        let intervals = w.intervals.map { iv in
+            WorkoutInterval(id: iv.id, type: iv.type, duration: iv.duration * factor,
+                            distance: iv.distance, targetType: iv.targetType, target: iv.target)
+        }
+        return Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,
+                       trainingType: w.trainingType, targetType: w.targetType,
+                       duration: target, distance: w.distance, key: w.key,
+                       trainingLoad: s(w.trainingLoad), intervals: intervals,
+                       workRestRatio: w.workRestRatio, workDuration: s(w.workDuration),
+                       restDuration: s(w.restDuration), workDistance: w.workDistance,
+                       restDistance: w.restDistance)
+    }
+
+    /// Long-run subtypes whose duration is generated pace-blind (in minutes)
+    /// and therefore needs a per-distance KM window applied at render so a fast
+    /// runner's marathon long run doesn't balloon to 45+ km and a slow runner's
+    /// doesn't shrink below the aerobic-development floor.
+    private static let longRunSubtypes: Set<WorkoutSubtype> = [
+        .long, .steadyLong, .progressiveLong,
+        .raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K, .fastFinish
+    ]
+
+    /// Clamps a long run into a per-distance KM window [floorKm, capKm].
+    /// Long runs are generated pace-blind in minutes; at render a fast runner
+    /// overshoots and a slow runner falls short, so scale duration uniformly to
+    /// fit the window (paces, targets and the easy/fast split are preserved).
+    private static func clampLongRunDistance(
+        _ workout: Workout,
+        conversationalPace: Int?,
+        raceDistanceMeters: Int?,
+        isCompetitive: Bool,
+        isBeginner: Bool,
+        isAdvanced: Bool,
+        isTaperWeek: Bool,
+        progressionFactor: Double
+    ) -> Workout {
+        guard longRunSubtypes.contains(workout.subtype) else { return workout }
+        // Easy pace anchors the minutes→km conversion for any interval that
+        // somehow lacks a rendered pace. No easy pace → can't know the
+        // distance, so leave the (minutes-based) workout untouched.
+        guard let easyPace = conversationalPace, easyPace > 0 else { return workout }
+
+        // Per-distance window [floorKm, capKm]. Marathon/half floor brings slow
+        // runners up to race-relevant distance; 10K/5K are cap-only (their long
+        // run wasn't short, and a floor would inflate it past Higdon norms).
+        let floorKm: Double, capKm: Double
+        switch raceDistanceMeters {
+        // Competitive marathoners train longer long runs (Pfitz 18/85 ~35-38km).
+        // Beginner marathoners cap shorter — the long run holds to ~190min (3:00-
+        // 3:10), so a slow novice isn't run for 3.5h+ (see begMarathonLRCapMins).
+        // Beginner marathon is CAP-ONLY (no floor): the HR-side longRunProgression
+        // already ramps the long run 90→180min, so a km floor would inflate the
+        // early base runs up to the cap and flatten the build. Cap (+ the 190min
+        // ceiling below) just holds the top so a slow novice isn't run 3.5h+.
+        case 42195: (floorKm, capKm) = isCompetitive ? (32, 35)
+                                     : isBeginner ? (0, 28) : (30, 34)
+        // Beginner half peaks shorter (~13km / ~100min at slow pace) — a 16km
+        // floor runs a slow novice ~2h, too long for a first half.
+        case 21097: (floorKm, capKm) = isBeginner ? (13, 18) : (16, 21)
+        case 10000: (floorKm, capKm) = (0, 16)
+        case 5000:  (floorKm, capKm) = (0, 12)
+        default:    (floorKm, capKm) = (0, 34)
+        }
+
+        // Floor RAMPS with the plan, it is NOT flat across the build. A flat floor
+        // pins every build week at the floor distance from week 1, erasing the
+        // HR-side long-run build (renders a flat/declining minute curve once easy-
+        // easing kicks in). Ramp it 0→full by ~70% in: early base runs keep their
+        // (short) generated length so the build shows; only the late-peak long runs
+        // are brought up to race-relevant distance for slow runners. Taper: floor 0.
+        let floorRamp = min(1.0, progressionFactor / 0.60)
+        // No floor in the TAPER. The km-floor exists for aerobic development during the
+        // BUILD; in the taper the long run must decline. The pf<0.85 cutoff alone let the
+        // FIRST taper week (pf~0.83 in an 18wk/3wk plan) still take the full 30km floor —
+        // rendering the plan's LONGEST run ~2 weeks pre-race for slow runners. Gate on the
+        // real taper flag. (Deload long-run cuts live in the #171 clamp, applyPaceProgression.)
+        let effectiveFloor = (progressionFactor < 0.85 && !isTaperWeek) ? floorKm * floorRamp : 0
+        // Size off the CONVERTED workout's rendered pace, not raw easy pace: a
+        // long run renders ~15s/km faster (and MP/fast-finish segments faster
+        // still), so duration/easyPace under-measures and the run overshoots
+        // the window. Sum each interval's km = duration ÷ its rendered pace.
+        let km = workout.intervals.reduce(0.0) { acc, iv in
+            let paceSec: Double
+            if case .paceTarget(let base, let rel) = iv.target {
+                paceSec = Double(base) * rel
+            } else {
+                paceSec = Double(easyPace)
+            }
+            return paceSec > 0 ? acc + iv.duration / paceSec : acc
+        }
+        guard km > 0 else { return workout }
+        let effectiveCap = capKm
+        let targetKm = min(max(km, effectiveFloor), effectiveCap)
+        guard abs(targetKm - km) >= 0.1 else { return workout }
+
+        // Scaling every interval's duration by this factor scales rendered km by
+        // the same factor (paces are unchanged), landing the run on targetKm.
+        // Floor the factor so the run never drops below the engine's 60min
+        // long-run minimum (a fast 5K runner's >12km run would otherwise scale
+        // under 60min and violate the long-run floor).
+        let minSec = Double(min(Int(workout.duration), 60 * 60))
+        var factor = max(targetKm / km, minSec / Double(workout.duration))
+        // Hard minute ceiling for the beginner marathon long run: km windows are
+        // pace-relative, so the slowest novice could still cross 190min at the
+        // 28km cap. Clamp the factor so the rendered run never exceeds the cap.
+        if isBeginner, raceDistanceMeters == 42195 {
+            let begMarathonLRCapMins = 190
+            let capFactor = Double(begMarathonLRCapMins * 60) / Double(workout.duration)
+            if capFactor > 0 { factor = min(factor, capFactor) }
+        }
+        // Advanced marathon long run: hold to ~190-195min (3:10-3:15). The 30km
+        // km floor re-inflates a slow runner's long run past 210min (pace-relative),
+        // a touch too long — clamp the factor so it never exceeds the ceiling.
+        if isAdvanced, raceDistanceMeters == 42195 {
+            let advMarathonLRCapMins = 195
+            let capFactor = Double(advMarathonLRCapMins * 60) / Double(workout.duration)
+            if capFactor > 0 { factor = min(factor, capFactor) }
+        }
+        let newDurationSec = Int((Double(workout.duration) * factor).rounded())
+
+        func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
+        let scaledIntervals = workout.intervals.map { iv in
+            WorkoutInterval(
+                id: iv.id,
+                type: iv.type,
+                duration: iv.duration * factor,
+                distance: iv.distance,
+                targetType: iv.targetType,
+                target: iv.target
+            )
+        }
+
+        return Workout(
+            id: workout.id,
+            title: workout.title,
+            type: workout.type,
+            subtype: workout.subtype,
+            trainingType: workout.trainingType,
+            targetType: workout.targetType,
+            duration: Int64(newDurationSec),
+            distance: workout.distance,
+            key: workout.key,
+            trainingLoad: scale(workout.trainingLoad),
+            intervals: scaledIntervals,
+            workRestRatio: workout.workRestRatio,
+            workDuration: scale(workout.workDuration),
+            restDuration: scale(workout.restDuration),
+            workDistance: workout.workDistance,
+            restDistance: workout.restDistance
+        )
     }
 
     // MARK: - Plan Post-Processing (Progressive Conversion)
@@ -420,25 +706,52 @@ public struct PaceZoneConverter {
         speedPace: Int? = nil,
         config: PaceProgressionConfig,
         startDate: Date,
-        endDate: Date
+        endDate: Date,
+        racePaceEnd: Int? = nil,
+        conversationalPaceEnd: Int? = nil,
+        speedPaceEnd: Int? = nil,
+        raceDistanceMeters: Int? = nil,
+        isCompetitive: Bool = false,
+        isBeginner: Bool = false,
+        isAdvanced: Bool = false
     ) -> [WorkoutEvent] {
         let totalDuration = endDate.timeIntervalSince(startDate)
 
         guard totalDuration > 0 else { return events }
 
-        return events.map { event in
+        // VDOT-progression mode: when projected (race-week) paces are supplied the
+        // anchors interpolate current-VDOT (wk 1) → projected-VDOT (race wk) across
+        // the plan — the projected fitness gain IS the progression. No end-paces →
+        // legacy fixed-anchor behavior.
+        let vdotAnchored = racePaceEnd != nil
+
+        let rendered = events.map { event in
             // Calculate progression factor: 0.0 at plan start → 1.0 at plan end
             let elapsed = event.date.timeIntervalSince(startDate)
             let progressionFactor = max(0, min(1.0, elapsed / totalDuration))
 
+            func lerp(_ a: Int, _ b: Int?) -> Int {
+                guard let b = b else { return a }
+                return Int((Double(a) + (Double(b) - Double(a)) * progressionFactor).rounded())
+            }
+            let racePaceNow = lerp(racePace, racePaceEnd)
+            let easyPaceNow = conversationalPace.map { lerp($0, conversationalPaceEnd) }
+            let speedPaceNow = speedPace.map { lerp($0, speedPaceEnd) }
+
             // Convert this event's workout with its specific progression
             let convertedWorkout = convertHRWorkoutToPace(
                 workout: event.workout,
-                racePace: racePace,
-                conversationalPace: conversationalPace,
-                speedPace: speedPace,
+                racePace: racePaceNow,
+                conversationalPace: easyPaceNow,
+                speedPace: speedPaceNow,
                 progressionFactor: progressionFactor,
-                config: config
+                config: config,
+                vdotAnchored: vdotAnchored,
+                raceDistanceMeters: raceDistanceMeters,
+                isCompetitive: isCompetitive,
+                isBeginner: isBeginner,
+                isAdvanced: isAdvanced,
+                isTaperWeek: event.isTaperWeek  // no km-floor in the taper (see clampLongRunDistance)
             )
 
             // Create updated event
@@ -446,6 +759,55 @@ public struct PaceZoneConverter {
             updatedEvent.workout = convertedWorkout
             return updatedEvent
         }
+
+        // #171 — Deload long-run clamp. Each BUILD-phase deload week's long run renders
+        // at ~0.80x the prior non-deload week's DELIVERED long run: an exact ~20% dip
+        // across tiers AND fitness levels, reaching weeks whose HR-side long run didn't
+        // dip (cut-vs-trajectory, or a reused MP rehearsal) that a render coefficient
+        // can't. Keys on the generator's real deload flag (event.isDeloadWeek).
+        var out = rendered
+        // The long run = the LONGEST long-run-subtype workout in a week (a week can also
+        // hold a short mid-week run of the same subtype). Group by plan week so the clamp
+        // and the prior-week reference both key off the real long run, not the short one.
+        var longestIdxByWeek: [Int: Int] = [:]
+        for (i, e) in out.enumerated() where longRunSubtypes.contains(e.workout.subtype) {
+            if let cur = longestIdxByWeek[e.planWeekIndex], out[cur].workout.duration >= e.workout.duration { continue }
+            longestIdxByWeek[e.planWeekIndex] = i
+        }
+        var prevNonDeloadLongSec: Int64? = nil
+        for wk in longestIdxByWeek.keys.sorted() {
+            let i = longestIdxByWeek[wk]!
+            if out[i].isDeloadWeek {
+                if let prev = prevNonDeloadLongSec {
+                    // ~20% cut, but never below the 60-min aerobic long-run floor (base-phase
+                    // deloads off a short prior run would otherwise dip under it).
+                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: max(Int64(3600), Int64((Double(prev) * 0.80).rounded())))
+                }
+            } else {
+                prevNonDeloadLongSec = out[i].workout.duration
+            }
+        }
+        return out
+    }
+
+    /// Scale a workout to an exact target duration (seconds) — intervals + load scaled —
+    /// then 5-min-ticking aerobic runs. Used by the deload long-run clamp.
+    private static func scaleWorkout(_ w: Workout, toSeconds target: Int64) -> Workout {
+        guard w.duration > 0, target > 0, target != w.duration else { return w }
+        let factor = Double(target) / Double(w.duration)
+        func s(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
+        let intervals = w.intervals.map { iv in
+            WorkoutInterval(id: iv.id, type: iv.type, duration: iv.duration * factor,
+                            distance: iv.distance, targetType: iv.targetType, target: iv.target)
+        }
+        let scaled = Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,
+                             trainingType: w.trainingType, targetType: w.targetType,
+                             duration: target, distance: w.distance, key: w.key,
+                             trainingLoad: s(w.trainingLoad), intervals: intervals,
+                             workRestRatio: w.workRestRatio, workDuration: s(w.workDuration),
+                             restDuration: s(w.restDuration), workDistance: w.workDistance,
+                             restDistance: w.restDistance)
+        return quantizeAerobicDuration(scaled)
     }
 
     // MARK: - Helper Functions

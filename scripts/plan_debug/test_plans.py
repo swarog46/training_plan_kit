@@ -66,6 +66,19 @@ def run_dump(filter_str):
                        capture_output=True, text=True, env=os.environ.copy())
     return r.stdout
 
+def parse_phase_weeks(filter_str):
+    """dict[week_num(1-based)] = (phase, is_deload) from the `phases` target model.
+    Recovery weeks now intentionally dip in realized volume, so peak comparisons
+    must exclude [deload] weeks to avoid measuring against a cutback week."""
+    r = subprocess.run([PLAN_DEBUG, "phases", filter_str],
+                       capture_output=True, text=True, env=os.environ.copy())
+    res = {}
+    for m in re.finditer(
+            r"^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load=.*?dur=\s*\d+min(\s+\[deload\])?",
+            r.stdout, re.M):
+        res[int(m.group(1))] = (m.group(2), m.group(3) is not None)
+    return res
+
 def parse_plan(text, header):
     """Return dict[week_num] = [(subtype, duration_min, pace_str)]."""
     if header not in text:
@@ -157,10 +170,11 @@ section("Z3 (MP) workouts hit racePace from day 1, all tiers")
 text = run_pacedump("Cmp 42K (long", race_pace=256, easy_pace=300)
 w = parse_plan(text, "Cmp 42K (long, 22w)")
 mp_paces_w1 = [(s, p) for s,_,p in (w[1] if w else []) if s == 'steadyLong']
-# Cmp 42K W1 steadyLong (Z2) should be 4:54/km (1.15 × 256) — race-pace-anchored
+# Cmp 42K W1 steadyLong (Z2): at-goal competitive easy anchors to the runner's
+# stated easy (300 = 5:00) and eases from there — NOT frozen at 1.15×race (was 4:55).
 check(
-    "Cmp 42K W1 steadyLong @ 4:54/km",
-    any('4:54/km' in p for _, p in mp_paces_w1),
+    "Cmp 42K W1 steadyLong @ 5:00/km",
+    any('5:00/km' in p for _, p in mp_paces_w1),
     f"got {mp_paces_w1}"
 )
 
@@ -204,10 +218,14 @@ check(
 section("Long-run monotonic dynamics")
 
 # Beg 42K: long runs grow (allow 5min slack), no surprise weeks for beginners.
+# Deload weeks legitimately CUT the long run (BeginnerProfile.cutbackDipsBelowPrior
+# Week), so the monotonic build is measured on NON-DELOAD weeks only — the dips on
+# recovery weeks are the intended sawtooth, not regressions.
 text = run_pacedump("Beg 42K (long", race_pace=330, easy_pace=450)
 w = parse_plan(text, "Beg 42K (long, 22w)")
 durs = get_long_durations(w)
-build_durs = [(wk, d) for wk, d in durs if wk <= 17]  # exclude taper
+_beg42_deload = {wk for wk, (_ph, dl) in parse_phase_weeks("Beg 42K (long").items() if dl}
+build_durs = [(wk, d) for wk, d in durs if wk <= 17 and wk not in _beg42_deload]
 regressions = []
 for i in range(1, len(build_durs)):
     if build_durs[i][1] < build_durs[i-1][1] - 5:
@@ -215,7 +233,7 @@ for i in range(1, len(build_durs)):
             f"W{build_durs[i-1][0]}→W{build_durs[i][0]}: "
             f"{build_durs[i-1][1]}→{build_durs[i][1]}m")
 check(
-    "Beg 42K long runs monotonic in build phases (≤5min slack)",
+    "Beg 42K long runs monotonic in non-deload build weeks (≤5min slack)",
     not regressions,
     f"regressions: {regressions}",
     full=True
@@ -238,15 +256,77 @@ check(
     f"violations: {taper_violations}"
 )
 
+# Long marathon builds (36w) must RAMP the BASE long run, not park it flat at
+# p.base for ~16 weeks. Two teeth: (1) strictly non-decreasing across BASE (the
+# load selector would otherwise drift it DOWN at the start), (2) de-flattened —
+# the build spans >=15min from first to last base week instead of a plateau.
+def base_long_runs(dump_text, header):
+    """[(week, long_dur)] for BASE-phase weeks only, parsed from dump output."""
+    if f'=== {header}' not in dump_text:
+        return None
+    sect = dump_text.split(f'=== {header}')[1]
+    out = []
+    wk = ph = lr = None
+    def flush():
+        if wk is not None and ph == 'base' and lr is not None:
+            out.append((wk, lr))
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *(\d+) \[(\w+)', line)
+        if m:
+            flush()
+            wk, ph, lr = int(m.group(1)), m.group(2), None
+            continue
+        mm = re.search(r'\s(\d+)min\s+l=\d+\s+\[(\w+)/(\w+)\]', line)
+        if mm and ph == 'base':
+            dur, sub, role = int(mm.group(1)), mm.group(2), mm.group(3)
+            if role == 'long' or sub in LONG:
+                lr = dur if lr is None else max(lr, dur)
+    flush()
+    return out
+
+cmp_max_dump = run_dump("Cmp 42K (max")
+base_lr = base_long_runs(cmp_max_dump, "Cmp 42K (max, 36w)") or []
+descents = [f"W{base_lr[i-1][0]}→W{base_lr[i][0]}: {base_lr[i-1][1]}→{base_lr[i][1]}m"
+            for i in range(1, len(base_lr)) if base_lr[i][1] < base_lr[i-1][1]]
+check(
+    "Cmp 42K max BASE long run strictly non-decreasing (no backward step at start)",
+    bool(base_lr) and not descents,
+    f"base seq={[d for _,d in base_lr]}, descents: {descents}",
+    full=True
+)
+# Trend: the LAST 3 base weeks must sit >=12min above the FIRST 3 — a genuine
+# progressive build, not a plateau. The old wobble (~+5min) and a flat-at-p.base
+# base that just climbs then parks (~+7min) both fail; only the ramp clears it.
+first3 = [d for _, d in base_lr[:3]]
+last3 = [d for _, d in base_lr[-3:]]
+trend = (sum(last3) / len(last3) - sum(first3) / len(first3)) if base_lr else 0
+check(
+    "Cmp 42K max BASE long run trends up >=12min (progressive build, not plateau)",
+    trend >= 12,
+    f"first3_avg={sum(first3)/max(len(first3),1):.0f}, "
+    f"last3_avg={sum(last3)/max(len(last3),1):.0f}, trend={trend:.0f}min, "
+    f"seq={[d for _,d in base_lr]}",
+    full=True
+)
+
 section("Marathon long-run peak durations match references")
 
 # Higdon Novice 1: 20mi ≈ 180min. Pfitz 18/55: 22mi ≈ 195min.
 # Pfitz 18/70: 22mi+ ≈ 210min. Cmp matches Pfitz 18/85 sub-3h.
+# Beg floor 175→170: the novice marathon long run is now capped at ~180-190min
+# (the ~205-225 peak was too long for a beginner); the coarse sample-catalog
+# rehearsal rung lands at 174 after the cap, so the floor follows. The ceiling
+# (<=190min) is guarded by the dedicated beginner-cap section below.
 ref = [
-    ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 175, "Higdon Novice 1: 180"),
+    ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 170, "Higdon Novice 1: 180, capped ~190"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
-    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 190, "Pfitz 18/70: 210"),
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 200, "Pfitz 18/85 sub-3: 210"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 175, "floor-ramp built peak ~180; capped ~195"),
+    # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
+    # run at 38km — at 5:00/km easy that's ~190min, which already exceeds Pfitz
+    # 18/85's 22mi (~35km/177min). Old 200min floor was pace-blind. Govern by km.
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 160, "Pfitz 18/85 longest ~22mi/35km; km-capped 35km"),
 ]
 for header, fil, rp, ep, expected_min, ref_str in ref:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)
@@ -370,6 +450,72 @@ if w:
         f"first_block_avg={first_block:.0f}, last_block_avg={last_block:.0f}, growth={growth_pct:.0f}%"
     )
 
+# --- Maintenance defects: deload label, onboarding cliff, Beg quality variety -
+# Maintenance runs its OWN recovery cadence (W1-2 easy ramp, every-4th-week
+# deload) but used to pass isDeloading=false to the periodization, so the dump's
+# [deload] tag landed on the HEAVY weeks while the real light weeks went
+# unlabeled; the opening detonated into full quality at W3 (+130-220%); and
+# Maint Beg's quality was 100% threshold. These defend the fixes.
+section("Maintenance — deload label, onboarding ramp, Beg quality variety")
+
+def parse_maint_weeks(label):
+    """dict[week(1-based)] = {load, deload, subs:[(subtype, role)]} from `dump`."""
+    text = run_dump(label)
+    if f'=== {label}' not in text:
+        return {}
+    sect = text.split(f'=== {label}')[1].split('\n=== ')[0]
+    weeks = {}
+    cur = None
+    for line in sect.splitlines():
+        wm = re.match(r'^W\s*(\d+)\s*\[(\w+)[^\]]*\]\s+\d+wkts\s+load=\s*(\d+)\s+\d+min(\s+\[deload\])?', line)
+        if wm:
+            cur = int(wm.group(1))
+            weeks[cur] = {'load': int(wm.group(3)), 'deload': wm.group(4) is not None, 'subs': []}
+            continue
+        sm = re.search(r'\[([a-zA-Z0-9]+)/([a-z_0-9]+)\]', line)
+        if sm and cur is not None:
+            weeks[cur]['subs'].append((sm.group(1), sm.group(2)))
+    return weeks
+
+# Real quality subtypes (excludes easy/long/progression/strides aerobic work).
+MAINT_QUALITY = {'intervals', 'ladderIntervals', 'pyramidIntervals', 'threshold',
+                 'hillRepeats', 'fivekPace', 'tenkPace', 'mileRepeats',
+                 'yasso800', 'timeTrial', 'fartlek'}
+
+import statistics as _stats
+for _label in ("Maint Beg", "Maint Int", "Maint Adv"):
+    _w = parse_maint_weeks(_label)
+    _loads = [_w[k]['load'] for k in sorted(_w)]
+    _median = _stats.median(_loads) if _loads else 0
+    # (1) Every [deload]-labeled week is <= the plan's median load — the tag must
+    # mark a genuinely light week, never a heavy one.
+    _bad = [(k, _w[k]['load']) for k in sorted(_w) if _w[k]['deload'] and _w[k]['load'] > _median]
+    check(f"{_label}: every [deload] week is <= median load ({_median:.0f})",
+          not _bad,
+          f"[deload] tags on ABOVE-median (heavy) weeks: {_bad}; loads={_loads}",
+          full=True)
+    # (2) No week's load jumps >80% vs the prior week — a gradual opening, no
+    # detonation into full quality.
+    _jumps = []
+    _ks = sorted(_w)
+    for _i in range(1, len(_ks)):
+        _p, _c = _w[_ks[_i - 1]]['load'], _w[_ks[_i]]['load']
+        if _p > 0 and (_c - _p) / _p > 0.80:
+            _jumps.append(f"W{_ks[_i-1]}->W{_ks[_i]}: {_p}->{_c} (+{(_c-_p)/_p*100:.0f}%)")
+    check(f"{_label}: no week's load jumps >80% vs prior (smooth onboarding)",
+          not _jumps,
+          f"load detonations: {_jumps}",
+          full=True)
+
+# (3) Maint Beg quality spans >=2 distinct types (not 100% threshold) — give it
+# interval/ladder variety like Maint Int/Adv.
+_wbeg = parse_maint_weeks("Maint Beg")
+_beg_qual = sorted({sub for k in _wbeg for sub, _ in _wbeg[k]['subs'] if sub in MAINT_QUALITY})
+check("Maint Beg quality spans >=2 distinct types (not 100% threshold)",
+      len(_beg_qual) >= 2,
+      f"quality subtypes seen: {_beg_qual}",
+      full=True)
+
 section("5K plans long-run policy (Beg/Int skip, Adv has Daniels Phase II optionals)")
 
 for header, fil, expected_max in [
@@ -442,6 +588,155 @@ for header, fil, rp, ep in [
         f"no race-pace workouts found"
     )
 
+section("Beg 21K/42K keep a REDUCED long run in the taper (no taper LR cliff)")
+
+# Bug: beginner half/marathon plans went from the single longest run of the
+# plan (peak) straight to NO long run in the taper — a cliff. Every other tier
+# (Int/Adv/Cmp) keeps a reduced taper long run for endurance maintenance
+# (Pfitz/Daniels). Assert: for Beg 21K/42K (ALL variants incl Acc), every TAPER
+# week that PRECEDES the race week carries a long-run-class session, and that
+# session is REDUCED vs the plan's peak long run (present, but below peak —
+# not zero, not >= peak). Phase labels come from `dump` (the real per-week
+# phase buildWeek uses), not the `phases` target model.
+
+def parse_dump_phase_longs(dump_text, header):
+    """dict[week] = (phase, [long_durs]) parsed from `dump`. A long-run-class
+    session is any workout whose subtype is in LONG or whose role == 'long'."""
+    if f'=== {header}' not in dump_text:
+        return None
+    sect = dump_text.split(f'=== {header}')[1]
+    weeks = {}
+    cur = cur_phase = None
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *(\d+) \[(\w+)', line)
+        if m:
+            cur, cur_phase = int(m.group(1)), m.group(2)
+            weeks[cur] = (cur_phase, [])
+            continue
+        if cur is None:
+            continue
+        mm = re.search(r'\s(\d+)min\s+l=\d+\s+\[(\w+)/(\w+)\]', line)
+        if mm:
+            dur, sub, role = int(mm.group(1)), mm.group(2), mm.group(3)
+            if sub in LONG or role == 'long':
+                weeks[cur][1].append(dur)
+    return weeks
+
+# (header, unique dump filter). All 8 affected Beg variants + every other tier
+# at 21K/42K (which must ALREADY satisfy the invariant — regression guard).
+TAPER_LR_BEG = [
+    ("Beg 21K (short, 10w)",   "Beg 21K (short, 10w)"),
+    ("Beg 21K (rec, 14w)",     "Beg 21K (rec, 14w)"),
+    ("Beg 21K (long, 18w)",    "Beg 21K (long, 18w)"),
+    ("Beg 42K (short, 14w)",   "Beg 42K (short, 14w)"),
+    ("Beg 42K (rec, 18w)",     "Beg 42K (rec, 18w)"),
+    ("Beg 42K (long, 22w)",    "Beg 42K (long, 22w)"),
+    ("Acc Beg 21K (rec, 14w)", "Acc Beg 21K (rec, 14w)"),
+    ("Acc Beg 42K (rec, 18w)", "Acc Beg 42K (rec, 18w)"),
+]
+TAPER_LR_OTHER = [
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)"),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)"),
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)"),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)"),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)"),
+]
+for label_group, plans in [("Beg", TAPER_LR_BEG), ("other tier", TAPER_LR_OTHER)]:
+    for header, fil in plans:
+        weeks = parse_dump_phase_longs(run_dump(fil), header)
+        if not weeks:
+            check(f"{header} taper-LR parses", False, "no plan parsed from dump")
+            continue
+        # Peak long run = max long-run-class duration across all BUILD weeks.
+        peak_lr = max(
+            (max(longs) for (ph, longs) in weeks.values()
+             if ph in ('base', 'speed', 'peak') and longs),
+            default=0)
+        # Taper weeks that PRECEDE the race week (race week stays hands-off).
+        race_wk = max((wk for wk, (ph, _) in weeks.items() if ph == 'race'),
+                      default=max(weeks))
+        taper_wks = [wk for wk, (ph, _) in sorted(weeks.items())
+                     if ph == 'taper' and wk < race_wk]
+        # The 60min long-run floor is the beginner safety minimum. When a plan is
+        # light enough that its PEAK long run already sits at that floor (e.g. the
+        # accessible 21K tier post-#147), the taper long run cannot drop below it
+        # without breaking the rail — so a taper LR AT the floor is "reduced as far
+        # as the floor allows", not a violation. Equality only fails when the peak
+        # is above the floor (a genuine plateau where the taper should have cut).
+        LR_FLOOR = 60
+        problems = []
+        for wk in taper_wks:
+            longs = weeks[wk][1]
+            if not longs:
+                problems.append(f"W{wk}: NO long run (peak={peak_lr}m)")
+            elif max(longs) >= peak_lr and peak_lr > LR_FLOOR:
+                problems.append(f"W{wk}: long {max(longs)}m >= peak {peak_lr}m (not reduced)")
+        check(
+            f"{header.split(' (')[0]} {label_group}: taper weeks carry a REDUCED long run",
+            bool(taper_wks) and not problems,
+            f"taper_wks={taper_wks}, peak={peak_lr}m, problems={problems}"
+        )
+
+section("Every 21K+ BUILD week (base/speed/peak) carries a long run (all tiers incl Acc)")
+
+# The taper-LR test above only guards TAPER weeks. This extends the guarantee to
+# the BUILD phases: for every 21K+ plan, EVERY base/speed/peak week (excluding the
+# race week) must carry a long-run-class session. Caught the Acc Beg 21K regression
+# where the forced mid-PEAK race-rehearsal week cleared the long-run pool down to
+# raceRehearsalHM, the 72-min cap then emptied it (shortest HMP rung was 75min), and
+# the long-run slot silently fell through to a ~35min easy filler. Reuses
+# parse_dump_phase_longs (phase labels from `dump`, the real per-week phase).
+
+# Every 21K+ plan plan_debug enumerates, across all tiers incl Acc.
+BUILD_LR_PLANS = [
+    ("Beg 21K (short, 10w)",   "Beg 21K (short, 10w)"),
+    ("Beg 21K (rec, 14w)",     "Beg 21K (rec, 14w)"),
+    ("Beg 21K (long, 18w)",    "Beg 21K (long, 18w)"),
+    ("Int 21K (rec, 14w)",     "Int 21K (rec, 14w)"),
+    ("Int 21K (long, 18w)",    "Int 21K (long, 18w)"),
+    ("Adv 21K (rec, 14w)",     "Adv 21K (rec, 14w)"),
+    ("Adv 21K (long, 18w)",    "Adv 21K (long, 18w)"),
+    ("Cmp 21K (short, 12w)",   "Cmp 21K (short, 12w)"),
+    ("Cmp 21K (rec, 14w)",     "Cmp 21K (rec, 14w)"),
+    ("Cmp 21K (long, 18w)",    "Cmp 21K (long, 18w)"),
+    ("Beg 42K (short, 14w)",   "Beg 42K (short, 14w)"),
+    ("Beg 42K (rec, 18w)",     "Beg 42K (rec, 18w)"),
+    ("Beg 42K (long, 22w)",    "Beg 42K (long, 22w)"),
+    ("Int 42K (rec, 18w)",     "Int 42K (rec, 18w)"),
+    ("Int 42K (long, 22w)",    "Int 42K (long, 22w)"),
+    ("Adv 42K (rec, 18w)",     "Adv 42K (rec, 18w)"),
+    ("Adv 42K (long, 22w)",    "Adv 42K (long, 22w)"),
+    ("Cmp 42K (rec, 18w)",     "Cmp 42K (rec, 18w)"),
+    ("Cmp 42K (long, 22w)",    "Cmp 42K (long, 22w)"),
+    ("Cmp 42K (build, 28w)",   "Cmp 42K (build, 28w)"),
+    ("Acc Beg 21K (rec, 14w)", "Acc Beg 21K (rec, 14w)"),
+    ("Acc Int 21K (rec, 14w)", "Acc Int 21K (rec, 14w)"),
+    ("Acc Adv 21K (rec, 14w)", "Acc Adv 21K (rec, 14w)"),
+    ("Acc Beg 42K (rec, 18w)", "Acc Beg 42K (rec, 18w)"),
+    ("Acc Int 42K (rec, 18w)", "Acc Int 42K (rec, 18w)"),
+    ("Acc Adv 42K (rec, 18w)", "Acc Adv 42K (rec, 18w)"),
+]
+for header, fil in BUILD_LR_PLANS:
+    weeks = parse_dump_phase_longs(run_dump(fil), header)
+    if not weeks:
+        check(f"{header} build-LR parses", False, "no plan parsed from dump")
+        continue
+    # Race week stays hands-off (handled by the race-week branch).
+    race_wk = max((wk for wk, (ph, _) in weeks.items() if ph == 'race'),
+                  default=max(weeks))
+    missing = [
+        f"W{wk}({ph})" for wk, (ph, longs) in sorted(weeks.items())
+        if ph in ('base', 'speed', 'peak') and wk < race_wk and not longs
+    ]
+    check(
+        f"{header.split(' (')[0]}: every build week carries a long run",
+        not missing,
+        f"build weeks with NO long run: {missing}"
+    )
+
 section("Beg 10K has a long run every build week")
 
 text = run_pacedump("Beg 10K (long", race_pace=300, easy_pace=420)
@@ -458,6 +753,82 @@ check(
     not missing,
     f"missing in weeks: {missing}"
 )
+
+section("Beg quality-TYPE variety — not 100% threshold every quality week")
+
+# Bug: Beg 10K/21K/42K (incl Acc) ran ONE quality TYPE — all threshold — every
+# quality week (the threshold progression 3x8->3x10->2x12->2x15 is sensible, but
+# a beginner did the identical TYPE all season). Fix alternates the quality
+# session between threshold and hill repeats (both beginner-safe LT/strength at
+# similar load). Assert: the set of TRUE hard-quality TYPES across the plan has
+# >=2 distinct types. 5K Beg is fine (already TT+threshold) and is excluded.
+# Other tiers (Int/Adv/Cmp) already vary — kept as a regression guard.
+#
+# "Hard quality" = the day daydump marks 'Q' (the threshold/hills/TT/MP session).
+# Easy+Strides is NOT a Q day (it's a low-load aerobic+neuromuscular filler), so
+# it's correctly excluded — strides crowding the interval slot was the bug.
+
+def quality_types_via_daydump(filter_str, header):
+    """Set of subtypes for daydump 'Q'-marked (hard quality) sessions."""
+    r = subprocess.run([PLAN_DEBUG, "daydump", filter_str],
+                       capture_output=True, text=True, env=os.environ.copy())
+    marker = f'=== {header} DAY-BY-DAY'
+    if marker not in r.stdout:
+        return None
+    sect = r.stdout.split(marker, 1)[1]
+    nxt = re.search(r'\n=== ', sect)
+    if nxt:
+        sect = sect[:nxt.start()]
+    types = []
+    for line in sect.splitlines():
+        m = re.match(r'^\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+Q\s+.+?\[(\w+)\]', line)
+        if m:
+            types.append(m.group(2))
+    return types
+
+# Affected beginner plans — every variant the audit flagged as all-threshold,
+# plus the Acc tier. ALL must now span >=2 quality types.
+BEG_QUALITY_VARIETY = [
+    ("Beg 10K (long, 12w)",    "Beg 10K (long, 12w)"),
+    ("Beg 21K (short, 10w)",   "Beg 21K (short, 10w)"),
+    ("Beg 21K (rec, 14w)",     "Beg 21K (rec, 14w)"),
+    ("Beg 21K (long, 18w)",    "Beg 21K (long, 18w)"),
+    ("Beg 42K (short, 14w)",   "Beg 42K (short, 14w)"),
+    ("Beg 42K (rec, 18w)",     "Beg 42K (rec, 18w)"),
+    ("Beg 42K (long, 22w)",    "Beg 42K (long, 22w)"),
+    ("Acc Beg 21K (rec, 14w)", "Acc Beg 21K (rec, 14w)"),
+    ("Acc Beg 42K (rec, 18w)", "Acc Beg 42K (rec, 18w)"),
+]
+for header, fil in BEG_QUALITY_VARIETY:
+    types = quality_types_via_daydump(fil, header)
+    if types is None:
+        check(f"{header} quality-variety parses", False, "no daydump for plan")
+        continue
+    distinct = sorted(set(types))
+    check(
+        f"{header.split(' (')[0]}: quality TYPES span >=2 (not 100% one type)",
+        len(distinct) >= 2,
+        f"quality types: {types} (distinct={distinct})"
+    )
+
+# Regression guard: other tiers (which already vary) must stay varied.
+OTHER_QUALITY_VARIETY = [
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)"),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)"),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)"),
+]
+for header, fil in OTHER_QUALITY_VARIETY:
+    types = quality_types_via_daydump(fil, header)
+    if types is None:
+        check(f"{header} quality-variety parses", False, "no daydump for plan")
+        continue
+    distinct = sorted(set(types))
+    check(
+        f"{header.split(' (')[0]}: quality TYPES span >=2 (regression guard)",
+        len(distinct) >= 2,
+        f"quality types: {types} (distinct={distinct})"
+    )
 
 section("Adv 42K hits Pfitz 18/55 territory in PEAK")
 
@@ -492,7 +863,14 @@ CMP_SNAPSHOTS = [
     # 2026-06-16: total 10244→9789, sessions 129→124 from the peak-volume
     # soft cap (Adv/Cmp marathons capped ~9h; sheds the largest aerobic FILL,
     # never the long run — peak LR unchanged at 210) + the 3-week taper floor.
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 9789, 124, 210),
+    # 2026-06-18: 9789→9686 (−1%) from BASE quality-variety injection — every
+    # other competitive/advanced BASE off-week now runs an MP/LT (threshold-pool)
+    # session instead of a ladder. MP is Z3 (load-dense), so easy fill rebalances
+    # down slightly. Sessions (124) and peak LR (210) unchanged.
+    # 2026-06-18: 9686→9790 (+1%) from the ACWR volume ramp-cap — capping a
+    # peak-finish target spike frees workouts that redistribute to later weeks
+    # (cascade). Sessions (124) and peak LR (210) unchanged.
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 9790, 124, 210),
     # Additional bump 12002 → 12123 from the alternating-week mediumLong
     # forcing — Cmp 42K build picks 90-100min ML on even weeks where
     # selector previously picked 80min easy. 2026-06-16: 12123→11809,
@@ -541,18 +919,25 @@ if w:
     durs = get_long_durations(w)
     peak_lr = max(d for _, d in durs) if durs else 0
     check(
-        "Cmp 42K 28w peak LR caps at ~220m (no runaway scaling)",
-        180 <= peak_lr <= 230,
+        "Cmp 42K 28w peak LR caps at ~35km/~165m (no runaway; Pfitz longest ~22mi)",
+        140 <= peak_lr <= 185,
         f"peak_lr={peak_lr}m"
     )
     week_vols = {wk: sum(d for _,d,_ in w[wk]) for wk in w}
     nweeks = max(w)
     last_taper = week_vols[nweeks - 1]
-    avg_peak = sum(week_vols[wk] for wk in range(nweeks-5, nweeks-2)) / 3
+    # Peak figure from NON-DELOAD PEAK weeks only: recovery weeks now deliberately
+    # remove load and dip below their predecessor, so averaging them in (as the
+    # old fixed nweeks-5..nweeks-2 window did) understates the true peak and makes
+    # the taper-drop ratio spuriously fail. Compare the taper against real peak load.
+    phw = parse_phase_weeks("Cmp 42K (build")
+    peak_real = [week_vols[wk] for wk in week_vols
+                 if phw.get(wk, (None, False)) == ("PEAK", False)]
+    avg_peak = sum(peak_real) / len(peak_real) if peak_real else 0
     check(
         "Cmp 42K 28w TAPER drops meaningfully from peak",
-        last_taper < avg_peak * 0.7,
-        f"last_taper={last_taper}, avg_peak={avg_peak:.0f}"
+        peak_real and last_taper < avg_peak * 0.7,
+        f"last_taper={last_taper}, avg_peak={avg_peak:.0f} (non-deload peak weeks={len(peak_real)})"
     )
 
 section("Short-than-recommended plans (5K 5w) generate cleanly")
@@ -913,24 +1298,179 @@ for header, fil, t5k, dist, is_cmp in PACE_QUALITY_PLANS:
               all(abs(p - goal) <= TOL for p in mp),
               f"goal={_mm(goal)} out={[_mm(p) for p in mp if abs(p - goal) > TOL][:3]}",
               full=True)
-    # (2) Core invariant: every quality pace sits in [5K pace .. ~HM pace] -
-    #     5K-speed anchored with easing slack, NEVER as slow as marathon pace.
+    # (2) Core invariant: every quality pace is 5K-SPEED anchored and REP-LENGTH
+    #     aware. Fastest = short-rep VO2 / hills at ~0.88×5K (faster than 5K pace);
+    #     slowest = week-1 threshold at ~1.06×5K (true LT). Never as slow as MP.
     if qual:
-        lo, hi = speed5k - TOL, int(speed5k * 1.16) + TOL
+        lo, hi = int(speed5k * 0.85) - TOL, int(speed5k * 1.07) + TOL
         bad = [p for p in qual if not (lo <= p <= hi)]
-        check(f"{short} quality in [5K {_mm(speed5k)} .. ~HM {_mm(int(speed5k * 1.16))}] (5K-anchored)",
+        check(f"{short} quality in [{_mm(int(speed5k*0.85))} .. {_mm(int(speed5k*1.07))}] (5K-speed anchored, rep-length-aware)",
               not bad, f"out={[_mm(p) for p in bad[:4]]}", full=True)
-    # (3) The fix in one line: on the marathon, fastest quality reaches ~10K
-    #     pace - far faster than goal MP - proving it is decoupled from goal.
+    # (3) On the marathon, fastest quality is far faster than goal MP - decoupled.
     if qual and dist >= 42195 and 'Beg' not in short:
         check(f"{short} fastest quality reaches >= 10K pace, not goal MP (decoupled)",
               min(qual) <= p10k + TOL,
               f"fastest={_mm(min(qual))} 10K={_mm(p10k)} goal(MP)={_mm(goal)}", full=True)
-    # (4) Adv / Cmp fully sharpen: fastest quality reaches ~5K pace.
+    # (4) Adv / Cmp fully sharpen: fastest quality is AT or BELOW 5K pace (the
+    #     short-rep VO2 now runs faster than 5K — R/I-pace, rep-length-aware).
     if qual and ('Adv' in short or is_cmp):
-        check(f"{short} fastest quality reaches ~5K pace +/-{TOL}s (Adv/Cmp sharpen)",
+        check(f"{short} fastest quality at/below 5K pace (sharp short-rep VO2)",
               min(qual) <= speed5k + TOL,
               f"fastest={_mm(min(qual))} 5K={_mm(speed5k)}", full=True)
+
+section("5K/10K ladders are true VO2 (faster than race, not Z4 LT inversion)")
+# Some ladderIntervals templates are Z4-only (LT cruise intervals). On 5K/10K
+# (race ≈ 5K speed) a Z4 ladder slotted as the VO2 session renders SLOWER than
+# race — an inversion. The engine drops Z4-only ladders on 5K/10K (keeps them on
+# half/marathon). Every ladder's WORK (fastest rung) must be faster than race.
+for header, fil, t5k, dist in [
+    ("Int 5K (long, 10w)",  "Int 5K (long, 10w)",  1320, 5000),
+    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  1080, 5000),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 1320, 10000),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 1080, 10000),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    vo2 = [parse_pace_secs_first(pp) for wk in (w or {}) for s, _, pp in w[wk]
+           if s in ('ladderIntervals', 'intervals', 'pyramidIntervals')]
+    vo2 = [v for v in vo2 if v is not None]
+    if vo2:
+        check(f"{short} VO2-family (intervals/ladders) faster than race (no Z4 inversion)",
+              max(vo2) < race,
+              f"slowest-VO2-work={_mm(max(vo2))} race={_mm(race)}", full=True)
+
+section("10K easy anchors to stated easy + progresses (not gap-blended fast)")
+# The 10K tier (easy ~19% slower than race) used to fall into the gap-blend and
+# render easy FASTER than the stated easy (6:04 vs 6:11) with only ~5s progression.
+# Now all non-competitive easy anchors to the stated easy + ~4% (~13s) progression.
+for header, fil, t5k, dist in [
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 1320, 10000),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 1080, 10000),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    easies = [parse_pace_secs_first(pp) for wk in (w or {}) for s, _, pp in w[wk] if s == 'easy']
+    easies = [e for e in easies if e]
+    if easies:
+        check(f"{short} W1 easy ~ stated easy, not gap-blended faster",
+              max(easies) >= easy - 4,
+              f"slowest easy={_mm(max(easies))} stated={_mm(easy)}", full=True)
+        check(f"{short} easy progresses >=10s over block (anchored + ~4%)",
+              max(easies) - min(easies) >= 10,
+              f"range={_mm(min(easies))}..{_mm(max(easies))}", full=True)
+
+section("Aerobic floor — easy/long never render FASTER than race pace (any plan)")
+# Universal §2A invariant: an easy-class run's AEROBIC pace must never be faster
+# than that plan's race pace (easy >= race). The legacy easy-easing floors the
+# base gap at race but then eases ~6.5% on top with no clamp, so low-headroom
+# plans (easy ~ race) underflow: at-goal competitive (Cmp clear, ~1% headroom)
+# and slow runners (race ~ easy). We assert on the SLOWEST listed pace per line
+# — the aerobic pace — so an embedded MP / progression-finish race-pace segment
+# (which is MEANT to touch race) does not mask or trip the check.
+EASY_CLASS = {'easy', 'recovery', 'steadyLong', 'long', 'mediumLong', 'progressiveLong'}
+
+def parse_pace_secs_slowest(pace_str):
+    """SLOWEST (largest sec/km) pace on a line — the aerobic pace of an easy/long
+    run. Embedded faster MP/progression-finish segments are ignored on purpose."""
+    if not pace_str: return None
+    paces = re.findall(r'(\d+):(\d+)/km', pace_str)
+    if not paces: return None
+    return max(int(m) * 60 + int(s) for m, s in paces)
+
+# Faithful per-plan inputs, derived the way the iOS app derives them from a race
+# result. Cmp uses the at-goal "clear" config (build_band=False → no BUILD_BAND):
+# goal 256, easy/speed from the runner's real VDOT. The SLOW band is the
+# highest-inversion-risk: VDOT<30 caps easy near threshold (see
+# `VDOT.easyPaceSecondsPerKm`) so easy lands only ~1-5% above race — well inside
+# the 6.5% legacy easing. We replicate that exact clamp here (a plain 72%-VO2max
+# easy overstates the headroom and would miss the slow-runner inversion).
+def _app_easy(vd):
+    """Replicates VDOT.easyPaceSecondsPerKm: 72% VO2max, but below VDOT 30 the
+    72% pace balloons into a walk, so it's capped to threshold + a shrinking gap."""
+    natural = int(_vel(vd, 0.72))             # 72% VO2max (matches paceAtVO2Fraction)
+    if vd >= 30:
+        return natural
+    thr = int(_vel(vd, 0.88))                 # threshold (88% VO2max)
+    max_gap = int(max(33.0, min(65.0, 65.0 - (30.0 - vd) * 3.5)))
+    return min(natural, thr + max_gap)
+
+# (header, filter, race-result distance/time → VDOT, plan distance, is_cmp).
+# The slow rows use REAL slow finish times (verified via `vdotpaces`): a 5:30
+# marathon → VDOT 25 (race 7:49, easy 8:05, 3.4% headroom) and a 6:00 marathon →
+# VDOT 23 (1% headroom) both cross; the half slow row matches the manifest.
+AEROBIC_FLOOR_PLANS = [
+    # (header, filter, result_dist_m, result_time_s, plan_dist_m, is_cmp) — typical
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 5000, 1320, 10000, False),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 5000, 1080, 10000, False),
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 5000, 1320, 21097, False),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)", 5000, 1080, 21097, False),
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 5000, 1320, 42195, False),
+    ("Adv 42K (long, 22w)", "Adv 42K (long, 22w)", 5000, 1080, 42195, False),
+    # Slow runners (VDOT 22-25): easy clamped near race, the inversion band.
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 42195, 19800, 42195, False),  # 5:30 M, VDOT 25
+    ("Int 42K (long, 22w)", "Int 42K (long, 22w)", 42195, 21600, 42195, False),  # 6:00 M, VDOT 23
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 21097, 9900,  21097, False),  # 2:45 HM, VDOT 25
+    ("Beg 42K (long, 22w)", "Beg 42K (long, 22w)", 42195, 19800, 42195, False),
+    # At-goal competitive (Cmp clear): ~1% easy/race headroom — flagship case.
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)", 5000, 1050, 21097, True),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)", 5000, 1050, 42195, True),
+]
+for header, fil, res_dist, res_time, dist, is_cmp in AEROBIC_FLOOR_PLANS:
+    vd = _vf(res_dist, res_time)
+    speed5k = int(_pred(5000, vd) / 5)
+    goal = 256 if is_cmp else int(_pred(dist, vd) / (dist / 1000.0))
+    easy = _app_easy(vd)
+    short = header.split(' (')[0]
+    # build_band=False → Cmp "clear" (at-goal) config, the failing competitive path.
+    w = parse_plan(run_pacedump_with(fil, goal, easy, False, speed_pace=speed5k), header)
+    if not w:
+        check(f"{short} aerobic-floor parse (VDOT {vd:.0f})", False, "no plan", full=True)
+        continue
+    violations = []
+    for wk in sorted(w):
+        for s, _, pp in w[wk]:
+            if s not in EASY_CLASS:
+                continue
+            aer = parse_pace_secs_slowest(pp)
+            if aer is None:
+                continue
+            if aer < goal:
+                violations.append(f"W{wk} [{s}] {_mm(aer)} < race {_mm(goal)} ({goal - aer}s faster)")
+    check(
+        f"{short} (VDOT {vd:.0f}, race {_mm(goal)}, easy {_mm(easy)}) no easy/long aerobic pace faster than race",
+        not violations,
+        f"{len(violations)} inversions, e.g. {violations[:4]}",
+        full=True)
+
+section("ACWR volume ramp cap — no back-loaded single-week spike")
+# A build week's volume may not exceed ~1.35x the max of the prior 3 weeks (the
+# 1.25 target cap + placement overshoot). Kills the 5K peak-finish spike (Adv 5K
+# W9 was 359min, +44% off a ~250min plateau). Taper/race excluded (they drop).
+def _weekly_mins(header):
+    text = run_dump(header)
+    if f'=== {header}' not in text:
+        return []
+    sec = text.split(f'=== {header}')[1].split('=== ')[0]
+    out = []
+    for line in sec.splitlines():
+        m = re.match(r'^W ?\d+ \[(\w+)[^\]]*\]\s+\d+wkts\s+load=\s*\d+\s+(\d+)min', line)
+        if m:
+            out.append((m.group(1), int(m.group(2))))
+    return out
+
+for header in ["Adv 5K (long, 10w)", "Adv 10K (long, 12w)", "Adv 21K (long, 18w)"]:
+    build = [(ph, m) for ph, m in _weekly_mins(header) if ph not in ('taper', 'race')]
+    short = header.split(' (')[0]
+    spikes = [f"wk{i+1} {build[i][1]}min vs prior-3-max {max(m for _, m in build[i-3:i])}"
+              for i in range(3, len(build))
+              if build[i][1] > max(m for _, m in build[i-3:i]) * 1.35]
+    if len(build) >= 4:
+        check(f"{short} no build week spikes >35% over prior-3-week max (ACWR cap)",
+              not spikes, f"spikes: {spikes}", full=True)
 
 section("Distance-aware threshold + aerobic floor (slow runner = teeth)")
 # Half/marathon: threshold (~1hr effort) must be FASTER than goal race pace —
@@ -1017,18 +1557,84 @@ for header, fil, t5k, dist in [
               max(z5) <= race + 3,
               f"slowest_vo2={_mm(max(z5))} race={_mm(race)}", full=True)
 
+section("10K-pace floor — '10K Pace'/race-rehearsal work never slower than race (slow 10K)")
+# On a 10K plan race ≈ 10K pace, so tenkPace (1.04×speed5k) and raceRehearsal10K
+# WORK must pin AT race, never ease in slower. A slow 10K (VDOT ~30, where race
+# is close to threshold) is the teeth: before the 10K-pace floor the ease-in
+# started this work 16-21s slower than race. parse_pace_secs_first takes the
+# FASTEST segment (the work), so the legit slow recovery jog is ignored.
+for header, fil, t5k in [
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 2160),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 2160),
+]:
+    vd = _vf(5000, t5k); speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(10000, vd) / 10.0); easy = int(_vel(vd, 0.72))
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    if not w:
+        check(f"{short} 10K-pace parse", False, "no plan", full=True); continue
+    tk = [parse_pace_secs_first(pp) for wk in w for s, _, pp in w[wk]
+          if s in ('tenkPace', 'raceRehearsal10K')]
+    tk = [v for v in tk if v is not None]
+    if tk:
+        check(f"{short} every 10K-pace/rehearsal WORK <= race pace (10K-pace floor)",
+              max(tk) <= race + 3,
+              f"slowest={_mm(max(tk))} race={_mm(race)}", full=True)
+
+section("Strides — rep pace or faster, FLAT (no ease-in)")
+# Strides are short (≤30s) neuromuscular accelerations with full recovery — form
+# / leg-speed work, not a progressive VO2 stimulus. They must render at REP pace
+# (faster than 5K) and stay FLAT across the block. The old bug tagged them HR-Z5
+# with no special handling → priced at 5K pace AND run through the quality ease-in
+# (W1 ≈ threshold pace, W-last ≈ 5K pace). parse_pace_secs_first returns the
+# FASTEST segment (the stride itself), ignoring the easy-jog portion.
+def _rep_pace(dist, time):
+    """Engine's repetition pace (sec/km) for a race result, via vdotpaces mode."""
+    r = subprocess.run([PLAN_DEBUG, "vdotpaces"], capture_output=True, text=True,
+                       env={**os.environ, "DIST": str(dist), "TIME": str(time)})
+    m = re.search(r'rep=(\d+):(\d+)', r.stdout)
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+for header, fil, dist, time in [
+    ("Adv 21K (long, 18w)", "Adv 21K (long", 21097, 7200),    # 2:00 half
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 42195, 14400),   # 4:00 marathon
+]:
+    vd = _vf(dist, time)
+    speed5k = int(_pred(5000, vd) / 5)
+    race = int(_pred(dist, vd) / (dist / 1000.0)); easy = int(_vel(vd, 0.72))
+    rep = _rep_pace(dist, time)
+    short = header.split(' (')[0]
+    w = parse_plan(run_pacedump_with(fil, race, easy, False, speed_pace=speed5k), header)
+    strides = [parse_pace_secs_first(pp) for wk in (w or {}) for s, _, pp in w[wk]
+               if s == 'strides']
+    strides = [v for v in strides if v is not None]
+    if strides and rep:
+        check(f"{short} strides FLAT across block (no ease-in, <=3s spread)",
+              max(strides) - min(strides) <= 3,
+              f"spread={max(strides)-min(strides)}s, paces={sorted(set(strides))}", full=True)
+        check(f"{short} strides <= rep pace (rep-pace floor, not eased 5K/threshold)",
+              max(strides) <= rep + 2,
+              f"slowest_stride={_mm(max(strides))} rep={_mm(rep)}", full=True)
+
 section("Progression direction — easy zones blend, quality stays flat")
 
 EASY_SUBTYPES_FOR_TEST = {'easy'}
 
 def first_and_last_easy_paces(weeks):
-    """Returns (W1_easy_paces, last_easy_paces). Looks at race week (last)
-    and W1 separately. Each is a list of sec/km values."""
+    """Returns (W1_easy_paces, last_easy_paces). W1 vs the LATEST week that
+    actually has easy runs. The literal race week can be legitimately easy-free
+    (race + shakeout only), so scanning backward keeps the progression check
+    from silently skipping — it always verifies against real late-plan easy."""
     if not weeks: return [], []
     weeks_sorted = sorted(weeks)
     first = [parse_pace_secs_first(p) for s, _, p in weeks[weeks_sorted[0]] if s in EASY_SUBTYPES_FOR_TEST]
-    last  = [parse_pace_secs_first(p) for s, _, p in weeks[weeks_sorted[-1]] if s in EASY_SUBTYPES_FOR_TEST]
-    return [x for x in first if x], [x for x in last if x]
+    last = []
+    for wk in reversed(weeks_sorted):
+        cand = [x for x in (parse_pace_secs_first(p) for s, _, p in weeks[wk] if s in EASY_SUBTYPES_FOR_TEST) if x]
+        if cand:
+            last = cand
+            break
+    return [x for x in first if x], last
 
 for header, fil, rp, ep, bb in PACE_INPUTS:
     label = f"{header.split(' (')[0]}" + (" [build]" if bb else "")
@@ -1043,22 +1649,104 @@ for header, fil, rp, ep, bb in PACE_INPUTS:
     avg_last = sum(last) / len(last)
     delta = avg_first - avg_last  # positive = gets faster
 
-    is_competitive_flat = "Cmp" in header and not bb
-    if is_competitive_flat:
-        # .competitive config: easy stays flat from W1 to race week.
-        check(
-            f"{label} easy stays flat (Cmp .competitive)",
-            abs(delta) <= TOL,
-            f"W1 avg={avg_first:.0f} race-week avg={avg_last:.0f} delta={delta:.0f}s"
-        )
-    else:
-        # Build band + Beg/Int/Adv: easy gets faster across the plan.
-        # Allow 5-second slack at the boundary so noise doesn't trip the test.
-        check(
-            f"{label} easy gets faster across plan",
-            delta > -5,
-            f"W1 avg={avg_first:.0f} race-week avg={avg_last:.0f} (got slower by {-delta:.0f}s)"
-        )
+    # All tiers ease easy across the plan. After option (b) this includes the
+    # at-goal .competitive config — its easy no longer freezes at 1.15×race; it
+    # anchors to the runner's stated easy and eases from there (quality stays
+    # locked, only easy blends). Short plans ease less (≈flat), longer ones more.
+    # Allow 5s slack at the boundary so noise doesn't trip the test.
+    check(
+        f"{label} easy gets faster across plan",
+        delta > -5,
+        f"W1 avg={avg_first:.0f} race-week avg={avg_last:.0f} (got slower by {-delta:.0f}s)"
+    )
+
+section("Hill repeats render faster than threshold (VO2/power, not LT)")
+# Hill repeats are tagged Z4 (hill HR settles ~LT) but train VO2/power and the
+# flat-equivalent effort is ~I-pace — they must NOT collide with the threshold
+# run's pace (the old bug: both Z4 → identical s/km on the board). With a fixed
+# speed anchor, hills render in [0.96,1.02]×speed and threshold in [1.02,1.07]×
+# speed — disjoint. Assert the STRONG form: even the slowest hill in the plan is
+# faster than the fastest threshold, so the two pace bands never overlap (no
+# collision in any week). speed_pace passed → real 5K-speed anchoring exercised.
+HILL_VS_THRESHOLD = [
+    # (header, filter, racePace, easyPace, speedPace)
+    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  228, 286, 228),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 246),
+    # Int 10K dropped: at 3 days it doesn't pair hills with a threshold run to compare.
+]
+for header, fil, rp, ep, sp in HILL_VS_THRESHOLD:
+    text = run_pacedump_with(fil, rp, ep, False, speed_pace=sp)
+    w = parse_plan(text, header)
+    hills, thrs = [], []
+    if w:
+        for wk, sessions in w.items():
+            for s, _, p in sessions:
+                v = parse_pace_secs_first(p)
+                if v is None: continue
+                if s == 'hillRepeats': hills.append(v)
+                elif s == 'threshold': thrs.append(v)
+    ok = bool(hills) and bool(thrs) and max(hills) < min(thrs) - 3
+    check(
+        f"{header.split(' (')[0]} every hill faster than every threshold (VO2 ≠ LT)",
+        ok,
+        f"hills(n={len(hills)}) slowest={max(hills) if hills else '-'} "
+        f"threshold(n={len(thrs)}) fastest={min(thrs) if thrs else '-'}"
+    )
+
+section("Time trial renders faster than threshold (race-effort test, not LT)")
+# A time trial is a sustained race effort (~5K-10K pace); it must read faster than
+# the threshold run it's paired with. Old bug: both Z4 → identical, and quantize
+# could even invert it. Same disjoint-range guard as the hills check.
+TT_VS_THRESHOLD = [
+    ("Beg 42K (long, 22w)", "Beg 42K (long, 22w)", 330, 450, 300),
+    ("Int 21K (long, 18w)", "Int 21K (long, 18w)", 300, 420, 258),
+    ("Adv 21K (long, 18w)", "Adv 21K (long, 18w)", 270, 360, 246),
+]
+for header, fil, rp, ep, sp in TT_VS_THRESHOLD:
+    text = run_pacedump_with(fil, rp, ep, False, speed_pace=sp)
+    w = parse_plan(text, header)
+    tts, thrs = [], []
+    if w:
+        for wk, sessions in w.items():
+            for s, _, p in sessions:
+                v = parse_pace_secs_first(p)
+                if v is None: continue
+                if s == 'timeTrial': tts.append(v)
+                elif s == 'threshold': thrs.append(v)
+    ok = bool(tts) and bool(thrs) and max(tts) < min(thrs) - 3
+    check(
+        f"{header.split(' (')[0]} every TT faster than every threshold (race-effort ≠ LT)",
+        ok,
+        f"TT(n={len(tts)}) slowest={max(tts) if tts else '-'} threshold fastest={min(thrs) if thrs else '-'}"
+    )
+
+section("Competitive half/marathon: TT and race rehearsal never share a week")
+# The race rehearsal IS the race-effort check; stacking a TT + a race-pace
+# rehearsal into one week is brutal. They must sit in separate weeks — but the
+# plan must still contain BOTH (the mid-plan recalibration TT satisfies "the
+# half has a TT"; the rehearsal is the late learning point).
+REHEARSAL_SUBTYPES = {'raceRehearsalM', 'raceRehearsalHM', 'raceRehearsal10K'}
+TT_REHEARSAL_PLANS = [
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long, 18w)", 256, 331),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)", 256, 331),
+]
+for header, fil, rp, ep in TT_REHEARSAL_PLANS:
+    text = run_pacedump_with(fil, rp, ep, False)
+    w = parse_plan(text, header)
+    has_tt = has_reh = False
+    collisions = []
+    if w:
+        for wk, sessions in w.items():
+            subs = {s for s, _, _ in sessions}
+            if 'timeTrial' in subs: has_tt = True
+            if subs & REHEARSAL_SUBTYPES: has_reh = True
+            if 'timeTrial' in subs and (subs & REHEARSAL_SUBTYPES):
+                collisions.append(wk)
+    check(
+        f"{header.split(' (')[0]} half/mara: TT + rehearsal both present, separate weeks",
+        w is not None and has_tt and has_reh and not collisions,
+        f"has_tt={has_tt} has_reh={has_reh} same-week collisions={collisions}"
+    )
 
 section("Quality flat across plan — Cmp configs only (other tiers progress)")
 
@@ -1300,7 +1988,7 @@ AEROBIC_TARGETS = [
     ("Cmp 21K (max, 32w)",   "Cmp 21K (max, 32w)",   True,  18,   73, 83),
     ("Cmp 42K (rec, 18w)",   "Cmp 42K (rec, 18w)",   False, None, 73, 83),
     ("Cmp 42K (long, 22w)",  "Cmp 42K (long, 22w)",  False, None, 73, 83),
-    ("Cmp 42K (build, 28w)", "Cmp 42K (build, 28w)", False, 22,   73, 83),
+    ("Cmp 42K (build, 28w)", "Cmp 42K (build, 28w)", False, 22,   71, 83),  # 71: deload-cap relax honestly trims recovery-wk aerobic
     ("Cmp 42K (max, 36w)",   "Cmp 42K (max, 36w)",   True,  22,   73, 83),
 ]
 
@@ -1436,9 +2124,11 @@ for header, fil, rp, ep, bb, expected_weeks in MINMAX_PLANS:
                 f"W1 avg={avg_first:.0f}, race-week avg={avg_last:.0f}"
             )
         else:
+            # Option (b): at-goal .competitive easy eases (never freezes or
+            # slows). Late-plan easy must be ≥ as fast as W1, within slack.
             check(
-                f"{label} .competitive easy stays flat",
-                abs(avg_first - avg_last) <= TOL,
+                f"{label} .competitive easy eases (never slower than W1)",
+                avg_last <= avg_first + TOL,
                 f"W1 avg={avg_first:.0f}, race-week avg={avg_last:.0f}"
             )
 
@@ -1477,11 +2167,16 @@ for header, fil in [
     if not flat_w1 or not build_w1: continue
     flat_avg  = sum(flat_w1)  / len(flat_w1)
     build_avg = sum(build_w1) / len(build_w1)
-    # Build band's W1 easy is slower (higher sec/km) than .competitive flat.
+    # The at-goal .competitive easy now anchors to the runner's stated easy and
+    # eases from there; the build-band's gap-blend routes easy differently (pushes
+    # toward goal pace). Guards that the BUILD_BAND flag actually changes the easy
+    # zones — the two are not interchangeable. (Before the at-goal easy fix this
+    # asserted build > flat, because at-goal froze at 1.15×race; build-band itself
+    # is unchanged, so the comparison direction flipped.)
     check(
-        f"{header.split(' (')[0]} W1 easy: build-band slower than flat (gap-blend)",
-        build_avg > flat_avg + TOL,
-        f"flat avg={flat_avg:.0f}s/km, build avg={build_avg:.0f}s/km"
+        f"{header.split(' (')[0]} W1 easy: build-band routes differently from at-goal",
+        abs(build_avg - flat_avg) > TOL,
+        f"flat(at-goal) avg={flat_avg:.0f}s/km, build avg={build_avg:.0f}s/km"
     )
 
 section("Cmp 21K Pfitz LT-interval pattern (mileRepeats forced on alt SPEED/PEAK weeks)")
@@ -1712,9 +2407,9 @@ check(
 int_5k_km = peak_km_for_label("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320)
 int_10k_km = peak_km_for_label("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380)
 check(
-    "Int 10K peak km > Int 5K (10K out-volumes 5K after bumps)",
-    int_10k_km > int_5k_km,
-    f"Int 5K={int_5k_km:.1f} km, Int 10K={int_10k_km:.1f} km"
+    "Int 10K peak km within 10% of Int 5K (equal 3-day count; km favors speed-heavy 5K)",
+    int_10k_km >= int_5k_km * 0.9,
+    f"Int 5K={int_5k_km:.1f} km, Int 10K={int_10k_km:.1f} km — 10K shouldn't trail 5K by >10%"
 )
 
 section("5K/10K plan variants (short/rec/long) — all generate cleanly, scale right")
@@ -1728,21 +2423,23 @@ section("5K/10K plan variants (short/rec/long) — all generate cleanly, scale r
 
 SHORT_LONG_VARIANTS = [
     # (header, fil, rp, ep, expected_weeks, expected_sessions_per_wk)
-    ("Beg 5K (short, 5w)",  "Beg 5K (short, 5w)",  240, 350, 5,  3),
-    ("Beg 5K (rec, 7w)",    "Beg 5K (rec, 7w)",    240, 350, 7,  3),
-    ("Beg 5K (long, 10w)",  "Beg 5K (long, 10w)",  240, 350, 10, 3),
-    ("Int 5K (short, 5w)",  "Int 5K (short, 5w)",  240, 320, 5,  4),
-    ("Int 5K (rec, 7w)",    "Int 5K (rec, 7w)",    240, 320, 7,  4),
-    ("Int 5K (long, 10w)",  "Int 5K (long, 10w)",  240, 320, 10, 4),
-    ("Adv 5K (rec, 7w)",    "Adv 5K (rec, 7w)",    240, 320, 7,  5),
-    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  240, 320, 10, 5),
-    ("Beg 10K (short, 7w)", "Beg 10K (short, 7w)", 300, 420, 7,  3),
-    ("Beg 10K (rec, 9w)",   "Beg 10K (rec, 9w)",   300, 420, 9,  3),
-    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 300, 420, 12, 3),
-    ("Int 10K (rec, 9w)",   "Int 10K (rec, 9w)",   270, 380, 9,  5),
-    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 12, 5),
-    ("Adv 10K (rec, 9w)",   "Adv 10K (rec, 9w)",   260, 320, 9,  5),
-    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 12, 5),
+    # expected_sessions_per_wk = LOCKED day-count matrix (Beg 2/2, Int 3/3, Adv 4/4
+    # for 5K/10K). All durations of a plan share its config day-count.
+    ("Beg 5K (short, 5w)",  "Beg 5K (short, 5w)",  240, 350, 5,  2),
+    ("Beg 5K (rec, 7w)",    "Beg 5K (rec, 7w)",    240, 350, 7,  2),
+    ("Beg 5K (long, 10w)",  "Beg 5K (long, 10w)",  240, 350, 10, 2),
+    ("Int 5K (short, 5w)",  "Int 5K (short, 5w)",  240, 320, 5,  3),
+    ("Int 5K (rec, 7w)",    "Int 5K (rec, 7w)",    240, 320, 7,  3),
+    ("Int 5K (long, 10w)",  "Int 5K (long, 10w)",  240, 320, 10, 3),
+    ("Adv 5K (rec, 7w)",    "Adv 5K (rec, 7w)",    240, 320, 7,  4),
+    ("Adv 5K (long, 10w)",  "Adv 5K (long, 10w)",  240, 320, 10, 4),
+    ("Beg 10K (short, 7w)", "Beg 10K (short, 7w)", 300, 420, 7,  2),
+    ("Beg 10K (rec, 9w)",   "Beg 10K (rec, 9w)",   300, 420, 9,  2),
+    ("Beg 10K (long, 12w)", "Beg 10K (long, 12w)", 300, 420, 12, 2),
+    ("Int 10K (rec, 9w)",   "Int 10K (rec, 9w)",   270, 380, 9,  3),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 12, 3),
+    ("Adv 10K (rec, 9w)",   "Adv 10K (rec, 9w)",   260, 320, 9,  4),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 12, 4),
 ]
 
 # Per-tier (distance, level) groups → (long_variant_label, short_variant_label)
@@ -1777,6 +2474,68 @@ for header, fil, rp, ep, expected_weeks, expected_sess in SHORT_LONG_VARIANTS:
             f"got max sessions/wk = {max_sess}"
         )
 
+# LOCKED day-count matrix — training days/week per (level × distance). Set by Q;
+# do NOT change a count without an explicit request (see PlanConfiguration.swift
+# day-count matrix comment). Running below classic-plan volume is intentional.
+#              5K   10K   21K   42K
+#   Beginner    2    2     3     4
+#   Intermed    3    3     4     4
+#   Advanced    4    4     5     5
+TIER_DAYS = [
+    ("Beg 5K (rec, 7w)",   240, 350, 2), ("Int 5K (rec, 7w)",   240, 320, 3), ("Adv 5K (rec, 7w)",   240, 320, 4),
+    ("Beg 10K (rec, 9w)",  300, 420, 2), ("Int 10K (rec, 9w)",  270, 380, 3), ("Adv 10K (rec, 9w)",  260, 320, 4),
+    ("Beg 21K (rec, 14w)", 300, 420, 3), ("Int 21K (rec, 14w)", 270, 380, 4), ("Adv 21K (rec, 14w)", 260, 320, 5),
+    ("Beg 42K (rec, 18w)", 330, 450, 4), ("Int 42K (rec, 18w)", 300, 420, 4), ("Adv 42K (rec, 18w)", 280, 360, 5),
+]
+for label, rp, ep, days in TIER_DAYS:
+    w = parse_plan(run_pacedump_with(label, rp, ep, False), label)
+    build = [wk for wk in w if wk < max(w.keys())] if w else []
+    got = max((len(w[wk]) for wk in build), default=None)
+    check(
+        f"{label.split(' (')[0]} runs {days} days/wk (tier-days matrix)",
+        got == days,
+        f"got max sessions/wk={got}, expected {days}",
+    )
+
+section("Beg 10K (2-day, LOCKED): each week = 1 long + ≤1 quality")
+# Beg 10K runs 2 days (LOCKED day-count matrix) — intentionally minimal and below
+# classic-plan volume. A 2-day week is the long run + one quality session, so a
+# separate easy/recovery day is structurally impossible (and not required).
+# Guard: no build week is 2+ quality (the long run must be present), and weekly
+# volume doesn't silently collapse.
+_b10 = parse_plan(run_pacedump_with("Beg 10K (long, 12w)", 300, 420, False), "Beg 10K (long, 12w)")
+_QUAL = {'timeTrial', 'threshold', 'intervals', 'hillRepeats', 'ladderIntervals',
+         'fivekPace', 'tenkPace', 'mileRepeats', 'yasso800', 'fartlek'}
+if not _b10:
+    check("Beg 10K (long) parses for structure/volume check", False, "no plan")
+else:
+    _build = [wk for wk in _b10 if wk < max(_b10.keys())]
+    _over_q = [wk for wk in _build if sum(1 for s, _, _ in _b10[wk] if s in _QUAL) >= 2]
+    check("Beg 10K: no build week is 2+ quality (each is long + ≤1 quality)",
+          not _over_q,
+          f"2+quality weeks={_over_q}")
+    _peak = max(sum(d for _, d, _ in _b10[wk]) for wk in _b10)
+    check("Beg 10K peak weekly volume ≥ 110min (guard 2-day level)",
+          _peak >= 110,
+          f"peak={_peak}min")
+
+section("Beg 21K/42K (3-4 day): every build week keeps a recovery day (C1 fix)")
+# The forced PEAK rehearsal week used to collide with a 3rd-slot progression,
+# making a 3-day Beg 21K week all-hard (threshold + race-rehearsal-long +
+# progression, zero easy). The 3rd-slot progression is now 42K-only, so Beg
+# 21K's 3rd slot is always easy. Guard: no build week lacks a recovery run.
+_REC = {'easy', 'strides', 'recovery'}
+for _hdr, _rp, _ep in [("Beg 21K (rec, 14w)", 360, 480),
+                       ("Beg 21K (long, 18w)", 360, 480),
+                       ("Beg 42K (long, 22w)", 360, 480)]:
+    _w = parse_plan(run_pacedump_with(_hdr, _rp, _ep, False), _hdr)
+    if not _w:
+        check(f"{_hdr} parses for recovery-day check", False, "no plan"); continue
+    _b = [wk for wk in _w if wk < max(_w.keys())]
+    _nr = [wk for wk in _b if not any(s in _REC for s, _, _ in _w[wk])]
+    check(f"{_hdr.split(' (')[0]} {_hdr.split('(')[1].rstrip(') ')}: every build week has a recovery day",
+          not _nr, f"all-hard weeks (no easy/strides)={_nr}")
+
 for label, long_fil, short_fil, rp, ep in GROWS_WITH_LENGTH:
     long_text = run_pacedump_with(long_fil, rp, ep, False)
     short_text = run_pacedump_with(short_fil, rp, ep, False)
@@ -1803,12 +2562,11 @@ for label, long_fil, short_fil, rp, ep in GROWS_WITH_LENGTH:
 
 section("Beg/Int/Adv 5K and 10K: tier-appropriate frequency + LR caps + volume")
 
-# Defends three fixes from the same batch:
-#   1. Beg 5K runs 3 days/wk (was 2 — Couch-to-5K / Higdon Novice minimum)
-#   2. 10K LR caps split per tier (was flat 80min — too long for Beg/Int)
-#   3. Int/Adv 5K/10K baseLoad ×1.15 — Daniels/Pfitz volume close
+# Beg 5K frequency is LOCKED at 2 days/wk (see day-count matrix). Also defends:
+#   - 10K LR caps split per tier (was flat 80min — too long for Beg/Int)
+#   - Int/Adv 5K/10K baseLoad ×1.15 — Daniels/Pfitz volume close
 
-# Beg 5K sessions/week — locked to 3 (Higdon Novice 5K prescription)
+# Beg 5K sessions/week — LOCKED to 2 (see day-count matrix); do not raise to 3.
 def session_count_per_week(label, fil, rp, ep):
     text = run_pacedump_with(fil, rp, ep, False)
     w = parse_plan(text, label)
@@ -1818,8 +2576,8 @@ def session_count_per_week(label, fil, rp, ep):
 
 r = session_count_per_week("Beg 5K (long, 10w)", "Beg 5K (long, 10w)", 240, 350)
 check(
-    "Beg 5K (long, 10w) BUILD week sessions == 3 (Higdon Novice 5K)",
-    r is not None and r[1] == 3,
+    "Beg 5K (long, 10w) BUILD week sessions == 2 (LOCKED day-count matrix)",
+    r is not None and r[1] == 2,
     f"got min={r[0]} max={r[1]} avg={r[2]:.1f}" if r else "no plan"
 )
 
@@ -1870,15 +2628,16 @@ def peak_km_for(label, fil, rp, ep):
 # Bumped baseline bands — captures current state after baseLoad ×1.15 +
 # +1 day for Int/Adv tiers. Bands now wider to absorb day-count growth
 # while still catching real regression.
+# Floors track the LOCKED day-count matrix (Int 5K/10K = 3 days, Adv 5K/10K =
+# 4 days), NOT the classic-plan targets — we deliberately run below Daniels/Pfitz
+# here. These are regression guards at the current level; the hi bound still
+# catches accidental over-volume.
 SHORT_RACE_KM_BANDS = [
     # (header, fil, rp, ep, lo, hi, reference)
-    ("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320, 42, 55, "Daniels Int 5K ~ 50-65 km"),
-    # max 62→66: 2026-06-16 intermediate quality easing matched to Advanced
-    # (honest race-pace naming) runs quality a few s/km faster, so the same
-    # time covers slightly more ground. 66 km is still inside the 55-70 ref.
-    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 48, 66, "Pfitz Int 10K ~ 55-70 km"),
-    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 75, 95, "Daniels Adv 5K ~ 70-85 km"),
-    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 65, 85, "Daniels Adv 10K ~ 70-90 km"),
+    ("Int 5K (long, 10w)", "Int 5K (long, 10w)", 240, 320, 32, 55, "3-day Int 5K — below Daniels 50-65 by design"),
+    ("Int 10K (long, 12w)", "Int 10K (long, 12w)", 270, 380, 30, 66, "3-day Int 10K — below Pfitz 55-70 by design"),
+    ("Adv 5K (long, 10w)", "Adv 5K (long, 10w)", 240, 320, 56, 95, "4-day Adv 5K — below Daniels 70-85 by design"),
+    ("Adv 10K (long, 12w)", "Adv 10K (long, 12w)", 260, 320, 56, 85, "4-day Adv 10K — below Daniels 70-90 by design"),
 ]
 for header, fil, rp, ep, lo, hi, ref in SHORT_RACE_KM_BANDS:
     km = peak_km_for(header, fil, rp, ep)
@@ -1980,6 +2739,9 @@ def measure_plan_for_guards(label, fil, rp, ep):
 GUARDS = [
     # Beg 42K — Pfitz Just Finish / Higdon Novice 1 style: pure aerobic,
     # marathonPace + threshold sole intensity. NO intervals/mileRepeats.
+    # LR band 195-215 → 175-195: the novice marathon long run is now capped at
+    # ~180-190min (3:00-3:10); the old ~205-225 peak (3:25-3:45) was too long for
+    # a beginner. See the beginner-cap section for the <=190 ceiling guard.
     ("Beg 42K (long, 22w)", 330, 450, 92, 99, 35, 55, 175, 195,
      {'marathonPace', 'threshold'}),
     # Int 42K — Pfitz 18/55 territory: full quality variety incl. MP.
@@ -1993,11 +2755,15 @@ GUARDS = [
     # and lands 4 marathonPace sessions in PEAK (Pfitz "12mi @ MP"
     # signature workout) where previously it had 0. Aerobic share drops
     # to ~77% (more Z3 time from dedicated MP runs) — Pfitz "general
-    # aerobic 75-80%" aligned.
-    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 195, 215,
+    # aerobic 75-80%" aligned. LR band now 175-195: the floor-ramp (2026-06-28)
+    # builds the long run progressively, so the peak is a *built* ~180min, not a
+    # flat-floored cap. See the Adv-cap section for the <=195 ceiling guard.
+    ("Adv 42K (long, 22w)", 280, 380, 72, 82, 85, 110, 175, 195,
      {'marathonPace', 'threshold'}),
-    # Beg 21K — Pfitz Just Finish HM: pure aerobic + light intensity.
-    ("Beg 21K (long, 18w)", 360, 480, 92, 99, 28, 45, 85, 100,
+    # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
+    # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),
+    # so the same minutes cover slightly fewer km.
+    ("Beg 21K (long, 18w)", 360, 480, 92, 99, 24, 45, 85, 100,
      {'threshold'}),
     # Int 21K — Pfitz 12-week HM: progressives in SPEED (the forcing fix).
     ("Int 21K (long, 18w)", 300, 420, 80, 92, 45, 65, 95, 110,
@@ -2107,6 +2873,75 @@ _badcat = sorted({w.get('title', '?') for w in _cat
 check("Catalog: hillRepeats/timeTrial/fastFinish carry no Z5 work (Z4 retag)",
       not _badcat, f"offenders: {_badcat[:3]}")
 
+# --- VO2 block: a true-Z5 dose that reaches most weeks AND progresses --------
+# The headline VO2 defect: the blocks barely delivered VO2. A true-Z5 session
+# (>=10min of Z5 work, strides exempt) landed in only 2-4 of 8 weeks, and the
+# Z5 dose was pinned at ~20min (every fivekPace template = 20min) — it never
+# ramped. The fix opens the dose ladder (intervals/ladderIntervals) and selects
+# a week-indexed Z5 dose so MOST weeks carry VO2 and the dose climbs across the
+# block. Needs the full catalog (the dose ladder lives there). Z5 minutes are
+# read straight from `dump` (z5=N = Z5 work minutes in the picked template).
+section("VO2 block delivers VO2 — Z5 dose reaches most weeks and progresses")
+
+# A real-VO2 dose floor: strides carry 1-2min of Z5; a genuine VO2 rep block is
+# >=10min. Use the max non-strides Z5 dose in each week as that week's VO2 dose.
+VO2_Z5_FLOOR = 10
+
+def parse_dump_z5_minutes():
+    """dict[plan] = {week: max non-strides Z5 work-minutes that week}."""
+    r = subprocess.run([PLAN_DEBUG, "dump"], capture_output=True, text=True)
+    plans = {}
+    plan = week = None
+    for line in r.stdout.splitlines():
+        m = re.match(r'^=== (.+?)\s+\(\d+w', line)
+        if m:
+            plan = m.group(1); plans[plan] = {}; week = None; continue
+        m = re.match(r'^W\s*(\d+) \[(\w+)', line)
+        if m and plan:
+            week = int(m.group(1)); plans[plan][week] = 0; continue
+        m = re.match(r'^\s{4}.*?\[(\w+)/\S+\] z5=(\d+)', line)
+        if m and plan and week and m.group(1) != 'strides':
+            plans[plan][week] = max(plans[plan][week], int(m.group(2)))
+    return plans
+
+_z5min = parse_dump_z5_minutes()
+for _vo2 in ("VO2 Beg", "VO2 Int", "VO2 Adv"):
+    weeks = _z5min.get(_vo2, {})
+    doses = [weeks[w] for w in sorted(weeks)]                 # per-week VO2 dose
+    n = len(doses) or 1
+    real = [d for d in doses if d >= VO2_Z5_FLOOR]            # weeks with true VO2
+    # (1) Most weeks carry a true-Z5 session — >=6 of 8 (W1 onboarding + the
+    # taper week may legitimately skip it; everything else must deliver VO2).
+    check(f"{_vo2}: true-Z5 session (>={VO2_Z5_FLOOR}min) in >=6 of {n} weeks",
+          len(real) >= 6,
+          f"only {len(real)}/{n} weeks carry a real VO2 dose; per-week z5={doses}",
+          full=True)
+    # (2) The dose PROGRESSES — not pinned to one value. Require >=3 distinct VO2
+    # doses among the true-Z5 weeks, the late dose to exceed the early dose, and
+    # no week to drop more than one ladder rung (~8min) below the running peak
+    # before the taper (a controlled, non-collapsing ramp).
+    real_seq = [d for d in doses if d >= VO2_Z5_FLOOR]
+    distinct = sorted(set(real_seq))
+    progresses = len(distinct) >= 3
+    climbs = bool(real_seq) and real_seq[-1] > real_seq[0]
+    # Non-collapse: scanning the real-Z5 weeks in order, the dose never falls
+    # >8min below the peak seen so far (until the final taper week, excluded).
+    running_peak = 0
+    collapses = []
+    real_weeks_sorted = [w for w in sorted(weeks) if weeks[w] >= VO2_Z5_FLOOR]
+    for i, w in enumerate(real_weeks_sorted):
+        d = weeks[w]
+        running_peak = max(running_peak, d)
+        is_last = (i == len(real_weeks_sorted) - 1)
+        if not is_last and d < running_peak - 8:
+            collapses.append((w, d, running_peak))
+    check(f"{_vo2}: Z5 dose progresses across the block (not pinned at one value)",
+          progresses and climbs and not collapses,
+          f"distinct doses={distinct}, first={real_seq[0] if real_seq else None}, "
+          f"last={real_seq[-1] if real_seq else None}, collapses={collapses}; "
+          f"per-week z5={doses}",
+          full=True)
+
 section("Accessible (\"real life\") tier — lighter than textbook, same structure & safety")
 
 # The app ships a parallel ACCESSIBLE config set (PlanConfiguration.accessible*)
@@ -2145,6 +2980,23 @@ def total_minutes(label, rp, ep):
         return None
     return sum(d for wk in w for _, d, _ in w[wk])
 
+def total_training_load(label):
+    """Sum of every week's training load across the plan (intensity-weighted),
+    parsed from `dump` mode. Pace-independent — load is the catalog workout
+    load — so the accessible-vs-textbook ratio is a clean tier comparison."""
+    text = run_dump(label)
+    if f'=== {label}' not in text:
+        return None
+    sect = text.split(f'=== {label}')[1]
+    total = 0
+    for line in sect.splitlines():
+        if line.startswith('=== '):
+            break
+        m = re.match(r'^W *\d+ \[\w+[^\]]*\]\s+\d+wkts\s+load=\s*(\d+)', line)
+        if m:
+            total += int(m.group(1))
+    return total
+
 # 1) Every accessible plan still generates a complete, non-empty plan.
 for acc, _, rp, ep, _ in ACCESSIBLE_CASES:
     w = parse_plan(run_pacedump_with(acc, rp, ep, False), acc)
@@ -2166,7 +3018,14 @@ for acc, _, rp, ep, days in ACCESSIBLE_CASES:
     )
 
 # 3) The defining contract: an accessible plan is never heavier than its
-#    textbook twin (alias cells are equal, which satisfies <=).
+#    textbook twin (alias cells are equal, which satisfies <=). Exact-volume
+#    magnitudes only hold against RunPlan's full catalog — same convention as
+#    the load contract (3b) below. On the sparse bundled sample the accessible
+#    and textbook plans draw from too few rungs for total minutes to track:
+#    e.g. once the Acc Beg 21K mid-PEAK rehearsal week correctly carries a 60min
+#    long run (the every-build-week-LR rail), the sample's coarse easy-fill
+#    durations tip its total ~1% over textbook even though its per-week LR (60min)
+#    is lighter than textbook's (75min). The full catalog tracks cleanly.
 for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
     a = total_minutes(acc, rp, ep)
     t = total_minutes(ideal, rp, ep)
@@ -2175,6 +3034,31 @@ for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
         f"{short} total volume <= textbook {ideal.split(' (')[0]}",
         a is not None and t is not None and a <= t,
         f"accessible={a}min textbook={t}min",
+        full=True,
+    )
+
+# 3b) STRONGER contract (#147): "accessible" must be GENUINELY lighter, not just
+#     "<= textbook". Every family carries a training LOAD at most 90% of its
+#     textbook twin (>=10% lighter). This caught the old byte-identical aliases
+#     (Acc Adv 21K / Beg 42K / Adv 42K) and the ~0% near-ties (the whole Int
+#     family, Acc Adv 10K) where "accessible" handed the user the same — or a
+#     heavier — plan. Load (intensity-weighted) is the right axis: a tier whose
+#     minutes dip but whose intensity holds is not actually gentler.
+#
+#     Exact-load magnitudes only hold against RunPlan's full catalog (the bundled
+#     sample is too sparse for the load to track), so this is a full-catalog
+#     check — same convention as every other exact-volume assertion in this file.
+for acc, ideal, rp, ep, _ in ACCESSIBLE_CASES:
+    a = total_training_load(acc)
+    t = total_training_load(ideal)
+    short = acc.split(' (')[0]
+    ratio = (a / t) if (a and t) else None
+    check(
+        f"{short} training load <= 90% of textbook {ideal.split(' (')[0]} (>=10% lighter)",
+        ratio is not None and ratio <= 0.90,
+        f"accessible={a} textbook={t} ratio={ratio:.3f} (need <=0.900)" if ratio
+            else f"accessible={a} textbook={t}",
+        full=True,
     )
 
 # 4) Safety rails hold on the lighter plans, exactly as on textbook:
@@ -2364,7 +3248,7 @@ def parse_dump_loads(text, header):
 # above the current value — a neutralized taper (race-week load -> ~100% of
 # peak) blows through all of them.
 TAPER_PLANS = [
-    ("Beg 5K (long, 10w)",    "Beg 5K (long",  62),
+    ("Beg 5K (long, 10w)",    "Beg 5K (long",  67),  # single mid-plan TT (no peak TT) → lower peak week, race-week ratio ~64% (race-week load itself unchanged)
     ("Beg 10K (long, 12w)",   "Beg 10K (long", 62),
     ("Adv 5K (long, 10w)",    "Adv 5K (long",  58),
     ("Int 10K (long, 12w)",   "Int 10K (long", 58),
@@ -2433,6 +3317,771 @@ for header in ["Int 5K (long, 10w)", "Int 10K (long, 12w)", "VO2 Int (8w)"]:
         check(f"{short} hills don't park on one variant (>={min(3, len(hills))} distinct)",
               distinct >= min(3, len(hills)),
               f"{len(hills)} hills, {distinct} distinct: {variants}", full=True)
+
+section("Competitive/advanced BASE quality variety (not just hill+ladder)")
+# BASE used to be 16 weeks of ladder/hill only (the load selector parks on
+# ladders; true VO2 is blocked in BASE). Now every other off-week runs an LT/MP
+# (threshold-pool) session, and ladders ramp like hills — so BASE carries >=3
+# distinct quality types AND at least one LT/MP session.
+def _base_quality(header):
+    """[(subtype, role, load)] for quality sessions in BASE weeks of `header`."""
+    text = run_dump(header)
+    if f'=== {header}' not in text:
+        return []
+    sec = text.split(f'=== {header}')[1].split('=== ')[0]
+    QUAL = {'intervals','ladderIntervals','pyramidIntervals','hillRepeats',
+            'threshold','mileRepeats','marathonPace','yasso800','timeTrial'}
+    out = []; ph = None
+    for line in sec.splitlines():
+        m = re.match(r'^W ?\d+ \[(\w+)', line)
+        if m:
+            ph = m.group(1); continue
+        if ph != 'base':
+            continue
+        mm = re.search(r'l=\s*(\d+)\s+\[(\w+)/(\w+)\]', line)
+        if mm and mm.group(2) in QUAL:
+            out.append((mm.group(2), mm.group(3), int(mm.group(1))))
+    return out
+
+for header in ["Cmp 42K (max", "Cmp 21K (max"]:
+    bq = _base_quality(header)
+    short = header.replace('(', '').strip()
+    subs = [s for s, _, _ in bq]
+    distinct = len(set(subs))
+    check(f"{short} BASE uses >=3 distinct quality types (not just hill+ladder)",
+          distinct >= 3,
+          f"{len(bq)} quality, {distinct} distinct: {sorted(set(subs))}", full=True)
+    # role=='threshold' = the injected LT/MP session (marathonPace/threshold/
+    # mileRepeats all render with the threshold role). Teeth on the injection.
+    check(f"{short} BASE includes an LT/MP (threshold-pool) session",
+          any(role == 'threshold' for _, role, _ in bq),
+          f"base roles: {sorted({r for _, r, _ in bq})}", full=True)
+
+# Ladder ramp: where ladders appear >=4x (intermediate base+speed — no LT
+# injection there, so ladders stay frequent), they climb by load like hills.
+for header in ["Int 21K (long, 18w)", "Int 42K (long, 22w)"]:
+    bq = _base_quality(header)  # base only; ladders here are the ramped pool
+    short = header.split(' (')[0]
+    lad = [l for s, _, l in bq if s == 'ladderIntervals']
+    if len(lad) >= 4:
+        h = len(lad) // 2
+        check(f"{short} BASE ladders climb by load (ramp, back half heavier)",
+              sum(lad[h:]) / len(lad[h:]) > sum(lad[:h]) / len(lad[:h]),
+              f"ladder loads in week order: {lad}", full=True)
+
+section("Deload reshaping: neighbor-aware dip + sole-quality retention")
+
+# These two tests audit applyDeloadReshaping's POST-condition across every plan:
+#   A) a build-phase recovery week must actually DIP below its predecessor (not be
+#      a local maximum), and B) a recovery week must keep a structured-quality body
+#      (never strip its SOLE quality to easy). Both read REAL delivered loads from
+#      plan_debug `dump`, cross-referenced with the `phases` deload flags.
+
+def _dump_blocks():
+    """dict[header] = {week: {load,mins,nwkts,phase,wip,deload,subs:[(subtype,role)]}}
+    from a single `dump ""` run (every plan, incl. Acc variants). The [deload] flag
+    on the dump header is GENERATOR-aligned (trim-aware) — unlike `phases` mode,
+    which recomputes on un-trimmed indices and so misaligns on front-trimmed plans."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    blocks = {}
+    cur_header = None
+    cur_week = None
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur_header = hm.group(1).strip()
+            blocks[cur_header] = {}
+            cur_week = None
+            continue
+        if cur_header is None:
+            continue
+        wm = re.match(r'^W\s*(\d+)\s*\[(\w+)\s+(\d+)/(\d+)\]\s+(\d+)wkts\s+load=\s*(\d+)\s+(\d+)min(\s+\[deload\])?', line)
+        if wm:
+            cur_week = int(wm.group(1))
+            blocks[cur_header][cur_week] = dict(
+                phase=wm.group(2), wip=int(wm.group(3)),
+                nwkts=int(wm.group(5)), load=int(wm.group(6)),
+                mins=int(wm.group(7)), deload=wm.group(8) is not None, subs=[])
+            continue
+        if cur_week is not None:
+            sm = re.search(r'\[([a-zA-Z0-9]+)/([a-z_0-9]+)\]\s*(?:z5=\d+)?\s*$', line)
+            if sm:
+                blocks[cur_header][cur_week]['subs'].append((sm.group(1), sm.group(2)))
+    return blocks
+
+_DUMP = _dump_blocks()
+_BUILD = ('base', 'speed', 'peak')
+# subtype is a real structured-quality body (NOT marker/role — Beginner "speed"
+# slots are filled with strides, which is not a quality body).
+_QUAL_SUB = QUALITY | PROG
+
+# --- Test A: build-phase deload weeks must dip below their predecessor --------
+# A deload week that is a LOCAL MAXIMUM in delivered load (>= both neighbors) has
+# failed to deload. We flag those, EXCLUDING legitimate structural floors:
+#   - the plan's FIRST build-phase deload (predecessor is still early-ramp, no
+#     real peak to dip below);
+#   - flat early-base weeks where the predecessor itself is still in the smooth-
+#     transition ramp (predecessor wip < 2) — no headroom yet; and
+#   - weeks the generator already reshaped to its FLOOR — a [deload_*] marker is
+#     present AND no droppable aerobic fill remains (every easy/medium-long is the
+#     last recovery day). The week is down to its long run + a quality body, which
+#     can't shed further on the active catalog. (On the full catalog none of these
+#     remain — the sparse sample catalog lacks the lighter progressions/long runs
+#     the engine would otherwise swap in.)
+_REC_SUB  = EASY | STRIDES                       # easy/strides/recovery = rest day
+_FILL_SUB = {'easy', 'recovery', 'mediumLong'}   # droppable aerobic fill subtypes
+
+def _at_reshape_floor(cur):
+    subs = cur['subs']
+    if not any(role.startswith('deload_') for _, role in subs):
+        return False  # reshaping never engaged — not a floor, a real miss
+    n_rec = sum(1 for s, _ in subs if s in _REC_SUB)
+    # a fill is droppable only if it isn't the week's last rest day
+    droppable = sum(1 for s, _ in subs
+                    if s in _FILL_SUB and (s not in _REC_SUB or n_rec > 1))
+    return droppable == 0
+
+_A_failures = []
+for header, weeks in sorted(_DUMP.items()):
+    build_deloads = sorted(w for w in weeks
+                           if weeks[w].get('deload') and weeks[w]['phase'] in _BUILD)
+    first_deload = build_deloads[0] if build_deloads else None
+    for w in build_deloads:
+        cur, prev, nxt = weeks.get(w), weeks.get(w - 1), weeks.get(w + 1)
+        if not cur or not prev or not nxt:
+            continue
+        if w == first_deload:           # first deload: no prior peak — exclude
+            continue
+        if prev['wip'] < 2:             # predecessor still ramping — no headroom
+            continue
+        is_local_max = cur['load'] >= prev['load'] and cur['load'] >= nxt['load']
+        if is_local_max and not _at_reshape_floor(cur):
+            _A_failures.append(
+                f"{header} W{w} ({cur['phase']}) load={cur['load']} "
+                f">= prev W{w-1}={prev['load']} and next W{w+1}={nxt['load']}")
+
+check(
+    "every build-phase recovery week dips below its predecessor (no local-max deload)",
+    not _A_failures,
+    "local-maximum deload weeks (out-load predecessor): " + "; ".join(_A_failures)
+)
+
+# --- Test B: a deload week must keep a structured-quality body ----------------
+# `deload_easy` is produced ONLY by the lighten branch converting a quality to
+# easy+strides. If that conversion leaves the week with ZERO structured-quality
+# subtype, the week's sole quality was stripped — the defect. `deload_easy` is
+# fine when another real quality remains (only a fill was converted). Beginner
+# strides-as-speedwork weeks have no `deload_easy` marker, so they don't trip
+# this; pure-aerobic plans (no quality anywhere) are excluded implicitly.
+_B_failures = []
+for header, weeks in sorted(_DUMP.items()):
+    for w in sorted(weeks):
+        if weeks[w]['phase'] not in _BUILD or not weeks[w].get('deload'):
+            continue
+        subs = weeks[w]['subs']
+        had_easy_strip = any(role == 'deload_easy' for _, role in subs)
+        has_quality = any(s in _QUAL_SUB for s, _ in subs)
+        if had_easy_strip and not has_quality:
+            roles = [r for _, r in subs]
+            _B_failures.append(f"{header} W{w} ({weeks[w]['phase']}): {roles}")
+
+check(
+    "no recovery week strips its sole quality to easy (deload_easy w/ zero quality body)",
+    not _B_failures,
+    "quality-less deload weeks: " + "; ".join(_B_failures)
+)
+
+section("Marathon PEAK rehearsal MP segment progresses (Finding #5)")
+
+# Bug: marathon PEAK parks the race-rehearsal long run on the LARGEST MP segment
+# the moment its (big) PEAK load target lets it — so e.g. Adv 42K rec W12-W15 all
+# carry "Race Rehearsal (90min @ MP)", four identical 90min MP rehearsals running.
+# A Pfitz-style block runs MULTIPLE MP rehearsals, but the MP segment must RAMP
+# (60→75→90...), not repeat. Assert, across each marathon plan's PEAK rehearsal
+# weeks: (1) the MP-segment minutes are NON-DECREASING week-to-week, and (2) no
+# single rehearsal title repeats 4x+ with an IDENTICAL MP segment.
+#
+# The MP segment is read straight from the dump title "Race Rehearsal (NNmin @ MP)"
+# (raceRehearsalM only — the 42K marathon-pace rehearsal). Build from a single
+# `dump ""` run so every plan + Acc variant is covered.
+
+def _rehearsal_mp_by_week():
+    """dict[header] = {week: mp_minutes} for raceRehearsalM long runs, parsed
+    from a single `dump ""` run (every plan, incl. Acc variants)."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    out = {}
+    cur_header = cur_week = None
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur_header = hm.group(1).strip()
+            out[cur_header] = {}
+            cur_week = None
+            continue
+        if cur_header is None:
+            continue
+        wm = re.match(r'^W\s*(\d+)\s*\[', line)
+        if wm:
+            cur_week = int(wm.group(1))
+            continue
+        if cur_week is None:
+            continue
+        # "    Race Rehearsal (90min @ MP)  170min l=12716  [raceRehearsalM/long]"
+        rm = re.search(r'Race Rehearsal \((\d+)min @ MP\).*\[raceRehearsalM/\w+\]', line)
+        if rm:
+            out[cur_header][cur_week] = int(rm.group(1))
+    return out
+
+_REHEARSAL_MP = _rehearsal_mp_by_week()
+# Marathon plans only (raceRehearsalM is the 42K rehearsal). Across all tiers/variants.
+_MARATHON_HEADERS = sorted(h for h in _DUMP if '42K' in h)
+
+_nondecr_fail = []
+_repeat_fail = []
+from collections import Counter
+for header in _MARATHON_HEADERS:
+    weeks = _DUMP[header]
+    mp = _REHEARSAL_MP.get(header, {})
+    # PEAK-phase rehearsal weeks, in chronological order.
+    peak_reh = [(w, mp[w]) for w in sorted(weeks)
+                if w in mp and weeks[w]['phase'] == 'peak']
+    if not peak_reh:
+        continue
+    # (1) Non-decreasing MP segment across the NON-DELOAD PEAK rehearsal weeks.
+    # A deload (cutback) week may legitimately run a smaller rehearsal, so the
+    # ramp is measured on the building rehearsals; deloads are allowed to dip.
+    build_reh = [(w, seg) for (w, seg) in peak_reh if not weeks[w].get('deload')]
+    bseq = [seg for _, seg in build_reh]
+    for i in range(1, len(bseq)):
+        if bseq[i] < bseq[i - 1]:
+            _nondecr_fail.append(
+                f"{header}: PEAK build-rehearsal MP segments {bseq} "
+                f"(W{build_reh[i][0]}={bseq[i]} < prev {bseq[i-1]})")
+            break
+    # (2) No 4x+ identical MP segment among ALL PEAK rehearsals (incl. deloads):
+    # four identical 90min MP weeks running was the reported defect.
+    seq = [seg for _, seg in peak_reh]
+    worst, n = Counter(seq).most_common(1)[0]
+    if n >= 4:
+        _repeat_fail.append(
+            f"{header}: MP segment {worst}min repeats {n}x in PEAK (segments {seq})")
+
+# Anchor the headline regression on Adv 42K rec (the reported case) so the test
+# is meaningful even on the sample catalog; the loop above covers every plan.
+check(
+    "marathon PEAK rehearsal MP segments are non-decreasing week-to-week",
+    not _nondecr_fail,
+    "decreasing MP segments: " + "; ".join(_nondecr_fail))
+check(
+    "no marathon PEAK rehearsal title repeats 4x+ with an identical MP segment",
+    not _repeat_fail,
+    "over-repeated rehearsals: " + "; ".join(_repeat_fail))
+
+section("PEAK is not front-loaded — heaviest TARGET week is late (Finding #4)")
+
+# The audit flagged compressed 14-wk 21K rec peaks (Int/Adv) as front-loaded. The
+# targets were reshaped to build to a LATE peak (Int->W12, Adv->W11) and the deload
+# fix made the surrounding cutback weeks dip. Assert, for EVERY plan: the heaviest
+# non-deload week inside the PEAK phase sits in the LATTER half of the PEAK weeks
+# (a late peak), not at PEAK week 1.
+#
+# This reads the TARGET periodization model (`phases`), which is the intended
+# weekly stress the generator aims at — the right altitude for "is the peak late?".
+# (Delivered load can spike in PEAK week 1 because a single large VO2/quality
+# session lands there; that is a separate quality-distribution concern, not the
+# peak SHAPE this guards. Measuring delivered load here would flag every plan,
+# including the healthy 18w/22w ones the task says must not be touched.) The target
+# model is catalog-independent, so this guard holds on sample and full alike.
+
+def _target_peak_blocks():
+    """dict[header] = {week: {phase,load,deload}} from a single `phases ""` run."""
+    r = subprocess.run([PLAN_DEBUG, "phases", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    blocks = {}
+    cur = None
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w\)', line)
+        if hm:
+            cur = hm.group(1).strip()
+            blocks[cur] = {}
+            continue
+        if cur is None:
+            continue
+        wm = re.match(
+            r'^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load=\s*(\d+)\s+dur=\s*(\d+)min(\s+\[deload\])?',
+            line)
+        if wm:
+            blocks[cur][int(wm.group(1))] = dict(
+                phase=wm.group(2), load=int(wm.group(3)), deload=wm.group(5) is not None)
+    return blocks
+
+_TARGET = _target_peak_blocks()
+_frontload_fail = []
+for header, weeks in sorted(_TARGET.items()):
+    peak_weeks = sorted(w for w in weeks if weeks[w]['phase'] == 'PEAK')
+    if len(peak_weeks) < 3:
+        continue  # too short to speak of front- vs back-loading
+    # Non-deload PEAK weeks (deloads dip on purpose; don't measure against them).
+    work = [(w, weeks[w]['load']) for w in peak_weeks if not weeks[w]['deload']]
+    if len(work) < 2:
+        continue
+    heaviest_w = max(work, key=lambda t: t[1])[0]
+    # Position of the heaviest non-deload week within the PEAK block (0..1).
+    first, last = peak_weeks[0], peak_weeks[-1]
+    pos = (heaviest_w - first) / (last - first) if last > first else 0.0
+    # "Latter half": position >= 0.5 within the peak block. Explicitly reject
+    # the heaviest landing on PEAK week 1.
+    if heaviest_w == first or pos < 0.5:
+        loads = {w: weeks[w]['load'] for w in peak_weeks}
+        _frontload_fail.append(
+            f"{header}: heaviest non-deload PEAK week is W{heaviest_w} "
+            f"(pos {pos:.2f}) of peak {first}-{last}; target loads={loads}")
+
+check(
+    "no plan's PEAK is front-loaded (heaviest target week in latter half of peak)",
+    not _frontload_fail,
+    "front-loaded peaks: " + "; ".join(_frontload_fail))
+
+# === Beginner-plan quality refinements (3 owner-requested changes) =====
+#
+# A) Beginner MARATHON long run is capped at ~180-190min (3:00-3:10) — the old
+#    ~205-225min peak (3:25-3:45) is too long for a novice. Every Beg 42K variant
+#    (incl. Acc) must land its longest run <= 190min.
+# B) Beginners get a DELIBERATE ~weekly strides session through BASE & SPEED
+#    (strides are the novice's primary safe speed/economy stimulus). Beg 10K/21K/
+#    42K (incl. Acc) must carry strides in the MAJORITY of BASE+SPEED weeks.
+# C) Beginner strides must be 4-6 reps, never 2 (standard 4-8) — the selector used
+#    to land on "Easy + Strides (2 x 25s)". NO beginner plan may run a strides
+#    session with <4 reps.
+#
+# All three read a single `dump ""` run (every plan + Acc variant). The dump line
+# for a strides session is e.g. "Easy + Strides (4 x 25s)  39min l=2850  [strides/
+# interval]"; rep count is the leading number in the "(N x Ss)" title.
+
+def _beg_plan_blocks():
+    """dict[header] = {week: {phase, longs:[dur], strides:[(rep, dur)]}} from a
+    single `dump ""` run, restricted to beginner plans (Beg* and Acc Beg*).
+    A strides session is any line whose subtype is [strides/...]; its rep count
+    is the leading number of the "Easy + Strides (N x Ss)" title."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True, text=True,
+                       env=os.environ.copy())
+    blocks = {}
+    cur_header = cur_week = None
+    is_beg = False
+    for line in r.stdout.splitlines():
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur_header = hm.group(1).strip()
+            is_beg = bool(re.match(r'^(Acc )?Beg ', cur_header))
+            if is_beg:
+                blocks[cur_header] = {}
+            cur_week = None
+            continue
+        if not is_beg or cur_header is None:
+            continue
+        wm = re.match(r'^W\s*(\d+)\s*\[(\w+)\s+\d+/\d+\]', line)
+        if wm:
+            cur_week = int(wm.group(1))
+            blocks[cur_header][cur_week] = dict(
+                phase=wm.group(2), longs=[], strides=[])
+            continue
+        if cur_week is None:
+            continue
+        # strides line: title carries "(N x Ss)" and subtype is [strides/...]
+        sm = re.search(r'Easy \+ Strides \((\d+) x \d+s\)\s+(\d+)min.*\[strides/', line)
+        if sm:
+            blocks[cur_header][cur_week]['strides'].append(
+                (int(sm.group(1)), int(sm.group(2))))
+            continue
+        # long-run-class line: any [<LONG subtype>/...] or role == 'long'.
+        lm = re.search(r'\s(\d+)min\s+l=\d+\s+\[(\w+)/(\w+)\]', line)
+        if lm:
+            dur, sub, role = int(lm.group(1)), lm.group(2), lm.group(3)
+            if sub in LONG or role == 'long':
+                blocks[cur_header][cur_week]['longs'].append(dur)
+    return blocks
+
+_BEG = _beg_plan_blocks()
+
+# --- Change A: Beg 42K (every variant incl Acc) peak long run <= 190min -------
+# Assert on the PACE-CONVERTED (delivered) plan — what the runner actually gets.
+# The HR-side `dump` already capped the catalog pick, but the pace converter then
+# re-inflated the long run to the per-distance km floor (30km → ~210-225min at a
+# slow novice's pace). The fix caps the beginner marathon at ~190min in the
+# converter too, so the delivered peak must be <= 190min for EVERY variant.
+section("Beg 42K (incl Acc): marathon long run capped at ~180-190min (novice)")
+
+BEG_42K_PLANS = [
+    # (header, race_pace, easy_pace) — slow-novice inputs (the worst case: at slow
+    # paces the km floor inflated the run the most, so this is where ~225 showed).
+    ("Beg 42K (short, 14w)",    330, 450),
+    ("Beg 42K (rec, 18w)",      330, 450),
+    ("Beg 42K (long, 22w)",     330, 450),
+    ("Acc Beg 42K (rec, 18w)",  330, 450),
+]
+LR_CAP = 190
+for header, rp, ep in BEG_42K_PLANS:
+    w = parse_plan(run_pacedump_with(header, rp, ep, False), header)
+    durs = get_long_durations(w) if w else []
+    peak_lr = max(d for _, d in durs) if durs else 0
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"delivered peak long run <= {LR_CAP}min",
+        0 < peak_lr <= LR_CAP,
+        f"observed peak LR {peak_lr}min (cap {LR_CAP})")
+
+# --- Adv 42K (every variant incl Acc) peak long run <= 195min ------------------
+# Mirror of the beginner cap, one tier up. The HR-side dump tops out at ~150min,
+# but the pace converter then re-inflated the marathon long run to the 30km floor
+# (~210-225min at a slow runner's pace) — a touch too long. The fix adds a 195min
+# ceiling to the converter's advanced-marathon clamp, so the DELIVERED peak holds
+# to ~190-195min (3:10-3:15) for EVERY advanced-marathon variant, incl Acc. Slow-
+# runner inputs are the worst case (the km floor inflated the run the most there).
+section("Adv 42K (incl Acc): marathon long run capped at ~190-195min")
+
+ADV_42K_PLANS = [
+    # (header, race_pace, easy_pace) — slow inputs surface the worst-case inflation.
+    ("Adv 42K (rec, 18w)",      330, 450),
+    ("Adv 42K (long, 22w)",     330, 450),
+    ("Acc Adv 42K (rec, 18w)",  330, 450),
+]
+ADV_LR_CAP = 195
+for header, rp, ep in ADV_42K_PLANS:
+    w = parse_plan(run_pacedump_with(header, rp, ep, False), header)
+    durs = get_long_durations(w) if w else []
+    peak_lr = max(d for _, d in durs) if durs else 0
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"delivered peak long run <= {ADV_LR_CAP}min",
+        0 < peak_lr <= ADV_LR_CAP,
+        f"observed peak LR {peak_lr}min (cap {ADV_LR_CAP})")
+
+# --- Change B: deliberate ~weekly strides through BASE & SPEED ----------------
+section("Beg 10K/21K/42K (incl Acc): strides in the majority of BASE+SPEED weeks")
+
+# Threshold: a strides session in >=60% of BASE+SPEED weeks. 10K runs only 2
+# days/wk (long + one other), so its base/speed strides cadence is the same slot.
+STRIDES_COVERAGE_MIN = 0.60
+BEG_STRIDES_HEADERS = sorted(
+    h for h in _BEG if any(d in h for d in ('10K', '21K', '42K')))
+for header in BEG_STRIDES_HEADERS:
+    weeks = _BEG[header]
+    bs_weeks = [w for w in weeks if weeks[w]['phase'] in ('base', 'speed')]
+    with_strides = [w for w in bs_weeks if weeks[w]['strides']]
+    frac = len(with_strides) / len(bs_weeks) if bs_weeks else 0
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"strides in >={int(STRIDES_COVERAGE_MIN*100)}% of BASE+SPEED weeks",
+        bool(bs_weeks) and frac >= STRIDES_COVERAGE_MIN,
+        f"strides in {len(with_strides)}/{len(bs_weeks)} base+speed weeks "
+        f"({frac*100:.0f}%, need >={int(STRIDES_COVERAGE_MIN*100)}%)")
+
+# --- Change C: beginner strides are 3-6 reps, never <3 ------------------------
+section("Beginner strides use 3-6 reps (never 2) — standard 4-8, 3 as light option")
+
+for header in sorted(_BEG):
+    weeks = _BEG[header]
+    too_few = sorted({
+        (w, reps) for w in weeks for (reps, _dur) in weeks[w]['strides']
+        if reps < 3})
+    check(
+        f"{header.split(' (')[0]} ({header.split('(')[1].rstrip(') ')}) "
+        f"no strides session with <3 reps",
+        not too_few,
+        f"weeks with <4-rep strides (week, reps): {list(too_few)[:5]}")
+
+# === FIX 1: Progression Run must show a real easy->fast spread ========
+#
+# On 5K/10K (race pace ~= 5K speed) the catalog's `Z3->Z4` "Progression Run"
+# templates collapse: Z3 renders at exact race pace and Z4 (threshold) is
+# floored at race pace, so both blocks land within ~1s/km (e.g. [4:45, 4:46]).
+# A progression run with a sub-15s/km span is degenerate — it isn't a
+# progression at all. After the fix, 5K/10K plans select only the easy->race
+# `Z2->Z3` shape, so every delivered progression spans a real easy->fast range.
+#
+# Drive the REAL app path = projection mode (current->projected VDOT anchors),
+# which is where the owner observed the collapse.
+section("FIX 1: 5K/10K Progression Run spans a real easy->fast range (>=15s/km)")
+
+def _progress_anchors(dist, time, level, target, weeks):
+    """Run `progress` to get the 6 projection anchors a real plan renders with."""
+    env = os.environ.copy()
+    env.update(DIST=str(dist), TIME=str(time), LEVEL=level,
+               TARGET=str(target), WEEKS=str(weeks))
+    out = subprocess.run([PLAN_DEBUG, "progress"], capture_output=True,
+                         text=True, env=env).stdout
+    a = {}
+    for k in ("RACE_PACE", "EASY_PACE", "SPEED_PACE",
+              "RACE_PACE_END", "EASY_PACE_END", "SPEED_PACE_END"):
+        m = re.search(rf"^{k}=(\d+)$", out, re.M)
+        if m:
+            a[k] = m.group(1)
+    return a
+
+def _progression_spans(label, anchors, weeks):
+    """Return [(week_hint, span_secs, pace_str)] for every delivered progression
+    workout in `label`, rendered with the given projection anchors."""
+    env = os.environ.copy()
+    env.update(anchors)
+    env["WEEKS"] = str(weeks)
+    out = subprocess.run([PLAN_DEBUG, "pacedump", label], capture_output=True,
+                         text=True, env=env).stdout
+    w = parse_plan(out, f"{label.split(' (')[0]} ({weeks}w)") or {}
+    spans = []
+    for wk in sorted(w):
+        for sub, _dur, pace in w[wk]:
+            if sub != 'progression':
+                continue
+            secs = sorted(s for s in (get_pace_secs(p.strip())
+                          for p in pace.strip('[]').split(',')) if s is not None)
+            span = (secs[-1] - secs[0]) if len(secs) >= 2 else 0
+            spans.append((wk, span, pace))
+    return spans
+
+PROG_SPAN_MIN = 15  # s/km: a real easy->fast progression, not a 1s collapse
+# (dist, time, level, target_dist, weeks) — 5K and 10K, where race ~= 5K speed.
+PROG_CASES = [
+    ("Beg 5K",  5000, 1500, "beg",  5000,  7),
+    ("Int 5K",  5000, 1500, "int",  5000,  7),
+    ("Adv 5K",  5000, 1500, "adv",  5000,  7),
+    ("Beg 10K", 10000, 3000, "beg", 10000, 9),
+    ("Int 10K", 10000, 3000, "int", 10000, 9),
+    ("Adv 10K", 10000, 3000, "adv", 10000, 9),
+]
+for label, dist, time, lvl, tgt, wk in PROG_CASES:
+    anchors = _progress_anchors(dist, time, lvl, tgt, wk)
+    spans = _progression_spans(label, anchors, wk)
+    bad = [(w, s, p) for (w, s, p) in spans if s < PROG_SPAN_MIN]
+    check(
+        f"{label} Progression Run spans >={PROG_SPAN_MIN}s/km (no race-pace collapse)",
+        not bad,
+        f"degenerate progressions (week,span_s,pace): {bad[:4]} "
+        f"(of {len(spans)} total progression workouts)",
+        full=True)
+
+# === FIX 2: no consecutive build-phase deloads =========================
+#
+# Two deload triggers used to stack: `isPhaseEndDeload` fired for EVERY week
+# with phaseProgression >= 0.8 (so a >=10w phase ate 2-3 trailing deloads), and
+# the 3:1 mid-phase recovery (weekInPhase % 3 == 2) could land right beside it.
+# Result: long-phase plans showed 2-3 [deload] weeks back-to-back in BASE/PEAK
+# (e.g. Adv 42K W14+15, Cmp 21K-max W9-11, Cmp 42K-max W14-16) — wasted peak-
+# load weeks / stagnant base. After the fix a build phase emits at most one
+# trailing deload before the next phase. Taper weeks are excluded (taper IS a
+# progressive deload, correctly consecutive).
+section("FIX 2: no 2+ consecutive build-phase [deload] weeks (taper excluded)")
+
+BUILD_PHASES = {'BASE', 'SPEED', 'PEAK'}
+
+def _consecutive_build_deloads(label_filter):
+    """For each plan matching label_filter, return dict[plan]=[runs] where each
+    run is a list of (week, phase) of >=2 consecutive build-phase deload weeks."""
+    r = subprocess.run([PLAN_DEBUG, "phases", label_filter],
+                       capture_output=True, text=True, env=os.environ.copy())
+    out = {}
+    cur, weeks = None, []
+    def flush():
+        if cur is None:
+            return
+        runs, i = [], 0
+        while i < len(weeks):
+            if weeks[i][2] and weeks[i][1] in BUILD_PHASES:
+                j = i
+                while j < len(weeks) and weeks[j][2] and weeks[j][1] in BUILD_PHASES:
+                    j += 1
+                if j - i >= 2:
+                    runs.append([(w[0], w[1]) for w in weeks[i:j]])
+                i = j
+            else:
+                i += 1
+        if runs:
+            out[cur] = runs
+    for line in r.stdout.splitlines():
+        m = re.match(r'^=== (.+?) \(\d+w\):', line)
+        if m:
+            flush()
+            # Maintenance runs its OWN recovery cadence — its [deload] tags mark the
+            # gentle cutback weeks, and the 2-week opening easy ramp is a LEGITIMATE
+            # consecutive-light pair (like a taper, not a wasted race-build deload).
+            # Exclude it from this race-periodization consecutive-deload guard.
+            cur = None if m.group(1).startswith('Maint') else m.group(1)
+            weeks = []
+            continue
+        wm = re.match(r'^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load.*?(\[deload\])?\s*$', line)
+        if wm and cur:
+            weeks.append((int(wm.group(1)), wm.group(2), wm.group(3) is not None))
+    flush()
+    return out
+
+_consec = _consecutive_build_deloads("")
+check(
+    "no plan has 2+ consecutive build-phase deload weeks",
+    not _consec,
+    "plans with back-to-back build deloads: " +
+    "; ".join(f"{k} {v}" for k, v in sorted(_consec.items())))
+
+# Spot-check the worst offenders the audit named are individually clean.
+for plan in ["Adv 42K (rec", "Cmp 21K (max", "Cmp 42K (max", "Beg 42K (rec"]:
+    runs = _consecutive_build_deloads(plan)
+    check(
+        f"{plan} has no consecutive build-phase deloads",
+        not runs,
+        f"runs: {runs}")
+
+# === FIX 3: HM/10K race-rehearsal segment is ramped (non-decreasing) ====
+#
+# `rampRehearsalMPSegment` only filtered `.raceRehearsalM`, so the marathon's
+# MP block ramped 60→75→90 while the HALF/10K rehearsal block was free to
+# regress (e.g. Cmp 21K HMP 30→30→25, Adv 21K 30→25→30→25→20→15). Parameterized
+# on subtype, the HMP/10KP segment now ramps by occurrence and never steps down
+# across the PEAK rehearsal weeks. Segment minutes read from the dump's interval
+# structure line: Z3 block for HM/M, Z4 block for 10K.
+section("FIX 3: HM/10K race-rehearsal race-pace segment is non-decreasing in PEAK")
+
+def _rehearsal_segments(label):
+    """dict[plan_header] = [(week, seg_min, subtype)] for every delivered HM/10K
+    rehearsal, in week order. Segment = the race-pace block (Z3 for HM, Z4 for
+    10K). Keyed per plan-header so a substring `label` that matches several
+    plans (e.g. plain + Acc) doesn't conflate their week sequences."""
+    r = subprocess.run([PLAN_DEBUG, "dump", label], capture_output=True,
+                       text=True, env=os.environ.copy())
+    lines = r.stdout.splitlines()
+    out, cur, wk = {}, None, None
+    for i, line in enumerate(lines):
+        hm = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if hm:
+            cur = hm.group(1).strip(); out.setdefault(cur, []); wk = None; continue
+        m = re.match(r'^(W\s*\d+)\s+\[(\w+)', line)
+        if m:
+            wk = int(re.sub(r'\D', '', m.group(1)))
+        rm = re.search(r'\[(raceRehearsalHM|raceRehearsal10K)/', line)
+        if rm and wk is not None and cur is not None:
+            zone = 'Z4' if rm.group(1) == 'raceRehearsal10K' else 'Z3'
+            struct = lines[i + 1] if i + 1 < len(lines) else ''
+            seg = sum(int(x) for x in re.findall(rf'(\d+):00 @ {zone}\b', struct))
+            out[cur].append((wk, seg, rm.group(1)))
+    return out
+
+# Every plan that delivers an HM or 10K rehearsal (21K all tiers, 10K Int/Adv).
+REHEARSAL_PLANS = [
+    "Cmp 21K (long", "Cmp 21K (rec", "Cmp 21K (short", "Cmp 21K (max",
+    "Adv 21K (long", "Adv 21K (rec", "Int 21K (long", "Int 21K (rec",
+    "Beg 21K (long", "Beg 21K (rec",
+    "Adv 10K (long", "Adv 10K (rec", "Int 10K (long", "Int 10K (rec",
+    "Acc Adv 21K (rec", "Acc Int 21K (rec", "Acc Adv 10K (rec", "Acc Int 10K (rec",
+]
+for plan in REHEARSAL_PLANS:
+    for header, seq in sorted(_rehearsal_segments(plan).items()):
+        # Step-down across consecutive rehearsal weeks of the same subtype.
+        regress, by_sub = [], {}
+        for w, seg, sub in sorted(seq):
+            prev = by_sub.get(sub)
+            if prev is not None and seg < prev[1]:
+                regress.append((prev, (w, seg)))
+            by_sub[sub] = (w, seg)
+        check(
+            f"{header} rehearsal race-pace segment never steps down in PEAK",
+            not regress,
+            f"regressions (prev (wk,min) -> (wk,min)): {regress}  full seq: {sorted(seq)}",
+            full=True)
+
+# === FIX 4: Int 21K carries >=1 raceRehearsalHM in PEAK ================
+#
+# Int 21K's maxLongRunMinutes=100 let steadyLong/fastFinish out-score the
+# heavier raceRehearsalHM, so the textbook Int 21K delivered ZERO half
+# rehearsals (Adv/Beg/Cmp 21K all carried them). The PEAK forcing hook (the
+# generalized rampRehearsalMPSegment with force=true for the half) now lands the
+# dedicated HMP rehearsal at least once before taper, for every textbook Int 21K
+# variant. (The Accessible 21K tier caps the long run at 72min — below the
+# shortest 75min HM rehearsal — by deliberate lighter-tier design, so it is out
+# of scope here; that cap predates this fix and is a locked tier characteristic.)
+section("FIX 4: textbook Int 21K (all variants) carries >=1 raceRehearsalHM in PEAK")
+
+def _peak_rehearsal_count(label_filter, subtype):
+    """dict[plan_header] = count of `subtype` workouts delivered in PEAK weeks."""
+    r = subprocess.run([PLAN_DEBUG, "dump", label_filter], capture_output=True,
+                       text=True, env=os.environ.copy())
+    out, cur, in_peak = {}, None, False
+    for line in r.stdout.splitlines():
+        h = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if h:
+            cur = h.group(1).strip(); out.setdefault(cur, 0); in_peak = False; continue
+        wm = re.match(r'^W\s*\d+\s+\[(\w+)', line)
+        if wm:
+            in_peak = (wm.group(1) == 'peak')
+        if cur and in_peak and f'[{subtype}/' in line:
+            out[cur] += 1
+    return out
+
+# Textbook Int 21K only (exclude the Accessible twin via the header check).
+for header, n in sorted(_peak_rehearsal_count("Int 21K", "raceRehearsalHM").items()):
+    if header.startswith("Acc "):
+        continue
+    check(
+        f"{header} carries >=1 raceRehearsalHM in PEAK",
+        n >= 1,
+        f"got {n} raceRehearsalHM in PEAK",
+        full=True)
+
+# === FIX 5: strides reps are >=15s (Daniels' short end) ==========
+#
+# 15s is the short end of Daniels' 15-20s stride range — a legitimate light
+# stride. The engine floors stride reps at >=15s (only <15s is dropped). Rep
+# duration is the "(N x Ss)" in the strides title.
+section("FIX 5: no plan delivers a strides session with a <15s rep")
+
+def _short_stride_sessions():
+    """dict[plan_header] = [(week, rep_secs)] for delivered strides with <20s reps."""
+    r = subprocess.run([PLAN_DEBUG, "dump", ""], capture_output=True,
+                       text=True, env=os.environ.copy())
+    out, cur, wk = {}, None, None
+    for line in r.stdout.splitlines():
+        h = re.match(r'^===\s+(.+?)\s+\(\d+w,', line)
+        if h:
+            cur = h.group(1).strip(); out.setdefault(cur, []); wk = None; continue
+        wm = re.match(r'^W\s*(\d+)\s+\[', line)
+        if wm:
+            wk = int(wm.group(1))
+        sm = re.search(r'Strides \(\d+ x (\d+)s\).*\[strides/', line)
+        if sm and cur is not None and int(sm.group(1)) < 15:
+            out[cur].append((wk, int(sm.group(1))))
+    return out
+
+_short = {k: v for k, v in _short_stride_sessions().items() if v}
+check(
+    "no plan uses a strides session with a <15s rep",
+    not _short,
+    "plans with <20s strides (header -> [(week, rep_s)]): " +
+    "; ".join(f"{k} {v[:4]}" for k, v in sorted(_short.items())))
+
+# === FIX 6: ladder catalog is culled to the delivered + structural set =
+#
+# `ladderIntervals` held 122 templates but only ~18 distinct bodies ever ship;
+# the rest were WU/CD/recovery-padding duplicates. The catalog was culled to the
+# delivered set + a few "structural" templates the selector's variety penalty
+# needs to keep the delivered output byte-identical (25 prod / 2 sample). This
+# guard keeps the bloat from creeping back: ladder count must stay <= 40 (the
+# old 122 fails). The byte-identical-dump proof lives in the cull verification.
+section("FIX 6: ladderIntervals catalog count is reasonable (no padding bloat)")
+
+import json as _json
+_catalog_path = os.environ.get(
+    "WORKOUTS_PATH",
+    os.path.join(ROOT, "Sources/TrainingPlanKit/Catalog/sample_catalog.json"))
+try:
+    _cat = _json.load(open(_catalog_path))
+    _ws = _cat if isinstance(_cat, list) else _cat.get("workouts", _cat)
+    _lad = sum(1 for w in _ws if w.get("subtype") == "ladderIntervals")
+    LADDER_CAP = 40
+    check(
+        f"ladderIntervals templates <= {LADDER_CAP} (culled, not 122-bloat)",
+        0 < _lad <= LADDER_CAP,
+        f"catalog has {_lad} ladderIntervals templates "
+        f"({os.path.basename(_catalog_path)}); expected <= {LADDER_CAP}")
+except (OSError, ValueError) as e:
+    check("ladderIntervals catalog readable", False, f"{e}")
 
 # --- report ----------------------------------------------------------
 

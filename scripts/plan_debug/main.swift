@@ -13,8 +13,112 @@ import Foundation
 
 // MARK: - Pretty-printer
 
+// Render an interval workout's structure as one compact line, e.g.
+//   WU 10min · 8 × 2:00 @ Z5 (90s jog) · CD 8min
+// Returns nil for pure-aerobic workouts (single continuous easy/steady block,
+// no warmup/cooldown, no recovery, no hard work) — their main line says enough.
+func intervalDetail(_ workout: Workout) -> String? {
+    let ivs = workout.intervals
+    let works = ivs.filter { $0.type == .work }
+    guard !works.isEmpty else { return nil }
+
+    func isAerobicTarget(_ t: TargetRange) -> Bool {
+        switch t {
+        case .heartRateZone(let z): return z <= 2
+        case .paceTarget(_, let rel): return rel >= 1.10
+        default: return false
+        }
+    }
+    let hasWarmCool = ivs.contains { $0.type == .warmup || $0.type == .cooldown }
+    let hasRecovery = ivs.contains { $0.type == .rest || $0.type == .recovery }
+    let hardWork = works.contains { !isAerobicTarget($0.target) }
+    // Structure worth showing = brackets (WU/CD), recovery gaps, repeated efforts,
+    // or any non-aerobic (Z3+) effort. A lone continuous Z2 block is just an easy run.
+    guard hasWarmCool || hasRecovery || works.count > 1 || hardWork else { return nil }
+
+    // dur as M:SS (work efforts), e.g. 90 -> "1:30", 600 -> "10:00".
+    func ms(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return "\(s / 60):\(String(format: "%02d", s % 60))"
+    }
+    // WU/CD: whole minutes when clean, else M:SS.
+    func mins(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return s % 60 == 0 ? "\(s / 60)min" : ms(secs)
+    }
+    // Recovery: short gaps as "90s", longer as "M:SS".
+    func rec(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return s < 100 ? "\(s)s" : ms(secs)
+    }
+    // Target label. HR -> "Z4"; pace -> "@race" (rel≈1) / "@MP"/"@HMP" from the
+    // title when obvious / "@pace×1.05"; noRange -> nil (omit).
+    func tgt(_ t: TargetRange) -> String? {
+        switch t {
+        case .heartRateZone(let z): return "Z\(z)"
+        case .paceTarget(_, let rel):
+            if abs(rel - 1.0) < 0.02 {
+                let title = workout.title.lowercased()
+                if title.contains("marathon pace") || title.contains("@ mp") { return "@MP" }
+                if title.contains("hmp") || title.contains("@ hm") || title.contains("half") { return "@HMP" }
+                return "@race"
+            }
+            return String(format: "@pace×%.2f", rel)
+        default: return nil
+        }
+    }
+    func effort(_ iv: WorkoutInterval) -> String {
+        if let t = tgt(iv.target) { return "\(ms(iv.duration)) @ \(t)" }
+        return ms(iv.duration)
+    }
+
+    // Run-length-encode consecutive identical (duration + target) work efforts.
+    struct Run { let dur: Double; let target: TargetRange; var count: Int }
+    var runs: [Run] = []
+    for w in works {
+        if var last = runs.last, last.dur == w.duration, last.target == w.target {
+            last.count += 1; runs[runs.count - 1] = last
+        } else {
+            runs.append(Run(dur: w.duration, target: w.target, count: 1))
+        }
+    }
+
+    // Body string.
+    let body: String
+    let sameTarget = Set(works.map { "\($0.target)" }).count == 1
+    if runs.count == 1 {
+        let r = runs[0]
+        let t = tgt(r.target).map { " @ \($0)" } ?? ""
+        body = r.count > 1 ? "\(r.count) × \(ms(r.dur))\(t)" : "\(ms(r.dur))\(t)"
+    } else if sameTarget && runs.allSatisfy({ $0.count == 1 }) {
+        // Ladder / pyramid: list the varying work durations, target once.
+        let t = tgt(works[0].target).map { " @ \($0)" } ?? ""
+        body = works.map { ms($0.duration) }.joined(separator: "/") + t
+    } else {
+        // Mixed (e.g. rehearsal Z2/Z3/Z2, or grouped reps of differing efforts).
+        body = runs.map { r in
+            let t = tgt(r.target).map { " @ \($0)" } ?? ""
+            return r.count > 1 ? "\(r.count) × \(ms(r.dur))\(t)" : "\(ms(r.dur))\(t)"
+        }.joined(separator: " · ")
+    }
+
+    // Recovery shown once (dominant gap duration).
+    var recStr = ""
+    let gaps = ivs.filter { $0.type == .rest || $0.type == .recovery }.map { $0.duration }
+    if let g = gaps.first { recStr = " (\(rec(g)) jog)" }
+
+    var parts: [String] = []
+    let wuTotal = ivs.filter { $0.type == .warmup }.reduce(0.0) { $0 + $1.duration }
+    if wuTotal > 0 { parts.append("WU \(mins(wuTotal))") }
+    parts.append(body + recStr)
+    let cdTotal = ivs.filter { $0.type == .cooldown }.reduce(0.0) { $0 + $1.duration }
+    if cdTotal > 0 { parts.append("CD \(mins(cdTotal))") }
+
+    return parts.joined(separator: " · ")
+}
+
 func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
-    let plan = simulatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
+    let plan = generatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
     // Mirror the engine's front-trim: short plans are generated at
     // recommended length and trimmed from the start, so phase labels must
     // be computed against the generated length and offset by the trim.
@@ -41,9 +145,15 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
         let totalLoad = ws.reduce(0) { $0 + Int($1.workout.trainingLoad) }
         let totalMin  = ws.reduce(0) { $0 + Int($1.workout.duration) } / 60
         let phaseLen = phaseLength(phase, base: baseDur, speed: speedDur, peak: peakDur, taper: taperDur)
-        print(String(format: "W%2d [%@ %d/%d] %dwkts load=%5d %3dmin",
-                     week + 1, phase.rawValue, weekInPhase + 1, phaseLen,
-                     ws.count, totalLoad, totalMin))
+        let phaseLabel = phase.displayName(isMaintenance: config.distance == 0)
+        // Deload flag, computed on the SAME trimmed indices the generator uses (so it
+        // aligns with the delivered loads above — `phases` mode is un-trimmed).
+        let targets = calculateWeeklyTargetsV3(weekInPlan: week + weeksTrimmed, weekInPhase: weekInPhase,
+                                               phase: phase, phaseDurations: phaseDurations, config: config)
+        let deloadTag = targets.isDeloading ? " [deload]" : ""
+        print(String(format: "W%2d [%@ %d/%d] %dwkts load=%5d %3dmin%@",
+                     week + 1, phaseLabel, weekInPhase + 1, phaseLen,
+                     ws.count, totalLoad, totalMin, deloadTag))
         for w in ws {
             let dur = Int(w.workout.duration) / 60
             let load = Int(w.workout.trainingLoad)
@@ -51,18 +161,28 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
             let subtype = w.workout.subtype.rawValue
             // Z5 work minutes from the actual picked template — ground truth
             // for the Z5-policy tests (title-based joins are ambiguous).
-            let z5min = Int(w.workout.intervals
-                .filter { $0.type == .work && $0.target == TargetRange.heartRateZone(zone: 5) }
-                .reduce(0.0) { $0 + $1.duration } / 60)
+            let z5work = w.workout.intervals.filter { iv -> Bool in
+                guard iv.type == .work else { return false }
+                if case .heartRateZone(let zone) = iv.target { return zone == 5 }
+                return false
+            }
+            let z5sec: Double = z5work.reduce(0.0) { $0 + $1.duration }
+            let z5min = Int(z5sec / 60)
             let z5tag = z5min > 0 ? " z5=\(z5min)" : ""
             print("    \(title) \(String(format: "%3dmin l=%4d  [%@/%@]%@", dur, load, subtype, w.type, z5tag))")
+            // Indented structure line for quality workouts. The 6-space + "↳"
+            // prefix keeps test_plans.py's per-workout regexes (l=.../[sub/role])
+            // from matching it, so the parser skips it cleanly.
+            if let detail = intervalDetail(w.workout) {
+                print("      ↳ \(detail)")
+            }
         }
     }
     print("=================================================================\n")
 }
 
 func summary(_ config: PlanConfiguration, weeks: Int, label: String, workouts: [Workout]) {
-    let plan = simulatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
+    let plan = generatePlanV3(config: config, totalWeeks: weeks, allWorkouts: workouts, adaptive: adaptive)
     let all = plan.values.flatMap { $0 }
     let easy = all.filter { $0.workout.subtype == .easy }.count
     let long = all.filter {
@@ -218,7 +338,19 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("Acc Adv 42K (rec, 18w)",.accessibleAdvanced42Default,    18),
 ]
 
-let filtered = cases.filter { filter.isEmpty || $0.label.lowercased().contains(filter.lowercased()) }
+// WEEKS env overrides the duration for matched cases, so a plan can be
+// generated at the iOS app's real recommended weeks (5K 6-8, 10K 8-10,
+// 21K 12-16, 42K 14-20) instead of this sample list's debug durations.
+let weeksOverride = ProcessInfo.processInfo.environment["WEEKS"].flatMap { Int($0) }
+let filtered: [(label: String, config: PlanConfiguration, weeks: Int)] = {
+    let base = cases.filter { filter.isEmpty || $0.label.lowercased().contains(filter.lowercased()) }
+    guard let w = weeksOverride else { return base }
+    return base.map { c in
+        var label = c.label
+        if let r = label.range(of: " (", options: .backwards) { label = String(label[..<r.lowerBound]) }
+        return (label: "\(label) (\(w)w)", config: c.config, weeks: w)
+    }
+}()
 
 print("\n========== PLAN GENERATION SUMMARY ==========")
 print("(E=easy, L=long, H=hard, P=progression, F=fartlek)")
@@ -249,7 +381,7 @@ if mode == "pace" {
     print("=====================================")
 
     for c in filtered {
-        let plan = simulatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let (plan, deloadWeeks, taperWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let hrEvents = plan.flatMap { _, ws in ws.map { $0.workout } }
 
         // Build a fake events array so PaceZoneConverter has dates to use
@@ -260,7 +392,11 @@ if mode == "pace" {
         for (weekIdx, weekWorkouts) in plan.sorted(by: { $0.key < $1.key }) {
             let dayDate = Calendar.current.date(byAdding: .day, value: weekIdx * 7, to: startDate)!
             for (_, w) in weekWorkouts {
-                events.append(WorkoutEvent(workout: w, planId: UUID(), date: dayDate))
+                var ev = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
+                ev.isDeloadWeek = deloadWeeks.contains(weekIdx)
+                ev.isTaperWeek = taperWeeks.contains(weekIdx)
+                ev.planWeekIndex = weekIdx
+                events.append(ev)
             }
         }
 
@@ -320,6 +456,11 @@ if mode == "pacedump" {
     let easyPace = Int(ProcessInfo.processInfo.environment["EASY_PACE"] ?? "390") ?? 390
     // 5K speed anchor for quality zones (Z4/Z5). nil → legacy race-pace anchoring.
     let speedPace = ProcessInfo.processInfo.environment["SPEED_PACE"].flatMap { Int($0) }
+    // Projected (race-week) anchors → VDOT progression. When set, paces interpolate
+    // current→projected across the plan. Unset → legacy fixed-anchor easing.
+    let racePaceEnd = ProcessInfo.processInfo.environment["RACE_PACE_END"].flatMap { Int($0) }
+    let easyPaceEnd = ProcessInfo.processInfo.environment["EASY_PACE_END"].flatMap { Int($0) }
+    let speedPaceEnd = ProcessInfo.processInfo.environment["SPEED_PACE_END"].flatMap { Int($0) }
 
     func fmtPace(_ secPerKm: Int) -> String {
         return String(format: "%d:%02d/km", secPerKm / 60, secPerKm % 60)
@@ -330,7 +471,7 @@ if mode == "pacedump" {
     print("================================\n")
 
     for c in filtered {
-        let plan = simulatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let (plan, deloadWeeks, taperWeeks) = generatePlanV3WithDeloads(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         let startDate = Date()
         let endDate = Calendar.current.date(byAdding: .weekOfYear, value: c.weeks, to: startDate)!
 
@@ -339,7 +480,10 @@ if mode == "pacedump" {
         for (weekIdx, weekWorkouts) in plan.sorted(by: { $0.key < $1.key }) {
             let dayDate = Calendar.current.date(byAdding: .day, value: weekIdx * 7, to: startDate)!
             for (_, w) in weekWorkouts {
-                let event = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
+                var event = WorkoutEvent(workout: w, planId: UUID(), date: dayDate)
+                event.isDeloadWeek = deloadWeeks.contains(weekIdx)
+                event.isTaperWeek = taperWeeks.contains(weekIdx)
+                event.planWeekIndex = weekIdx
                 dayOfWorkout[event.id] = dayDate
                 events.append(event)
             }
@@ -362,7 +506,12 @@ if mode == "pacedump" {
         let paceEvents = PaceZoneConverter.applyPaceProgression(
             to: events, racePace: racePace, conversationalPace: easyPace,
             speedPace: speedPace,
-            config: progression, startDate: startDate, endDate: endDate
+            config: progression, startDate: startDate, endDate: endDate,
+            racePaceEnd: racePaceEnd, conversationalPaceEnd: easyPaceEnd, speedPaceEnd: speedPaceEnd,
+            raceDistanceMeters: Int(c.config.distance),
+            isCompetitive: c.config.runnerLevel == .competitive,
+            isBeginner: c.config.runnerLevel == .beginner,
+            isAdvanced: c.config.runnerLevel == .advanced
         )
 
         // Group by week
@@ -393,17 +542,21 @@ if mode == "pacedump" {
                         }
                     }
                 }
-                // Also collect distinct paces across work intervals
-                var paceSet = Set<Int>()
+                // Collect distinct work-interval paces in EXECUTION order (first
+                // seen → last), not sorted: a progression is stored slow→fast, so
+                // sorting by sec/km renders it fast-first (reads like a reverse
+                // progression). Preserve order so it reads as actually run.
+                var orderedPaces: [Int] = []
                 for iv in ev.workout.intervals where iv.type == .work {
                     if case .paceTarget(let base, let rel) = iv.target {
-                        paceSet.insert(Int(Double(base) * rel))
+                        let p = Int(Double(base) * rel)
+                        if !orderedPaces.contains(p) { orderedPaces.append(p) }
                     }
                 }
                 let paceStr: String
-                if paceSet.count > 1 {
-                    let sortedPaces = paceSet.sorted().map { fmtPace($0) }.joined(separator: ", ")
-                    paceStr = "[\(sortedPaces)]"
+                if orderedPaces.count > 1 {
+                    let ordered = orderedPaces.map { fmtPace($0) }.joined(separator: ", ")
+                    paceStr = "[\(ordered)]"
                 } else if let p = bestPace {
                     paceStr = fmtPace(p)
                 } else {
@@ -418,7 +571,7 @@ if mode == "pacedump" {
 
 // daydump: per-day calendar view via the REAL createMarathonPlanV3. This is
 // the only ground-truth check for the day-scheduler — plan_debug's other
-// modes call simulatePlanV3 which doesn't do day assignment.
+// modes call generatePlanV3 which doesn't do day assignment.
 if mode == "daydump" {
     let calendar = Calendar.current
     // Start on a Monday so weekday math is intuitive. Day 1 = Tue, ..., Day 6 = Sun.
@@ -508,7 +661,7 @@ if mode == "tolerance" {
 if mode == "aerobic" {
     print("\n========== AEROBIC MINUTES ==========")
     for c in filtered {
-        let plan = simulatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
         print("=== \(c.label)  (\(c.weeks)w)")
         for (weekIdx, weekWorkouts) in plan.sorted(by: { $0.key < $1.key }) {
             for (_, w) in weekWorkouts {
@@ -668,6 +821,78 @@ if mode == "vdotpaces" {
     print("EASY_PACE=\(v.easyPaceSecondsPerKm)   # \(f(v.easyPaceSecondsPerKm))/km  (raw 72%: \(f(v.paceAtVO2Fraction(0.72)))/km)")
     print("SPEED_PACE=\(v.fiveKPaceSecondsPerKm)   # \(f(v.fiveKPaceSecondsPerKm))/km")
     print("threshold=\(f(v.thresholdPaceSecondsPerKm))  interval=\(f(v.intervalPaceSecondsPerKm))  rep=\(f(v.repetitionPaceSecondsPerKm))")
+    // Per-distance race pace at this VDOT — what the app picks as the goal pace
+    // for each target distance from one recent-race result. EASY/SPEED(5K) are
+    // VDOT constants (fitness), only RACE_PACE varies by target distance.
+    print("RACE_5K=\(v.fiveKPaceSecondsPerKm)")
+    print("RACE_10K=\(v.tenKPaceSecondsPerKm)")
+    print("RACE_21K=\(v.halfMarathonPaceSecondsPerKm)")
+    print("RACE_42K=\(v.marathonPaceSecondsPerKm)")
+}
+
+// progress: VDOT-gain-driven pace progression for one runner+plan. Mirrors the
+// projection engine (newnessBoost + adaptationCeiling + saturating gain) to show
+// week-1 (current VDOT) vs race-week (projected VDOT) paces + the span seconds.
+//   DIST=5000 TIME=1500 LEVEL=beg TARGET=10000 WEEKS=12 ./plan_debug progress
+if mode == "progress" {
+    let dist = Int(ProcessInfo.processInfo.environment["DIST"] ?? "5000") ?? 5000
+    let time = Int(ProcessInfo.processInfo.environment["TIME"] ?? "1500") ?? 1500
+    let level = ProcessInfo.processInfo.environment["LEVEL"] ?? "beg"
+    let target = Int(ProcessInfo.processInfo.environment["TARGET"] ?? "\(dist)") ?? dist
+    let weeks = Int(ProcessInfo.processInfo.environment["WEEKS"] ?? "12") ?? 12
+    guard let v0 = VDOT.from(distanceMeters: dist, timeSeconds: time) else { print("bad DIST/TIME"); exit(1) }
+    func stim(_ lvl: String, _ d: Int) -> (mi: Double, q: Double) {
+        switch d {
+        case 0..<7500:      switch lvl { case "int": return (25,2); case "adv": return (35,3); case "cmp": return (40,3); default: return (15,1) }
+        case 7500..<15000:  switch lvl { case "int": return (35,2); case "adv": return (45,3); case "cmp": return (50,3); default: return (20,1) }
+        case 15000..<30000: switch lvl { case "int": return (40,2); case "adv": return (50,3); case "cmp": return (55,3); default: return (25,1) }
+        default:            switch lvl { case "int": return (45,2); case "adv": return (55,3); case "cmp": return (65,3); default: return (30,1) }
+        }
+    }
+    let baseCap = ["beg":8.0,"int":9.0,"adv":10.0,"cmp":8.0][level] ?? 8.0
+    let ceiling = VDOT.adaptationCeiling(baseCap: baseCap, current: v0)
+    let p = stim(level, target)
+    var perWeek = 0.005*p.mi + 0.04*p.q
+    if level == "cmp" { perWeek *= 0.5 }
+    perWeek *= VDOT.newnessBoost(current: v0)
+    let vdotGain = ceiling * (1.0 - exp(-(Double(weeks) * perWeek) / ceiling))
+    let vEnd = VDOT(value: v0.value + vdotGain)
+    func f(_ s: Int) -> String { String(format: "%d:%02d", s/60, s%60) }
+    func raceP(_ vd: VDOT) -> Int {
+        switch target { case 42195: return vd.marathonPaceSecondsPerKm; case 21097: return vd.halfMarathonPaceSecondsPerKm
+                         case 10000: return vd.tenKPaceSecondsPerKm; default: return vd.fiveKPaceSecondsPerKm }
+    }
+    func row(_ n: String, _ a: Int, _ b: Int) {
+        print("  \(n.padding(toLength: 10, withPad: " ", startingAt: 0)) \(f(a)) -> \(f(b))   (-\(a-b)s)")
+    }
+    print("LEVEL=\(level) TARGET=\(target)m WEEKS=\(weeks)  VDOT \(String(format:"%.1f",v0.value)) -> \(String(format:"%.1f",vEnd.value)) (gain \(String(format:"%.1f",vdotGain)), ceiling \(String(format:"%.1f",ceiling)))")
+    row("easy", v0.easyPaceSecondsPerKm, vEnd.easyPaceSecondsPerKm)
+    row("5K/speed", v0.fiveKPaceSecondsPerKm, vEnd.fiveKPaceSecondsPerKm)
+    row("threshold", v0.thresholdPaceSecondsPerKm, vEnd.thresholdPaceSecondsPerKm)
+    row("race", raceP(v0), raceP(vEnd))
+    // Machine-readable start (current VDOT) + end (projected VDOT) anchors so a
+    // generator can `eval` them straight into a pacedump run.
+    print("RACE_PACE=\(raceP(v0))");  print("EASY_PACE=\(v0.easyPaceSecondsPerKm)");  print("SPEED_PACE=\(v0.fiveKPaceSecondsPerKm)")
+    print("RACE_PACE_END=\(raceP(vEnd))"); print("EASY_PACE_END=\(vEnd.easyPaceSecondsPerKm)"); print("SPEED_PACE_END=\(vEnd.fiveKPaceSecondsPerKm)")
+    print("VDOT_START=\(String(format: "%.1f", v0.value))"); print("VDOT_END=\(String(format: "%.1f", vEnd.value))")
+}
+
+// usedladders: print the distinct `key`s of every ladderIntervals workout that
+// any plan in `cases` actually delivers. Used to safely cull never-selected
+// ladder templates from the catalog (cull = catalog templates whose key never
+// appears here). Honors the same filter/WEEKS/ADAPTIVE env as the other modes.
+if mode == "usedladders" {
+    var usedKeys = Set<String>()
+    for c in filtered {
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        for (_, weekWorkouts) in plan {
+            for (_, w) in weekWorkouts where w.subtype == .ladderIntervals {
+                usedKeys.insert(w.key)
+            }
+        }
+    }
+    for k in usedKeys.sorted() { print(k) }
+    FileHandle.standardError.write("# \(usedKeys.count) distinct ladder keys delivered\n".data(using: .utf8)!)
 }
 
 // phases: for each filtered plan, print the phase split + per-week load target

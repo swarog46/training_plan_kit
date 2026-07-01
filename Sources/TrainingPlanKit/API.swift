@@ -28,19 +28,13 @@ public func generatePlan(config: PlanConfiguration,
                          totalWeeks: Int,
                          catalog: [Workout],
                          adaptive: Bool = true) -> [Int: [GeneratedWorkout]] {
-    let weeks = simulatePlanV3(config: config,
+    let weeks = generatePlanV3(config: config,
                                totalWeeks: totalWeeks,
                                allWorkouts: catalog,
                                adaptive: adaptive)
     return weeks.mapValues { week in
         week.map { GeneratedWorkout(role: $0.type, workout: $0.workout) }
     }
-}
-
-/// Decode a catalog from a JSON file (an array of `Workout`).
-public func loadCatalog(atPath path: String) throws -> [Workout] {
-    let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    return try JSONDecoder().decode([Workout].self, from: data)
 }
 
 /// The bundled sample catalog — enough variety to generate real plans across

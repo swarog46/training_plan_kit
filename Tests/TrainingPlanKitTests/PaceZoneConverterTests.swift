@@ -1,65 +1,113 @@
 import XCTest
 @testable import TrainingPlanKit
 
-/// Guards the quality-pace easing math in `qualitySpeedMultiplier` — the
-/// speed-anchored path that converts Z4 threshold / Z5 interval HR zones to
-/// pace. Two regressions live here historically:
-///   1. `qualityZonesAlwaysAtTarget` was honored on the race-anchored path but
-///      NOT here, so competitive build-band quality eased in instead of
-///      locking at goal pace from day 1.
-///   2. Beginner `finalAdjustment` was 0.5, so beginner quality never reached
-///      its true zone — threshold ended up slower than race pace at half/
-///      marathon. Dropped to 0.0 to match intermediate/advanced.
+/// Guards the recalibrated quality-pace math in `qualitySpeedMultiplier` (the
+/// speed-anchored Z4/Z5 path) and the easy progression in `progressiveMultiplier`.
+/// Current model (all multipliers × 5K SPEED):
+///   • Z5 VO2 — rep-length-aware via `z5Target`: short reps 0.88 (I/R-pace),
+///     long reps 0.96 (I-pace). Default 0.96.
+///   • Z4 threshold — eases 1.06 (true LT, wk 1) → 1.02 (10K tempo, race wk).
+///   • 10K work — 1.01 (between VO2 and threshold).
+///   • competitive/build-band lock at target from day 1 (no easing).
+///   • easy/long ease ~6.5% FASTER over the whole plan (≈20-25s), 5s-quantized.
+///   • VDOT mode (`vdotAnchored`): the easy multiplier is FLAT — progression comes
+///     from the anchor interpolating current→projected VDOT upstream (the app /
+///     plan_debug integration path); these unit tests exercise the legacy path.
 final class PaceZoneConverterTests: XCTestCase {
 
-    private func mult(_ zone: Int, _ p: Double, _ c: PaceProgressionConfig, tenK: Bool = false) -> Double {
-        PaceZoneConverter.qualitySpeedMultiplier(for: zone, progressionFactor: p, config: c, tenK: tenK)
+    private func mult(_ zone: Int, _ p: Double, _ c: PaceProgressionConfig,
+                      tenK: Bool = false, z5Target: Double? = nil) -> Double {
+        PaceZoneConverter.qualitySpeedMultiplier(
+            for: zone, progressionFactor: p, config: c, tenK: tenK, z5Target: z5Target)
     }
 
-    // MARK: - qualityZonesAlwaysAtTarget locks quality at every point in the plan
+    // MARK: - competitive locks quality at the sharp target from day 1
 
     func testQualityZonesAlwaysAtTargetLocksAtTarget() {
         for c in [PaceProgressionConfig.competitive, .competitiveBuildBand] {
             for p in [0.0, 0.5, 1.0] {
-                XCTAssertEqual(mult(5, p, c), 1.00, accuracy: 0.0001,
-                               "Z5 must lock at 1.00 from day 1 (p=\(p))")
-                XCTAssertEqual(mult(4, p, c), 1.06, accuracy: 0.0001,
-                               "Z4 must lock at 1.06 from day 1 (p=\(p))")
+                XCTAssertEqual(mult(5, p, c), 0.96, accuracy: 0.0001,
+                               "Z5 locks at 0.96 (I-pace) from day 1 (p=\(p))")
+                XCTAssertEqual(mult(4, p, c), 1.02, accuracy: 0.0001,
+                               "Z4 locks at 1.02 (10K tempo) from day 1 (p=\(p))")
             }
         }
     }
 
-    // MARK: - Non-competitive tiers ease in, but REACH target by race week
+    // MARK: - Non-competitive tiers PROGRESS, reaching the sharp target by race week
 
-    func testBeginnerQualityReachesTargetByRaceWeek() {
+    func testBeginnerQualitySharpensToTargetByRaceWeek() {
         let c = PaceProgressionConfig.beginner
-        // Race week (p=1): true zones — Z4 threshold 1.06, Z5 interval 1.00.
-        XCTAssertEqual(mult(4, 1.0, c), 1.06, accuracy: 0.0001, "Beg Z4 reaches threshold at race week")
-        XCTAssertEqual(mult(5, 1.0, c), 1.00, accuracy: 0.0001, "Beg Z5 reaches 5K pace at race week")
-        // Plan start (p=0): still conservative (slower than target).
-        XCTAssertGreaterThan(mult(4, 0.0, c), 1.10, "Beg Z4 starts conservative")
-        XCTAssertGreaterThan(mult(5, 0.0, c), 1.05, "Beg Z5 starts conservative")
+        // Race week (p=1): sharp targets — Z4 tempo 1.02, Z5 I-pace 0.96.
+        XCTAssertEqual(mult(4, 1.0, c), 1.02, accuracy: 0.0001, "Beg Z4 sharpens to 1.02 tempo")
+        XCTAssertEqual(mult(5, 1.0, c), 0.96, accuracy: 0.0001, "Beg Z5 reaches I-pace 0.96")
+        // Week 1: starts at true LT (Z4 1.06), and strictly SLOWER than race week
+        // for both zones — i.e. the pace progresses over the block, never flat.
+        XCTAssertEqual(mult(4, 0.0, c), 1.07, accuracy: 0.0001, "Beg Z4 starts at true LT 1.07")
+        XCTAssertGreaterThan(mult(4, 0.0, c), mult(4, 1.0, c), "Beg Z4 progresses (wk1 slower)")
+        XCTAssertGreaterThan(mult(5, 0.0, c), mult(5, 1.0, c), "Beg Z5 progresses (wk1 slower)")
     }
 
     func testIntermediateAndAdvancedReachTargetByRaceWeek() {
         for c in [PaceProgressionConfig.intermediate, .advanced] {
-            XCTAssertEqual(mult(4, 1.0, c), 1.06, accuracy: 0.0001, "Z4 reaches target")
-            XCTAssertEqual(mult(5, 1.0, c), 1.00, accuracy: 0.0001, "Z5 reaches target")
+            XCTAssertEqual(mult(4, 1.0, c), 1.02, accuracy: 0.0001, "Z4 reaches 1.02 tempo")
+            XCTAssertEqual(mult(5, 1.0, c), 0.96, accuracy: 0.0001, "Z5 reaches 0.96 I-pace")
+            XCTAssertGreaterThan(mult(4, 0.0, c), mult(4, 1.0, c), "Z4 progresses over block")
         }
     }
 
-    // MARK: - 10K-pace work sits between 5K pace and threshold (F3)
+    // MARK: - VO2 is rep-length-aware (short reps faster than long reps)
 
-    func testTenKPaceSitsBetweenFiveKAndThreshold() {
-        // A "10K Pace" workout is Z4-tagged but must run at true 10K pace
-        // (~1.04x 5K speed) — faster than threshold (1.06), slower than 5K (1.00).
-        // Before the converter learned the tenkPace subtype it was identical to
-        // threshold at 1.06.
+    func testVO2RepLengthAwareTargets() {
         let c = PaceProgressionConfig.advanced   // reaches target at race week
+        let shortRep = mult(5, 1.0, c, z5Target: 0.88)   // ≤90s → 1500/800m pace
+        let longRep  = mult(5, 1.0, c, z5Target: 0.96)   // ≥3min → I-pace ≈ 5K
+        XCTAssertEqual(shortRep, 0.88, accuracy: 0.0001, "short VO2 rep at I/R-pace (0.88×5K)")
+        XCTAssertEqual(longRep, 0.96, accuracy: 0.0001, "long VO2 rep at I-pace (0.96×5K)")
+        XCTAssertLessThan(shortRep, longRep, "shorter reps run FASTER than longer reps")
+    }
+
+    // MARK: - 10K-pace work sits between VO2 (0.96) and threshold (1.02)
+
+    func testTenKPaceSitsBetweenVO2AndThreshold() {
+        let c = PaceProgressionConfig.advanced
         let tenK = mult(4, 1.0, c, tenK: true)
-        XCTAssertEqual(tenK, 1.04, accuracy: 0.0001, "10K-pace target is 1.04x 5K speed")
-        XCTAssertLessThan(tenK, mult(4, 1.0, c), "10K pace must be faster than threshold")
-        XCTAssertGreaterThan(tenK, mult(5, 1.0, c), "10K pace must be slower than 5K pace")
+        XCTAssertEqual(tenK, 1.01, accuracy: 0.0001, "10K-pace target is 1.01×5K speed")
+        XCTAssertLessThan(tenK, mult(4, 1.0, c), "10K pace faster than threshold (1.02)")
+        XCTAssertGreaterThan(tenK, mult(5, 1.0, c), "10K pace slower than VO2/5K (0.96)")
+    }
+
+    // MARK: - Easy progresses ~6.5% faster over the whole plan (gentle modeled gain)
+
+    func testEasyProgressesFasterOverBlock() {
+        let c = PaceProgressionConfig.advanced
+        func easy(_ p: Double) -> Double {
+            341.0 * PaceZoneConverter.progressiveMultiplier(
+                for: 2, racePace: 341, conversationalPace: 385, progressionFactor: p, config: c)
+        }
+        let w1 = easy(0.0), raceWk = easy(1.0)
+        XCTAssertLessThan(raceWk, w1, "easy gets faster over the block (progression, not flat)")
+        XCTAssertEqual(w1 - raceWk, 385.0 * 0.065, accuracy: 3, "~6.5% (≈25s) faster by race week")
+        XCTAssertGreaterThanOrEqual(raceWk, 341, "easy never faster than race")
+    }
+
+    // MARK: - VDOT mode: easy multiplier is flat (anchor carries the progression)
+
+    func testVDOTAnchoredEasyIsFlatVsLegacyEasing() {
+        let c = PaceProgressionConfig.advanced
+        func mult(_ p: Double, vdot: Bool) -> Double {
+            PaceZoneConverter.progressiveMultiplier(
+                for: 2, racePace: 341, conversationalPace: 385,
+                progressionFactor: p, config: c, vdotAnchored: vdot)
+        }
+        // Legacy: the multiplier itself eases ~6.5% (race week faster than wk 1).
+        XCTAssertGreaterThan(mult(0.0, vdot: false), mult(1.0, vdot: false),
+                             "legacy multiplier eases over the block")
+        // VDOT-anchored: multiplier is FLAT across the block — progression comes from
+        // the anchor (conversationalPace) interpolating current→projected VDOT
+        // upstream in applyPaceProgression, not from the multiplier.
+        XCTAssertEqual(mult(0.0, vdot: true), mult(1.0, vdot: true), accuracy: 0.0001,
+                       "vdot-anchored easy multiplier is flat (anchor carries progression)")
     }
 
     // MARK: - Competitive easy anchors to the runner's real easy (build-band)
@@ -67,6 +115,7 @@ final class PaceZoneConverterTests: XCTestCase {
     func testCompetitiveEasyAnchorsToRunnerEasyNotFrozenBase() {
         // Build-band: race 256, runner's real easy 277 (4:37). Easy must anchor
         // to the runner's easy, NOT the generic 1.15×race = 294 (the frozen bug).
+        // Measured at p=0 (plan start) where the easy progression is identity.
         let bb = PaceProgressionConfig.competitiveBuildBand
         func easyPace(_ zone: Int, _ conv: Int) -> Double {
             256.0 * PaceZoneConverter.progressiveMultiplier(
@@ -78,7 +127,6 @@ final class PaceZoneConverterTests: XCTestCase {
         XCTAssertLessThan(easy, 294, "must not be the frozen 1.15×race")
         XCTAssertGreaterThanOrEqual(easy, 256, "easy never faster than race")
         XCTAssertGreaterThan(easyPace(1, 277), easy, "recovery (Z1) slower than easy (Z2)")
-        // Over-qualified runner (easy faster than race) is floored at race.
         XCTAssertGreaterThanOrEqual(easyPace(2, 250), 256, "easy floored at race when runner's easy is faster")
     }
 
@@ -91,5 +139,103 @@ final class PaceZoneConverterTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(mult(5, 0.0, c), mult(5, 1.0, c),
                                         "Z5 must not be faster at plan start than race week")
         }
+    }
+
+    // MARK: - Aerobic floor: low-headroom easy never eases UNDER race pace
+    //
+    // The legacy easy-easing floors the base gap at race (max(1.0, gapRatio)) but
+    // then applies ~6.5% easing on top with no clamp — so when the easy↔race
+    // headroom is below 6.5% (gapRatio−1 < 0.065), easy underflows race at high
+    // progressionFactor. Race-pace-anchored aerobic must never render FASTER than
+    // race (easy must be ≥ race). Drives both the at-goal competitive config
+    // (Cmp clear, ~1% headroom) and a slow runner (race≈easy).
+
+    func testLowHeadroomEasyNeverFasterThanRace() {
+        // Cmp "clear" (at-goal): race 256 (4:16), runner easy 259 (4:19) →
+        // gapRatio ≈ 1.012, ~1.2% headroom. Whole-plan 6.5% easing crosses race.
+        // Slow runner: race 469 (7:49), easy 485 (8:05) → ~3.4% headroom.
+        // Easy↔race gap (4s, 16s) is below the 6.5% easing, so easy underflows.
+        let cases: [(race: Int, easy: Int, config: PaceProgressionConfig, label: String)] = [
+            (256, 259, .competitive, "Cmp clear (at-goal, ~1.2% headroom)"),
+            (469, 485, .intermediate, "slow runner (~3.4% headroom)"),
+            // Synthetic worst case: ~1% headroom on a generic intermediate plan.
+            (300, 303, .intermediate, "synthetic 1% headroom"),
+        ]
+        for c in cases {
+            for zone in [1, 2] {
+                // p=1.0 is where the 6.5% easing bites hardest (race week).
+                for p in [0.0, 0.5, 0.9, 1.0] {
+                    let easyPace = Double(c.race) * PaceZoneConverter.progressiveMultiplier(
+                        for: zone, racePace: c.race, conversationalPace: c.easy,
+                        progressionFactor: p, config: c.config)
+                    XCTAssertGreaterThanOrEqual(
+                        easyPace, Double(c.race),
+                        "\(c.label) Z\(zone) p=\(p): easy \(Int(easyPace.rounded()))s must be ≥ race \(c.race)s (aerobic floor)")
+                }
+            }
+        }
+    }
+
+    // MARK: - FIX 1: Z3→Z4 progression doesn't collapse on 5K/10K
+
+    /// A `Z3→Z4` progression (no easy opener) on 5K/10K used to render both
+    /// blocks at ≈race pace (Z3 = race, Z4 race-floored) → ~1s/km span. The Z3
+    /// block is now demoted to easy so the run spans a real easy→fast range.
+    private func paceProgressionWork(_ zones: [Int]) -> Workout {
+        var ivs: [WorkoutInterval] = [WorkoutInterval(
+            id: 0, type: .warmup, duration: 180, distance: 0,
+            targetType: .noTarget, target: .noRange(noValue: true))]
+        for (i, z) in zones.enumerated() {
+            ivs.append(WorkoutInterval(
+                id: Int64(i + 1), type: .work, duration: 1200, distance: 0,
+                targetType: .heartRate, target: .heartRateZone(zone: z)))
+        }
+        return Workout(
+            id: 1, title: "Progression Run", type: .progressionRun,
+            subtype: .progression, trainingType: .timeBased, targetType: .heartRate,
+            duration: 2000, distance: 0, key: "test", trainingLoad: 5000,
+            intervals: ivs, workRestRatio: 1, workDuration: 1200 * Int64(zones.count),
+            restDuration: 0, workDistance: 0, restDistance: 0)
+    }
+
+    private func workPaces(_ w: Workout) -> [Int] {
+        w.intervals.filter { $0.type == .work }.compactMap {
+            if case .paceTarget(let base, let rel) = $0.target { return Int(Double(base) * rel) }
+            return nil
+        }
+    }
+
+    func testZ3ToZ4ProgressionDoesNotCollapseOn5K10K() {
+        // 10K runner: race ≈ 5K speed (both ~300/289). The collapse case.
+        for dist in [5000, 10000] {
+            let w = PaceZoneConverter.convertHRWorkoutToPace(
+                workout: paceProgressionWork([3, 4]),
+                racePace: 300, conversationalPace: 360, speedPace: 289,
+                progressionFactor: 0.5, config: .intermediate,
+                raceDistanceMeters: dist)
+            let paces = workPaces(w).sorted()
+            XCTAssertEqual(paces.count, 2, "\(dist)m: two work paces expected")
+            let span = (paces.last ?? 0) - (paces.first ?? 0)
+            XCTAssertGreaterThanOrEqual(
+                span, 15, "\(dist)m Z3→Z4 progression must span ≥15s/km (got \(span)s, paces \(paces))")
+        }
+    }
+
+    func testZ2ToZ3ProgressionAndLongRaceProgressionUntouched() {
+        // Z2→Z3 already spreads → must be unchanged (still 2 work paces, wide span).
+        let z2z3 = PaceZoneConverter.convertHRWorkoutToPace(
+            workout: paceProgressionWork([2, 3]),
+            racePace: 300, conversationalPace: 360, speedPace: 289,
+            progressionFactor: 0.5, config: .intermediate, raceDistanceMeters: 10000)
+        XCTAssertGreaterThanOrEqual((workPaces(z2z3).max() ?? 0) - (workPaces(z2z3).min() ?? 0), 15)
+        // Z3→Z4 on a MARATHON: Z4 stays faster than race, so DON'T demote Z3.
+        // The Z3 (MP) block must still render near race pace (≈4:16 for racePace
+        // 256) — NOT slowed to the easy floor (300) the way a demoted block would.
+        let mara = PaceZoneConverter.convertHRWorkoutToPace(
+            workout: paceProgressionWork([3, 4]),
+            racePace: 256, conversationalPace: 300, speedPace: 230,
+            progressionFactor: 0.5, config: .intermediate, raceDistanceMeters: 42195)
+        let mp = workPaces(mara).min() ?? 0  // the faster (Z3 MP / Z4) block
+        XCTAssertLessThan(mp, 270, "Marathon Z3 progression block stays MP-fast (not demoted to easy ~300)")
     }
 }

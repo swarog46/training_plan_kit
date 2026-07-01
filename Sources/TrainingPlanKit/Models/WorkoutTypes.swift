@@ -315,11 +315,9 @@ public enum TargetRange: Codable, Equatable {
         }
     }
     
-    /// The target rendered as a pace string ("4'55\"") when the target IS
-    /// pace-based, else nil. Used for the completed-splits "target" column,
-    /// which only makes sense for pace targets — HR-zone and no-range have no
-    /// target pace, so the column is simply omitted for those. Self-contained
-    /// (no LanguageManager) since the pace cases format numbers only.
+    /// The target as a pace string ("4'55\"") when pace-based, else nil (the
+    /// completed-splits "target" column only makes sense for pace targets;
+    /// HR-zone and no-range have none).
     public var paceTargetStringIfAvailable: String? {
         switch self {
         case .paceTarget(let basePace, let relative):
@@ -448,11 +446,6 @@ public struct PaceConversion {
     /// Convert pace from seconds/km to seconds/mile (Double version)
     public static func kmToMile(_ secondsPerKm: Double) -> Double {
         return secondsPerKm * kmPerMile
-    }
-
-    /// Convert pace from seconds/mile to seconds/km
-    public static func mileToKm(_ secondsPerMile: Int) -> Int {
-        return Int(Double(secondsPerMile) / kmPerMile)
     }
 
     /// Convert pace to user's preferred unit system

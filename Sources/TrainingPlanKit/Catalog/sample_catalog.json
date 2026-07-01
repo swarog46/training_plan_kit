@@ -1979,124 +1979,6 @@
     "key": "ithw5.0z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5r1.5z1w2.0z5c5.0z1"
   },
   {
-    "id": 9134,
-    "title": "Ladder Intervals (4 segments)",
-    "type": "Intervals",
-    "subtype": "ladderIntervals",
-    "trainingType": "Time-based",
-    "targetType": "HRZone",
-    "intervals": [
-      {
-        "id": 0,
-        "type": "Warmup",
-        "duration": 300,
-        "distance": 0,
-        "targetType": "NoTarget",
-        "target": {
-          "type": "noRange",
-          "noValue": true
-        }
-      },
-      {
-        "id": 1,
-        "type": "Work",
-        "duration": 60,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "heartRateZone",
-          "zone": 4
-        }
-      },
-      {
-        "id": 2,
-        "type": "Rest",
-        "duration": 60,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "noRange",
-          "noValue": true
-        }
-      },
-      {
-        "id": 3,
-        "type": "Work",
-        "duration": 90,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "heartRateZone",
-          "zone": 4
-        }
-      },
-      {
-        "id": 4,
-        "type": "Rest",
-        "duration": 60,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "noRange",
-          "noValue": true
-        }
-      },
-      {
-        "id": 5,
-        "type": "Work",
-        "duration": 120,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "heartRateZone",
-          "zone": 4
-        }
-      },
-      {
-        "id": 6,
-        "type": "Rest",
-        "duration": 60,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "noRange",
-          "noValue": true
-        }
-      },
-      {
-        "id": 7,
-        "type": "Work",
-        "duration": 150,
-        "distance": 0,
-        "targetType": "HRZone",
-        "target": {
-          "type": "heartRateZone",
-          "zone": 4
-        }
-      },
-      {
-        "id": 8,
-        "type": "Cooldown",
-        "duration": 300,
-        "distance": 0,
-        "targetType": "NoTarget",
-        "target": {
-          "type": "noRange",
-          "noValue": true
-        }
-      }
-    ],
-    "training_load": 3865,
-    "work_rest_ratio": 2.3333333333333335,
-    "work_duration": 420,
-    "rest_duration": 180,
-    "work_distance": 0,
-    "rest_distance": 0,
-    "duration": 1200,
-    "distance": 0,
-    "key": "ithw5.0z1w1.0z4r1.0z1w1.5z4r1.0z1w2.0z4r1.0z1w2.5z4c5.0z1"
-  },
-  {
     "id": 8148,
     "title": "Ladder Intervals (10 segments)",
     "type": "Intervals",
@@ -5868,5 +5750,161 @@
     "duration": 5700,
     "distance": 0,
     "key": "ithw10.0z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1w3.75z4r3.75z1c10.0z1"
+  },
+  {
+    "id": 6075,
+    "title": "Race Rehearsal (60min @ MP)",
+    "type": "Long Run",
+    "subtype": "raceRehearsalM",
+    "trainingType": "Time-based",
+    "targetType": "HRZone",
+    "intervals": [
+      {
+        "id": 0,
+        "type": "Work",
+        "duration": 2700,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      },
+      {
+        "id": 1,
+        "type": "Work",
+        "duration": 3600,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 3
+        }
+      },
+      {
+        "id": 2,
+        "type": "Work",
+        "duration": 1800,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      }
+    ],
+    "training_load": 10203,
+    "work_rest_ratio": 1,
+    "work_duration": 8100,
+    "rest_duration": 0,
+    "work_distance": 0,
+    "rest_distance": 0,
+    "duration": 8100,
+    "distance": 0,
+    "key": "lthw45.0z2w60.0z3w30.0z2"
+  },
+  {
+    "id": 7575,
+    "title": "Race Rehearsal (75min @ MP)",
+    "type": "Long Run",
+    "subtype": "raceRehearsalM",
+    "trainingType": "Time-based",
+    "targetType": "HRZone",
+    "intervals": [
+      {
+        "id": 0,
+        "type": "Work",
+        "duration": 3000,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      },
+      {
+        "id": 1,
+        "type": "Work",
+        "duration": 4500,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 3
+        }
+      },
+      {
+        "id": 2,
+        "type": "Work",
+        "duration": 1500,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      }
+    ],
+    "training_load": 11288,
+    "work_rest_ratio": 1,
+    "work_duration": 9000,
+    "rest_duration": 0,
+    "work_distance": 0,
+    "rest_distance": 0,
+    "duration": 9000,
+    "distance": 0,
+    "key": "lthw50.0z2w75.0z3w25.0z2"
+  },
+  {
+    "id": 6021,
+    "title": "Race Rehearsal (12min @ HMP)",
+    "type": "Long Run",
+    "subtype": "raceRehearsalHM",
+    "trainingType": "Time-based",
+    "targetType": "HRZone",
+    "intervals": [
+      {
+        "id": 0,
+        "type": "Work",
+        "duration": 2400,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      },
+      {
+        "id": 1,
+        "type": "Work",
+        "duration": 720,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 4
+        }
+      },
+      {
+        "id": 2,
+        "type": "Work",
+        "duration": 480,
+        "distance": 0,
+        "targetType": "HRZone",
+        "target": {
+          "type": "heartRateZone",
+          "zone": 2
+        }
+      }
+    ],
+    "training_load": 5765,
+    "work_rest_ratio": 1,
+    "work_duration": 3600,
+    "rest_duration": 0,
+    "work_distance": 0,
+    "rest_distance": 0,
+    "duration": 3600,
+    "distance": 0,
+    "key": "lthw40.0z2w12.0z4w8.0z2"
   }
 ]

@@ -29,6 +29,25 @@ public struct WorkoutEvent: Identifiable, Codable, Hashable {
     public var adjustmentReason: String? // Why this workout was adjusted
     public var adjustmentType: Int16 // 0=none, 1=increased, 2=decreased, 3=skipped-by-suggestion
 
+    /// Transient render hint: this week is a BUILD-phase deload, so the pace-progression
+    /// pass clamps its long run to ~0.80x the prior non-deload delivered long run.
+    /// Not persisted — excluded from Codable so existing data decodes unchanged.
+    public var isDeloadWeek: Bool = false
+
+    /// Transient: 0-based plan week index, so the deload clamp can group events by week
+    /// (one long run per week) instead of mis-tracking a short mid-week run. Not persisted.
+    public var planWeekIndex: Int = -1
+
+    /// Transient: this week is in the TAPER/race phase → the render suppresses the km-floor
+    /// so the long run declines instead of inflating to floor distance. Not persisted.
+    public var isTaperWeek: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case workout, id, planId, date, isCompleted, completionDate, hkWorkoutId
+        case actualDistance, actualDuration, isCancelled, originalDate, isSwapped
+        case originalWorkoutType, loadScore, adjustmentReason, adjustmentType
+    }
+
     public init(workout: Workout, id: UUID, planId: UUID?, date: Date, isCompleted: Bool, completionDate: Date?, hkWorkoutId: UUID?, actualDistance: Double?, actualDuration: TimeInterval?, isCancelled: Bool, originalDate: Date?, isSwapped: Bool, originalWorkoutType: String?, loadScore: Double?, adjustmentReason: String?, adjustmentType: Int16) {
         self.workout = workout
         self.id = id
