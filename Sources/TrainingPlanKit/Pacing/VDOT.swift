@@ -14,6 +14,12 @@ public struct VDOT: Equatable {
     /// The VDOT value (typically 30-85 for amateur → elite range).
     public let value: Double
 
+    /// Direct construction from a known VDOT value (e.g. numeric inversion of a
+    /// pace curve — find the V whose easy pace matches an observed run).
+    public init(value: Double) {
+        self.value = value
+    }
+
     // MARK: - Construction
 
     /// Compute VDOT from a single race result. Daniels' formula.
