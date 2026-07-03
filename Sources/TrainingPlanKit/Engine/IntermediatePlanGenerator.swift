@@ -581,7 +581,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     // recovery. Variety comes from the rotating long-run type.
                         let easyLoadMult = 0.15
                         let easyPool = easyRuns
-                        let easyTargetDur = Int(targetDuration * 0.30)
+                        // Int marathon feels BIGGER than Beg through midweek aerobic
+                        // (days are locked at 4): larger easy/MLR slot target, and the
+                        // forced MLR prefers the 90min+ templates.
+                        let easyTargetDur = config.distance == 42195
+                            ? Int(targetDuration * 0.38) : Int(targetDuration * 0.30)
 
                         // Force mediumLong on alternating midweek slots (marathon/HM):
                         // else the selector picks generic `easy` (60-80min) over
@@ -593,7 +597,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                             && week % 2 == 0
                         var finalPool = easyPool
                         if prefersMediumLong {
-                            let mlOnly = easyPool.filter { $0.subtype == .mediumLong }
+                            var mlOnly = easyPool.filter { $0.subtype == .mediumLong }
+                            if config.distance == 42195 {
+                                let big = mlOnly.filter { $0.duration >= 90 * 60 }
+                                if !big.isEmpty { mlOnly = big }
+                            }
                             if !mlOnly.isEmpty { finalPool = mlOnly }
                         }
 

@@ -311,11 +311,11 @@ extension PlanConfiguration {
             weeklyLoadIncreasePercent: 17...26,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 230,
-            initialLongRunDuration: 68...76,
+            initialWeeklyDuration: 265,
+            initialLongRunDuration: 75...85,
             maxLongRunMinutes: 170,
-            longRunProgression: (base: 61, speed: 93, peak: 133, taper: 68),
-            baseLoad: 7200
+            longRunProgression: (base: 68, speed: 105, peak: 150, taper: 75),
+            baseLoad: 8100
         )
     )
 
