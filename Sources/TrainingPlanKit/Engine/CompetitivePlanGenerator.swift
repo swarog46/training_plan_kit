@@ -145,8 +145,19 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 for i in 0..<numWorkouts {
                     if i == 0 {
                         // First workout: progression run (short)
-                        let progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+                        var progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
                             .filter { $0.duration >= 40 * 60 && $0.duration <= 50 * 60 }
+                        // R12: the race-week tune-up prefers the 3-tier kick shape
+                        // (easy→goal→faster, has a Z4 tail) — long variants were
+                        // selecting the flat Z2→Z3 template and giving the most
+                        // committed athletes the weakest final sharpener.
+                        let withKick = progressivePool.filter { w in
+                            w.intervals.contains { iv in
+                                if case .heartRateZone(let z) = iv.target { return z >= 4 }
+                                return false
+                            }
+                        }
+                        if !withKick.isEmpty { progressivePool = withKick }
                         if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.5, targetDuration: 45, usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("progressive_race", progressive))
                         }
@@ -370,10 +381,18 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // recovery aerobic week.
                 let peakWeekIndex = week - baseDur - speedDur
                 if peakDur >= 3 {
-                    // NB: deload weeks stay MP here (unlike Adv/Int) — the deload clamp already
-                    // lightens the rehearsal (~0.80x), and dropping MP entirely pushes the Pro
-                    // aerobic share past its 83% band. Residual repeat-title is a known cosmetic.
-                    let isMPSegmentWeek = peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
+                    // Deload weeks never force MP — a down week runs a plain aerobic long
+                    // (cut the stressor; the rehearsal IS the stressor). A slot a deload
+                    // suppresses shifts to the next non-deload peak week (rung not lost).
+                    // Short PEAK phases (≤6w, e.g. the 18w half's 5-week peak)
+                    // can't fit the full rung ladder on alternation — schedule
+                    // every non-deload peak week so the 20/25/30 ladder lands
+                    // (R13 Cmp finding: the 18w half never reached its 30min rung).
+                    let scheduledMP = (peakDur <= 6 && !ttWeek)
+                        || peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
+                    let isMPSegmentWeek = !isDeloading && (scheduledMP || pendingRehearsalSlot)
+                    if isDeloading && scheduledMP { pendingRehearsalSlot = true }
+                    else if isMPSegmentWeek { pendingRehearsalSlot = false }
                     if isMPSegmentWeek {
                         // Force a race-rehearsal-style pick.
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
@@ -424,7 +443,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // peak weeks (60→75→90) so it doesn't park on the largest rung.
                 if phase == .peak {
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false, isDeloading: isDeloading)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's
@@ -638,6 +657,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // Runs last so it sees the fully-assembled week. BUILD phases only.
             applyDeloadReshaping(&weekWorkouts, weekIndex: week, phase: phase, isDeloading: isDeloading)
 
+            enforceLongOverMediumLongV3(&weekWorkouts)
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
             workoutsByWeek[week] = weekWorkouts
         } while false

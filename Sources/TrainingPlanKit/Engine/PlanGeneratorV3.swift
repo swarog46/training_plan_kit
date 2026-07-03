@@ -481,6 +481,9 @@ class PlanGeneratorV3 {
     /// suppresses the km-floor there (else the first taper week inflates to floor distance).
     var taperWeeks: Set<Int> = []
     var usedIds: [String: Int] = [:]
+    /// A PEAK rehearsal slot suppressed by a deload week; the next non-deload peak
+    /// week takes it, so short plans don't lose ladder rungs to the 3:1 cadence.
+    var pendingRehearsalSlot = false
     var prevInterval: Workout? = nil
     var prevThreshold: Workout? = nil
     var prevPhase: TrainingPhase? = nil
@@ -644,12 +647,15 @@ class PlanGeneratorV3 {
     // Canonical marathon-rehearsal MP-segment ladder (minutes). The PEAK
     // rehearsal steps UP this ladder so the MP block progresses 60→75→90(→105),
     // Pfitz-style, instead of parking on the largest rung every rehearsal week.
-    static let rehearsalMPLadder = [60, 75, 90, 105]
+    static let rehearsalMPLadder = [60, 70, 90, 105]  // 3-occurrence plans climb 60/70/90;
+    // the 105 rung snaps to the catalog's 90 (no bigger template exists yet), so
+    // 4-occurrence Cmp plans top out 60/70/90/90 — a real 4th rung needs a
+    // ~100min raceRehearsalM template added to the catalog.
 
     // Half / 10K rehearsal race-pace-segment ladders (minutes). Same idea, scaled
     // to the shorter race: the HMP block builds toward ~30min, the 10KP toward
     // ~20min, stepping up by occurrence so the segment ramps and never regresses.
-    static let rehearsalHMPLadder = [15, 20, 25, 30]
+    static let rehearsalHMPLadder = [20, 25, 30]
     static let rehearsal10KLadder = [10, 15, 20]
 
     // The race-pace (goal-effort) block in a rehearsal: Z4 for the 10K rehearsal
@@ -720,8 +726,15 @@ class PlanGeneratorV3 {
     // emergent rehearsals (Int/Adv) — Competitive gates its own weeks so passes
     // false. No-op unless a rehearsal subtype is in the pool.
     func rampRehearsalMPSegment(_ pool: [Workout], peakWeekIndex: Int, peakDur: Int,
-                                priorRehearsalCount: Int, force: Bool, windowGate: Bool) -> [Workout] {
+                                priorRehearsalCount: Int, force: Bool, windowGate: Bool,
+                                isDeloading: Bool = false) -> [Workout] {
         guard let sub = rehearsalSubtype(in: pool) else { return pool }
+        // Deload week: never force (or keep) a rehearsal — the down week runs a plain
+        // aerobic long. The rung ladder resumes on the next build week.
+        if isDeloading {
+            let plain = pool.filter { $0.subtype != sub }
+            return plain.isEmpty ? pool : plain
+        }
         let rehearsals = pool.filter { $0.subtype == sub }
         let available = Array(Set(rehearsals.map { rehearsalSegmentMinutes($0, subtype: sub) })).sorted()
         guard available.count >= 2 else { return pool }
@@ -796,8 +809,14 @@ class PlanGeneratorV3 {
         // the down-week LR drops but stays continuous.
         if isDeloading, phase == .base || phase == .speed || phase == .peak {
             let floor = recoveryLongRunTarget(prevLongRunMins, isDeloading: true, phase: phase)
-            let floored = pool.filter { Int($0.duration / 60) >= floor }
-            return floored.isEmpty ? pool : floored
+            // Deload long run is plain aerobic: no race-rehearsal / fast-finish on a
+            // down week — those repeat the prior week's key session as a lighter copy
+            // (classics cut the stressor; a rehearsal IS the stressor).
+            let rehearsals: Set<WorkoutSubtype> = [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K, .fastFinish]
+            let aerobic = pool.filter { !rehearsals.contains($0.subtype) }
+            let candidates = aerobic.isEmpty ? pool : aerobic
+            let floored = candidates.filter { Int($0.duration / 60) >= floor }
+            return floored.isEmpty ? candidates : floored
         }
         let monotonicPool: [Workout]
         switch phase {
@@ -868,7 +887,21 @@ class PlanGeneratorV3 {
                 if let prog = progressionPool.min(by: {
                     abs(Int($0.duration / 60) - targetMins) < abs(Int($1.duration / 60) - targetMins)
                 }) {
-                    week[heaviest.offset] = ("deload_progression", prog)
+                    let hasProgShape = week.enumerated().contains {
+                        $0.offset != heaviest.offset
+                            && $0.element.workout.subtype == .progression
+                    }
+                    if hasProgShape {
+                        // R13: never a second progression-shaped run — deload
+                        // swaps to plain easy instead.
+                        if let easy = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy]).min(by: {
+                            abs($0.duration - prog.duration) < abs($1.duration - prog.duration)
+                        }) {
+                            week[heaviest.offset] = ("deload_easy", easy)
+                        }
+                    } else {
+                        week[heaviest.offset] = ("deload_progression", prog)
+                    }
                 } else if !soleQuality,
                           let easy = selectWorkoutByTargetV3(workouts: easyRuns,
                                               targetLoad: Double(heaviest.element.workout.trainingLoad) * 0.6,
@@ -922,7 +955,19 @@ class PlanGeneratorV3 {
                 if let pick = progressionPool
                     .filter({ abs(Int($0.duration / 60) - qMins) <= 12 && $0.trainingLoad < q.trainingLoad })
                     .min(by: { abs(Int($0.duration / 60) - qMins) < abs(Int($1.duration / 60) - qMins) }) {
-                    week[qIdx] = ("deload_progression", pick)
+                    let hasProgShape2 = week.enumerated().contains {
+                        $0.offset != qIdx
+                            && $0.element.workout.subtype == .progression
+                    }
+                    if hasProgShape2 {
+                        if let easy = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy]).min(by: {
+                            abs($0.duration - pick.duration) < abs($1.duration - pick.duration)
+                        }) {
+                            week[qIdx] = ("deload_easy", easy)
+                        }
+                    } else {
+                        week[qIdx] = ("deload_progression", pick)
+                    }
                     lightenedQuality = true
                     break
                 }
@@ -1301,4 +1346,100 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
     }
     
     return events.sorted { $0.date < $1.date }
+}
+
+// MARK: - Week composition (R8)
+
+/// Proportional duration rescale — every interval scales by the same factor,
+/// so paces/targets and the workout's shape are preserved.
+func rescaledV3(_ w: Workout, toSeconds target: Int64) -> Workout {
+    guard w.duration > 0, target > 0, target != w.duration else { return w }
+    let f = Double(target) / Double(w.duration)
+    let ivs = w.intervals.map {
+        WorkoutInterval(id: $0.id, type: $0.type, duration: $0.duration * f,
+                        distance: $0.distance, targetType: $0.targetType, target: $0.target)
+    }
+    return Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,
+                   trainingType: w.trainingType, targetType: w.targetType,
+                   duration: target, distance: w.distance, key: w.key,
+                   trainingLoad: Int64((Double(w.trainingLoad) * f).rounded()),
+                   intervals: ivs, workRestRatio: w.workRestRatio,
+                   workDuration: Int64((Double(w.workDuration) * f).rounded()),
+                   restDuration: Int64((Double(w.restDuration) * f).rounded()),
+                   workDistance: w.workDistance, restDistance: w.restDistance)
+}
+
+/// R8: the LONG run must out-last any medium-long run in its week. Fixed
+/// mediumLong templates (85-110min) can out-last an early-build long run —
+/// swap the two durations (weekly volume unchanged, both keep their type).
+func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: Workout)]) {
+    let longSubs: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong,
+                                         .raceRehearsalM, .raceRehearsalHM, .fastFinish]
+    // Compare against the LARGEST medium-long — Cmp weeks carry 2-4 of them
+    // (base extra + forced pick + fill), and first-match let the rest slip
+    // past the guard (R12 Cmp finding: 27% of weeks inverted).
+    guard let li = weekWorkouts.firstIndex(where: { longSubs.contains($0.workout.subtype) }),
+          let mi = weekWorkouts.indices
+              .filter({ weekWorkouts[$0].workout.subtype == .mediumLong })
+              .max(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration }),
+          weekWorkouts[mi].workout.duration > weekWorkouts[li].workout.duration
+    else { return }
+    let l = weekWorkouts[li].workout, m = weekWorkouts[mi].workout
+    weekWorkouts[li] = (weekWorkouts[li].type, rescaledV3(l, toSeconds: m.duration))
+    weekWorkouts[mi] = (weekWorkouts[mi].type, rescaledV3(m, toSeconds: l.duration))
+}
+
+// MARK: - Aerobic volume top-up (#152 / Roadmap-5)
+
+/// Selection under-delivers vs the config's weekly duration target (slot
+/// fractions + template inventory cap what a fixed day count can hold), and
+/// the ACWR ramp cap then chains every later week off that shortfall — which
+/// collapsed the per-level volume spread the configs encode (42K: Beg 222 /
+/// Int 265 / Adv 328 min). Close the gap by scaling the week's PLAIN-AEROBIC
+/// runs (easy / mediumLong / recovery — never the long run, never quality) up
+/// toward the target: at most +30% per run, 5-min ticked, build weeks only.
+func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout)],
+                          targetDurationMins: Double, isDeloading: Bool,
+                          phase: TrainingPhase, weeklyCapMins: Double? = nil) {
+    guard !isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
+    // R14: beginner-marathon roof — never top a week past the cap (the Slow
+    // tier was stacking to 5.9h peak weeks purely from added easy time).
+    let targetDurationMins = min(targetDurationMins, weeklyCapMins ?? .infinity)
+    let aeroSubs: Set<WorkoutSubtype> = [.easy, .mediumLong, .recovery]
+    let delivered = weekWorkouts.reduce(0.0) { $0 + Double($1.workout.duration) }
+    let targetSec = targetDurationMins * 60.0
+    let deficit = targetSec - delivered
+    guard deficit >= 300 else { return }
+    let aeroIdx = weekWorkouts.indices.filter {
+        aeroSubs.contains(weekWorkouts[$0].workout.subtype)
+            && !weekWorkouts[$0].workout.intervals.contains { iv in
+                if case .heartRateZone(let z) = iv.target { return z >= 4 }
+                return false
+            }
+    }
+    let aeroSec = aeroIdx.reduce(0.0) { $0 + Double(weekWorkouts[$1].workout.duration) }
+    guard aeroSec > 0 else { return }
+    let factor = min(1.30, (aeroSec + deficit) / aeroSec)
+    guard factor > 1.02 else { return }
+    // No scaled run may reach the week's long-run-slot session — the LR stays
+    // the week's longest run (R13 fitness finding: a topped-up 65min easy
+    // out-lasted a 60min progressive long in the VO2 block).
+    let longSubs: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong,
+                                         .raceRehearsalM, .raceRehearsalHM,
+                                         .raceRehearsal10K, .fastFinish]
+    let longestLR = weekWorkouts
+        .filter { longSubs.contains($0.workout.subtype) }
+        .map { Double($0.workout.duration) }.max()
+    for i in aeroIdx {
+        let w = weekWorkouts[i].workout
+        var raw = Double(w.duration) * factor
+        if let lr = longestLR { raw = min(raw, lr - 300) }
+        // A plain "Easy Run" stays an easy run — 75min ceiling (R13 Int
+        // finding: an easy-role fill rendered 85min and read as a mislabeled
+        // medium-long). MLR-tagged runs may go longer.
+        if w.subtype == .easy || w.subtype == .recovery { raw = min(raw, 75 * 60) }
+        let ticked = Int64((raw / 300.0).rounded(.down) * 300.0)
+        guard ticked > w.duration else { continue }
+        weekWorkouts[i] = (weekWorkouts[i].type, rescaledV3(w, toSeconds: ticked))
+    }
 }

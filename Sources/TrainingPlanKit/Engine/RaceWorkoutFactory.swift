@@ -22,13 +22,16 @@ public func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
         key: "race_day",
         trainingLoad: 0,
         intervals: [
+            // Z3 tag = race day renders at the PLANNED race pace (exact), not
+            // the easy-pace fallback .noRange would get. Interval type stays
+            // .free — the watch keys free-run behavior off workout.type == .race.
             WorkoutInterval(
                 id: 1,
                 type: .free,
                 duration: 0,
                 distance: 0,
-                targetType: .noTarget,
-                target: .noRange(noValue: true)
+                targetType: .heartRate,
+                target: .heartRateZone(zone: 3)
             )
         ],
         workRestRatio: 0,

@@ -563,10 +563,57 @@ if mode == "pacedump" {
                     paceStr = "-"
                 }
                 print("  \(title) \(String(format: "%3dmin", dur))  \(paceStr)  [\(subtype)]")
+                if let detail = pacedIntervalDetail(ev.workout) {
+                    print("    ↳ \(detail)")
+                }
             }
         }
         print("")
     }
+}
+
+// Full interval breakdown WITH rendered paces — warmup/cooldown included, so
+// the matrices show exactly what a runner sees per segment. Consecutive
+// identical (type, duration, pace) segments are run-length-encoded.
+func pacedIntervalDetail(_ workout: Workout) -> String? {
+    let ivs = workout.intervals
+    guard ivs.count > 1 else { return nil }
+
+    func pace(_ iv: WorkoutInterval) -> String {
+        if case .paceTarget(let base, let rel) = iv.target {
+            let p = Int(Double(base) * rel)
+            return "\(p / 60):\(String(format: "%02d", p % 60))/km"
+        }
+        if case .heartRateZone(let z) = iv.target { return "Z\(z)" }
+        return "-"
+    }
+    func mmss(_ secs: Double) -> String {
+        let s = Int(secs.rounded())
+        return s % 60 == 0 ? "\(s / 60):00" : "\(s / 60):\(String(format: "%02d", s % 60))"
+    }
+    func tag(_ t: IntervalType) -> String {
+        switch t {
+        case .warmup: return "WU "
+        case .cooldown: return "CD "
+        case .rest, .recovery: return "jog "
+        default: return ""
+        }
+    }
+
+    struct Seg { let key: String; let text: String; var count: Int }
+    var segs: [Seg] = []
+    for iv in ivs {
+        let text = "\(tag(iv.type))\(mmss(iv.duration)) @ \(pace(iv))"
+        let key = "\(iv.type)|\(iv.duration)|\(pace(iv))"
+        if var last = segs.last, last.key == key {
+            last.count += 1
+            segs[segs.count - 1] = last
+        } else {
+            segs.append(Seg(key: key, text: text, count: 1))
+        }
+    }
+    return segs.map { $0.count > 1 ? "\($0.count) × \($0.text)" : $0.text }
+        .joined(separator: " · ")
 }
 
 // daydump: per-day calendar view via the REAL createMarathonPlanV3. This is

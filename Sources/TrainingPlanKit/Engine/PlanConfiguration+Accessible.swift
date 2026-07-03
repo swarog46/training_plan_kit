@@ -203,7 +203,7 @@ extension PlanConfiguration {
             taperDeloadPercent: 35,
             initialWeeklyDuration: 72,
             initialLongRunDuration: 19...22,
-            maxLongRunMinutes: 72,
+            maxLongRunMinutes: 110,
             longRunProgression: (base: 60, speed: 72, peak: 72, taper: 60),
             baseLoad: 2700
         )
@@ -231,7 +231,7 @@ extension PlanConfiguration {
             taperDeloadPercent: 35,
             initialWeeklyDuration: 92,
             initialLongRunDuration: 33...38,
-            maxLongRunMinutes: 72,
+            maxLongRunMinutes: 120,
             longRunProgression: (base: 60, speed: 72, peak: 72, taper: 60),
             baseLoad: 3680
         )
@@ -311,11 +311,11 @@ extension PlanConfiguration {
             weeklyLoadIncreasePercent: 17...26,
             phaseFinishDeloadPercent: 15...17,
             taperDeloadPercent: 35,
-            initialWeeklyDuration: 230,
-            initialLongRunDuration: 68...76,
+            initialWeeklyDuration: 265,
+            initialLongRunDuration: 75...85,
             maxLongRunMinutes: 170,
-            longRunProgression: (base: 61, speed: 93, peak: 133, taper: 68),
-            baseLoad: 7200
+            longRunProgression: (base: 68, speed: 105, peak: 150, taper: 75),
+            baseLoad: 8100
         )
     )
 

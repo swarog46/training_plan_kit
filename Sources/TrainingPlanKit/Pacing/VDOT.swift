@@ -14,6 +14,12 @@ public struct VDOT: Equatable {
     /// The VDOT value (typically 30-85 for amateur → elite range).
     public let value: Double
 
+    /// Direct construction from a known VDOT value (e.g. numeric inversion of a
+    /// pace curve — find the V whose easy pace matches an observed run).
+    public init(value: Double) {
+        self.value = value
+    }
+
     // MARK: - Construction
 
     /// Compute VDOT from a single race result. Daniels' formula.
@@ -205,10 +211,19 @@ extension VDOT {
                           planWeeks: Int,
                           perWeek: Double = 0.25,
                           adaptationCeiling: Double = 6.0) -> Int? {
-        let stimulus = Double(planWeeks) * perWeek
-        let vdotGain = adaptationCeiling * (1.0 - exp(-stimulus / adaptationCeiling))
-        let projectedVDOT = VDOT(value: self.value + vdotGain)
-        return projectedVDOT.predictedTime(forDistanceMeters: distanceMeters)
+        projected(afterWeeks: planWeeks, perWeek: perWeek, adaptationCeiling: adaptationCeiling)
+            .predictedTime(forDistanceMeters: distanceMeters)
+    }
+
+    /// The VDOT this runner is projected to reach after `weeks` of training —
+    /// the same asymptotic gain realisticOutcome uses. Callers use it to derive
+    /// race-week pace anchors (racePaceEnd / easy / 5K) for the render.
+    public func projected(afterWeeks weeks: Int,
+                          perWeek: Double = 0.25,
+                          adaptationCeiling: Double = 6.0) -> VDOT {
+        let stimulus = Double(weeks) * perWeek
+        let gain = adaptationCeiling * (1.0 - exp(-stimulus / adaptationCeiling))
+        return VDOT(value: self.value + gain)
     }
 
     /// Scale a level-based adaptation ceiling by proximity to genetic ceiling.
@@ -230,3 +245,31 @@ extension VDOT {
     }
 }
 
+
+// MARK: - Race-pace inversion
+
+extension VDOT {
+    /// The VDOT whose predicted race pace at `distanceMeters` equals
+    /// `racePaceSecondsPerKm` (bisection over the amateur-elite range).
+    /// Used by recalibration to recover a plan's implied fitness from its
+    /// stored planned pace when no fresher signal exists.
+    public static func fromRacePace(secondsPerKm pace: Int, distanceMeters: Int) -> VDOT? {
+        guard pace > 120, distanceMeters >= 1000 else { return nil }
+        func paceFor(_ v: Double) -> Int {
+            let cand = VDOT(value: v)
+            switch distanceMeters {
+            case 42195: return cand.marathonPaceSecondsPerKm
+            case 21097: return cand.halfMarathonPaceSecondsPerKm
+            case 10000: return cand.tenKPaceSecondsPerKm
+            default:    return cand.fiveKPaceSecondsPerKm
+            }
+        }
+        var lo = 15.0, hi = 85.0
+        guard paceFor(lo) >= pace, paceFor(hi) <= pace else { return nil }
+        for _ in 0..<40 {
+            let mid = (lo + hi) / 2
+            if paceFor(mid) > pace { lo = mid } else { hi = mid }
+        }
+        return VDOT(value: (lo + hi) / 2)
+    }
+}

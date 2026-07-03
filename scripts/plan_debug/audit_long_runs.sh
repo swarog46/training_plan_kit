@@ -11,7 +11,10 @@ TSV=/tmp/lr_audit.tsv
 : > "$TSV"
 [ -x "$B" ] || "$HERE/build.sh" >/dev/null 2>&1
 
-LR_TAGS='\[(steadyLong|progressiveLong|long|raceRehearsalM|raceRehearsalHM|raceRehearsal10K|fastFinish)\]'
+# NOTE: awk -v processes escapes, so \[ must be \\[ here or the pattern
+# degrades into a character class and matches nearly every line (R9 finding —
+# the audit ran vacuously green for weeks).
+LR_TAGS='\\[(steadyLong|progressiveLong|long|raceRehearsalM|raceRehearsalHM|raceRehearsal10K|fastFinish)\\]'
 
 # Render one combo, emit "combo<TAB>week<TAB>longrun_minutes" for each long-run week.
 emit() { # combo filter weeks  (anchor env already set)
@@ -21,7 +24,9 @@ emit() { # combo filter weeks  (anchor env already set)
   "$B" pacedump "$2" 2>/dev/null \
   | awk -v combo="$1" -v tags="$LR_TAGS" '
       /^W *[0-9]+:/ { if (match($0,/[0-9]+/)) wk=substr($0,RSTART,RLENGTH) }
-      $0 ~ tags { if (match($0,/[0-9]+min/)) { d=substr($0,RSTART,RLENGTH); sub(/min/,"",d); print combo"\t"wk"\t"d } }
+      $0 ~ tags { d=""; line=$0
+                  while (match(line,/[0-9]+min/)) { d=substr(line,RSTART,RLENGTH); line=substr(line,RSTART+RLENGTH) }
+                  if (d!="") { sub(/min/,"",d); print combo"\t"wk"\t"d } }
     ' >> "$TSV"
 }
 proj() { # DIST TIME LEVEL TARGET WEEKS
