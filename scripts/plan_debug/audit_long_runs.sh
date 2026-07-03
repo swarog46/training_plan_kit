@@ -11,7 +11,10 @@ TSV=/tmp/lr_audit.tsv
 : > "$TSV"
 [ -x "$B" ] || "$HERE/build.sh" >/dev/null 2>&1
 
-LR_TAGS='\[(steadyLong|progressiveLong|long|raceRehearsalM|raceRehearsalHM|raceRehearsal10K|fastFinish)\]'
+# NOTE: awk -v processes escapes, so \[ must be \\[ here or the pattern
+# degrades into a character class and matches nearly every line (R9 finding —
+# the audit ran vacuously green for weeks).
+LR_TAGS='\\[(steadyLong|progressiveLong|long|raceRehearsalM|raceRehearsalHM|raceRehearsal10K|fastFinish)\\]'
 
 # Render one combo, emit "combo<TAB>week<TAB>longrun_minutes" for each long-run week.
 emit() { # combo filter weeks  (anchor env already set)

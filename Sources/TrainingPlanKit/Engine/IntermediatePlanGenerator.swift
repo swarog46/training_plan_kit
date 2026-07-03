@@ -114,7 +114,20 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         }
                     }
                 }
-                for rampSub in [WorkoutSubtype.hillRepeats, .ladderIntervals] {
+                // R8: "5K Pace" is a race-dose session, not the weekly default — on 5K
+                // race plans it may lead only every other week, so intervals/ladders
+                // (incl. faster-than-5K short reps) carry the rest.
+                if !config.isVO2Max, config.distance == 5000, week % 2 == 0 {
+                    let nonFivek = result.filter { $0.subtype != .fivekPace }
+                    if !nonFivek.isEmpty { result = nonFivek }
+                }
+                // R10: ladders are the exotic garnish, not the staple — allow
+                // them in the pool only every third week (plain intervals lead).
+                if week % 3 != 2 {
+                    let noLadders = result.filter { $0.subtype != .ladderIntervals }
+                    if !noLadders.isEmpty { result = noLadders }
+                }
+                for rampSub in [WorkoutSubtype.hillRepeats, .ladderIntervals, .tenkPace] {
                     let variants = result.filter { $0.subtype == rampSub }
                     if variants.count > 1 {
                         let ramped = rampVariantsByPlanWeek(variants, week: week)
@@ -265,7 +278,11 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     
                     // Threshold in SPEED/PEAK only, gated to 4+ day plans (a 2nd quality
                     // would leave a 3-day week zero easy days). See AdvancedPlanGenerator.
-                    if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 {
+                    // R10: the half plan runs a 2-quality week only every other
+                    // week — the off weeks stay 1 quality + easy/strides.
+                    let secondQualityWeekOK = config.distance != 21097 || week % 2 == 1
+                    if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4
+                        && secondQualityWeekOK {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
@@ -295,6 +312,15 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                             // Normal week: Add threshold
                             let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
                             var thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
+
+                            // R8: if the interval slot already took a rep session,
+                            // the 2nd quality must be CONTINUOUS (threshold/MP) — a
+                            // mile-repeats week next to an intervals week reads as
+                            // two interval sessions and doubles the rep load.
+                            if weekWorkouts.contains(where: { $0.type == "interval" }) {
+                                let noReps = thresholdPool.filter { $0.subtype != .mileRepeats }
+                                if !noReps.isEmpty { thresholdPool = noReps }
+                            }
 
                             // 42K Pfitz MP-volume preference: force marathonPace in the
                             // threshold slot on alternating PEAK weeks (the selector
@@ -486,6 +512,21 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 }
             }
 
+            // R8/R10: a race-rehearsal week is built AROUND the rehearsal — it
+            // carries no other quality at all (no standalone MP, no yasso/
+            // threshold/intervals). The freed slots fall to the easy fill, so
+            // the week reads rehearsal + easy running (the R10 "extreme week"
+            // fix: Yasso 59min + Threshold 41min + Rehearsal 165min was a real
+            // Int marathon week).
+            if weekWorkouts.contains(where: {
+                $0.workout.subtype == .raceRehearsalM || $0.workout.subtype == .raceRehearsalHM
+            }) {
+                weekWorkouts.removeAll {
+                    $0.type == "interval" || $0.type == "interval2" || $0.type == "threshold"
+                        || $0.workout.subtype == .marathonPace
+                }
+            }
+
             // EASY RUN (fills remaining slots). Daniels: 70-80% of weekly volume
             // should be easy, so this slot is easy by default.
             if weekWorkouts.count < maxWorkoutsPerWeek {
@@ -570,6 +611,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             // Runs last so it sees the fully-assembled week. BUILD phases only.
             applyDeloadReshaping(&weekWorkouts, weekIndex: week, phase: phase, isDeloading: isDeloading)
 
+            enforceLongOverMediumLongV3(&weekWorkouts)
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
             workoutsByWeek[week] = weekWorkouts
         } while false

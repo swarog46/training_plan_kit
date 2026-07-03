@@ -174,8 +174,14 @@ public struct BeginnerProfile: PlanProfile {
             return (intervals.filter { ints.contains($0.subtype) && !hasZone5($0) },
                     thresholds.filter { !hasZone5($0) && thr.contains($0.subtype) })
         }
-        // Beginner quality = strides + hills + TT (no Z5 reps), on threshold/MP only.
-        return (filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.hillRepeats, .timeTrial, .strides]),
+        // Beginner race plans carry REAL interval work (R8) — short intervals/
+        // ladders at a gentle dose alongside hills/TT/strides. Hills used to be
+        // the only rep workout in a beginner build; pace is safe by construction
+        // now (planned-5K anchor, rep-length-aware), so gentleness lives in the
+        // DOSE (minIntervalMinutes + load targets), not in banning the subtype.
+        let ints: Set<WorkoutSubtype> = [.intervals, .ladderIntervals, .hillRepeats, .timeTrial]
+        return (intervals.filter { ints.contains($0.subtype) }
+                    + filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.strides]),
                 thresholds.filter { !hasZone5($0) && thr.contains($0.subtype) })
     }
 }

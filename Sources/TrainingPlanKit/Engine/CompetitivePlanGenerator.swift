@@ -641,6 +641,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // Runs last so it sees the fully-assembled week. BUILD phases only.
             applyDeloadReshaping(&weekWorkouts, weekIndex: week, phase: phase, isDeloading: isDeloading)
 
+            enforceLongOverMediumLongV3(&weekWorkouts)
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
             workoutsByWeek[week] = weekWorkouts
         } while false

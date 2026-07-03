@@ -98,6 +98,12 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
 
                 // Yasso 800s are Int/Adv only — never in a beginner week.
                 pool = pool.filter { $0.subtype != .yasso800 }
+                // R8: real interval/ladder work is a half/marathon-beginner tool —
+                // the 2-day 5K/10K beginner weeks keep the race-specific mix
+                // (strides + hills + TT) so quality can't displace their easy runs.
+                if config.distance < 21000, !config.isVO2Max {
+                    pool = pool.filter { $0.subtype != .intervals && $0.subtype != .ladderIntervals }
+                }
                 // Gate Time Trials by milestone cadence (2-3 per PEAK cycle, never sharing).
                 if !ttWeek {
                     pool = pool.filter { $0.subtype != .timeTrial }
@@ -127,6 +133,10 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                             result = result.filter { !($0.subtype == vsub && !isRealZ5($0)) }
                         }
                     }
+                }
+                if week % 3 != 2 {
+                    let noLadders = result.filter { $0.subtype != .ladderIntervals }
+                    if !noLadders.isEmpty { result = noLadders }
                 }
                 for rampSub in [WorkoutSubtype.hillRepeats, .ladderIntervals] {
                     let variants = result.filter { $0.subtype == rampSub }
@@ -192,6 +202,15 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             if config.profile.startsIntervalsInBase && phase == .base {
                 shouldAddIntervals = true // fitter tiers start intervals in Base
             }
+            // R8: quality must appear by W3, not after a 5-week aerobic-only
+            // opening — from the 3rd BASE week a beginner takes one light quality
+            // session (the base-phase minute floor keeps it a ~25min dose).
+            // Half/marathon only: the 2-day 5K/10K beginner weeks have no room
+            // (quality would crowd out the easy runs entirely).
+            if phase == .base && weekInPhase >= 2 && config.distance >= 21000
+                && config.trainingDays.count >= 3 {
+                shouldAddIntervals = true
+            }
             // VO2 block: VO2 IS the point — carry the Z5 dose into BASE too, but skip
             // pure onboarding (BASE wk 0) so week 1 isn't a VO2 detonation.
             let isVO2Onboarding = config.isVO2Max && phase == .base && weekInPhase == 0
@@ -225,16 +244,27 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     // Alternate: even weeks = intervals, odd = threshold. On a TT week
                     // take the interval branch and prefer the TT subtype so the
                     // recalibration checkpoint isn't lost to standard intervals.
+                    var intervalPlaced = false
                     if (week % 2 == 0 || ttWeek) && !intervalPool.isEmpty {
                         let begPool: [Workout] = {
                             if ttWeek {
                                 let ttOnly = intervalPool.filter { $0.subtype == .timeTrial }
                                 if !ttOnly.isEmpty { return ttOnly }
                             }
-                            // PEAK = race sharpening for 5K/10K beginners: bias toward
-                            // race-specific work (strides @ ~5K pace) + the tune-up TT,
-                            // drop BASE-phase hills. (fivekPace intervals are too heavy
-                            // for a ~9k-load beginner week, so they're not in the pool.)
+                            // R8: the interval slot prefers REAL rep work (intervals/
+                            // ladders) — hills live in the odd-week hard-quality
+                            // alternation below, so they can't monopolize quality.
+                            var repWork = intervalPool.filter {
+                                $0.subtype == .intervals || $0.subtype == .ladderIntervals
+                            }
+                            // R10: beginners run SHORT reps — prefer templates whose
+                            // longest work rep is ≤2:30 when any exist.
+                            let short = repWork.filter { w in
+                                w.intervals.filter { $0.type == .work }
+                                    .allSatisfy { $0.duration <= 150 }
+                            }
+                            if !short.isEmpty { repWork = short }
+                            if !repWork.isEmpty { return repWork }
                             if phase == .peak && config.distance <= 10000 {
                                 let raceSpecific = intervalPool.filter { $0.subtype != .hillRepeats }
                                 if !raceSpecific.isEmpty { return raceSpecific }
@@ -244,8 +274,12 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                         if let interval = selectWorkoutByTargetV3(workouts: begPool, targetLoad: targetLoad * 0.4, targetDuration: Int(targetDuration * 0.3), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("interval", interval))
                             prevInterval = interval
+                            intervalPlaced = true
                         }
-                    } else if !filteredThresholds.isEmpty {
+                    }
+                    // R8: never leave a build week quality-less because the interval
+                    // slot came up empty — fall through to the threshold/hills branch.
+                    if !intervalPlaced, !filteredThresholds.isEmpty {
                         // HARD-quality week. 10K+: alternate every other one to a hill
                         // session so quality spans hills + threshold (not 100% threshold).
                         // Hills sit at ~threshold load ⇒ a TYPE swap, not added intensity;

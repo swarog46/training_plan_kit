@@ -211,10 +211,19 @@ extension VDOT {
                           planWeeks: Int,
                           perWeek: Double = 0.25,
                           adaptationCeiling: Double = 6.0) -> Int? {
-        let stimulus = Double(planWeeks) * perWeek
-        let vdotGain = adaptationCeiling * (1.0 - exp(-stimulus / adaptationCeiling))
-        let projectedVDOT = VDOT(value: self.value + vdotGain)
-        return projectedVDOT.predictedTime(forDistanceMeters: distanceMeters)
+        projected(afterWeeks: planWeeks, perWeek: perWeek, adaptationCeiling: adaptationCeiling)
+            .predictedTime(forDistanceMeters: distanceMeters)
+    }
+
+    /// The VDOT this runner is projected to reach after `weeks` of training —
+    /// the same asymptotic gain realisticOutcome uses. Callers use it to derive
+    /// race-week pace anchors (racePaceEnd / easy / 5K) for the render.
+    public func projected(afterWeeks weeks: Int,
+                          perWeek: Double = 0.25,
+                          adaptationCeiling: Double = 6.0) -> VDOT {
+        let stimulus = Double(weeks) * perWeek
+        let gain = adaptationCeiling * (1.0 - exp(-stimulus / adaptationCeiling))
+        return VDOT(value: self.value + gain)
     }
 
     /// Scale a level-based adaptation ceiling by proximity to genetic ceiling.

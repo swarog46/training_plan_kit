@@ -353,3 +353,81 @@ Check: `pacedump | grep "Race Rehearsal"` per plan — rungs monotonic, no dups,
 aerobic long run still lands at ~0.80× the prior delivered LR; 60-min floor on early base.
 
 Aerobic-share re-bless from R5-1: Cmp 42K rec 83→85 (measured 83.9%), Adv 42K 82→84.
+
+## Round 6 — pace-render invariants + the app-path rule (2026-07-02)
+
+Root lesson: the app called `applyPaceProgression` WITHOUT end anchors (legacy
+path) while every validation here passed them — five rounds validated a mode
+users never ran. Full story: `PACE_FINDINGS.md`.
+
+**R6-0 · Validate the app-shaped call.** Any render change must be checked in
+BOTH modes: with `*_PACE_END` anchors (matrix path) and the kit unit tests that
+mirror the app call (`PaceRenderInvariantTests`). The app itself now always
+passes projected end anchors for non-Pro race plans.
+
+**R6-1 · Zone separation, per interval.** The matrices now print every interval
+with its rendered pace (WU/work/jog/CD). On any rehearsal / MP workout:
+warmup and cooldown ≥15 s/km slower than the MP block (≥8 s/km on legacy
+renders). No workout may show one identical pace across WU/work/CD.
+
+**R6-2 · Intervals vs 5K.** Z5 work never slower than the runner's current 5K
+pace, and at true VO2 target (0.96×5K, rep-length-aware) from 60% of the plan.
+10K-pace work: ≤1.03×5K, race-floored.
+
+**R6-3 · MP at the PLANNED race pace (revised 2026-07-02, same day).** Race-pace
+work is practiced AT the planned (projected race-day) pace from the first MP
+session — Daniels/Pfitz orthodoxy; the progression is the DOSE (60→70→90min
+rungs), never a slower rehearsal pace. So: every Z3/MP block and rehearsal MP
+segment renders at ONE flat pace = the projected race-day pace (exact, no 5s
+rounding); 10K-plan race-pace work ("10K Pace", 10K rehearsals) likewise at
+planned 10K pace. MP varying week-to-week is now the bug. Easy/quality anchors
+still move current→projected. Pro unchanged (planned == goal, was already flat).
+Also: the config screen's predicted finish and the generation anchors use the
+SAME projection call (structure-derived perWeek + per-level ceiling) — one number.
+
+**R6-4 · One progression mechanism.** Fitness progression lives in the moving
+anchors only. Any new easing/blend on top of an anchor is a defect by
+definition (see PACE_FINDINGS "standing lesson").
+
+## Round 8 — training-content rules (owner review, 2026-07-03)
+
+**R8-1 · Peak long run is a DISTANCE, not a minute count.** Marathon builds
+peak 28-32km (Cmp 32-35km), half builds 16-18km (Cmp half 18-22km — competitive halves train at/above
+race distance, Pfitz-style) — every level, every pace tier. A marathon plan whose longest run is ~17km is not marathon prep. The
+km window in `clampLongRunDistance` floors AND caps; the beginner marathon
+minute-ceiling is 245min (a slow novice may take ~4h to reach 28km). Check
+the RENDERED km: peak LR km must land in band on every level × pace tier.
+
+**R8-2 · Intervals are the lead rep instrument; hills are a flavor.** Real
+`intervals`/`ladderIntervals` appear in every half/marathon plan including
+BEGINNER (the old "no Z5 reps for beginners" pool rule is dead); hills may
+not be the majority of a plan's interval-class sessions. 5K plans: "5K Pace"
+sessions at most every other week — short reps (0.88-0.92×planned 5K) run
+FASTER than 5K pace between them.
+
+**R8-3 · Quality by W3.** First quality session lands by week 3 in every
+half/marathon plan (2-day 5K/10K beginner weeks exempt — no room). 5-week
+aerobic-only openings are a defect.
+
+**R8-4 · Quality paces anchor to PLANNED fitness, flat.** Z5-class work
+(intervals/ladders/pyramids/hills) renders at rep-length targets ×
+PLANNED 5K (0.88 ≤90s / 0.92 ≤3min / 0.96 longer + hills), the same
+philosophy as MP: practice destination pace, progress the dose. 10K-pace
+work = 1.01×planned 5K (exact planned race pace on 10K plans). Threshold
+family (threshold/mileRepeats) stays a CURRENT-fitness stimulus on the
+moving 5K anchor (LT→tempo 1.07→1.02). Ladders/pyramids route as interval
+work regardless of their catalog Z4 tag.
+
+**R8-5 · Week composition.** (a) A rehearsal week carries NO standalone
+Marathon Pace session — the rehearsal is the MP dose. (b) An intervals week
+doesn't also carry mile repeats (one rep-shaped session per week, Beg/Int).
+(c) The weekly LONG run out-lasts any medium-long run (durations swap if a
+fixed template inverts them). (d) Deload/taper rules from R5/R6 unchanged.
+
+**R8-6 · Strides dosing (for reference).** Daniels prescribes 6-8×20-30s
+strides — a 6×25s session is textbook, not excessive. Shakeouts keep ≥3 reps.
+
+**R8-7 · Blessed-fails discipline.** The python suite's blessed-fail list
+shrinks, never silently grows: Cmp snapshot drifts and known inversions are
+listed in the R8 baseline (15 lines, /tmp is NOT the home for it — regen via
+test_plans.py and compare). Fix underlying causes instead of re-blessing.

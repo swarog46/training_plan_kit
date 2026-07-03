@@ -1318,3 +1318,39 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
     
     return events.sorted { $0.date < $1.date }
 }
+
+// MARK: - Week composition (R8)
+
+/// Proportional duration rescale — every interval scales by the same factor,
+/// so paces/targets and the workout's shape are preserved.
+func rescaledV3(_ w: Workout, toSeconds target: Int64) -> Workout {
+    guard w.duration > 0, target > 0, target != w.duration else { return w }
+    let f = Double(target) / Double(w.duration)
+    let ivs = w.intervals.map {
+        WorkoutInterval(id: $0.id, type: $0.type, duration: $0.duration * f,
+                        distance: $0.distance, targetType: $0.targetType, target: $0.target)
+    }
+    return Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,
+                   trainingType: w.trainingType, targetType: w.targetType,
+                   duration: target, distance: w.distance, key: w.key,
+                   trainingLoad: Int64((Double(w.trainingLoad) * f).rounded()),
+                   intervals: ivs, workRestRatio: w.workRestRatio,
+                   workDuration: Int64((Double(w.workDuration) * f).rounded()),
+                   restDuration: Int64((Double(w.restDuration) * f).rounded()),
+                   workDistance: w.workDistance, restDistance: w.restDistance)
+}
+
+/// R8: the LONG run must out-last any medium-long run in its week. Fixed
+/// mediumLong templates (85-110min) can out-last an early-build long run —
+/// swap the two durations (weekly volume unchanged, both keep their type).
+func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: Workout)]) {
+    let longSubs: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong,
+                                         .raceRehearsalM, .raceRehearsalHM, .fastFinish]
+    guard let li = weekWorkouts.firstIndex(where: { longSubs.contains($0.workout.subtype) }),
+          let mi = weekWorkouts.firstIndex(where: { $0.workout.subtype == .mediumLong }),
+          weekWorkouts[mi].workout.duration > weekWorkouts[li].workout.duration
+    else { return }
+    let l = weekWorkouts[li].workout, m = weekWorkouts[mi].workout
+    weekWorkouts[li] = (weekWorkouts[li].type, rescaledV3(l, toSeconds: m.duration))
+    weekWorkouts[mi] = (weekWorkouts[mi].type, rescaledV3(m, toSeconds: l.duration))
+}
