@@ -288,3 +288,27 @@ extension PlanRecalculatorTests {
                      "absurd pace → nil, not garbage")
     }
 }
+
+extension PlanRecalculatorTests {
+    // 13. Pace-offset door: with the race-pace override, the WHOLE plan shifts
+    //     — MP blocks move by ≈ the offset instead of being re-earned by the
+    //     projection (the only-easy-runs-changed bug).
+    func testRacePaceOverrideShiftsQualityToo() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 6)
+        let asOf = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        let oldPlanned = PlanRecalculator.storedPlannedRacePace(plan)!
+        guard let implied = VDOT.fromRacePace(secondsPerKm: oldPlanned + 10,
+                                              distanceMeters: 42195) else {
+            return XCTFail("inversion failed")
+        }
+        var input = self.input(plan, vdot: implied, asOf: asOf)
+        input.plannedRacePaceOverride = oldPlanned + 10
+        let r = PlanRecalculator.recalculate(input)
+        XCTAssertEqual(r.newPlannedRacePace, oldPlanned + 10, "override pins race-day pace")
+        for e in r.events where !e.isCompleted && e.date >= asOf {
+            if let mp = mpPaceForTest(e) {
+                XCTAssertEqual(mp, oldPlanned + 10, "MP blocks shift by the offset")
+            }
+        }
+    }
+}

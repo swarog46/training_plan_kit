@@ -33,6 +33,11 @@ public enum PlanRecalculator {
         public let perWeek: Double
         public let adaptationCeiling: Double
         public let config: PaceProgressionConfig
+        /// Pace-offset door ("feels too fast"): pin the race-day target to this
+        /// pace instead of re-projecting from current fitness — otherwise the
+        /// projection re-earns the offset over the remaining weeks and only
+        /// current-anchored (easy) paces move. Rail still applies.
+        public var plannedRacePaceOverride: Int? = nil
         /// Regenerates the HR-side plan for this config/date window. Injected:
         /// production passes `createMarathonPlanV3` + the live catalog; tests
         /// pass a deterministic fake. Generation is deterministic, so this
@@ -101,7 +106,12 @@ public enum PlanRecalculator {
 
         // Rail: clamp the planned race pace shift vs the stored plan.
         let oldPlanned = storedPlannedRacePace(plan)
-        var newPlanned = racePace(projected, distance: plan.raceDistance)
+        var newPlanned = input.plannedRacePaceOverride
+            ?? racePace(projected, distance: plan.raceDistance)
+        if input.plannedRacePaceOverride != nil {
+            projected = vdotFor(racePaceSecondsPerKm: newPlanned,
+                                distance: plan.raceDistance, near: projected)
+        }
         var clamped = false
         if let old = oldPlanned, old > 0 {
             let lo = Int(Double(old) * (1.0 - maxRacePaceShiftFraction))
