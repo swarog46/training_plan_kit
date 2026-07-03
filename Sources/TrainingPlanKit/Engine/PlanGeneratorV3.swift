@@ -652,7 +652,7 @@ class PlanGeneratorV3 {
     // Half / 10K rehearsal race-pace-segment ladders (minutes). Same idea, scaled
     // to the shorter race: the HMP block builds toward ~30min, the 10KP toward
     // ~20min, stepping up by occurrence so the segment ramps and never regresses.
-    static let rehearsalHMPLadder = [15, 20, 25, 30]
+    static let rehearsalHMPLadder = [20, 25, 30]
     static let rehearsal10KLadder = [10, 15, 20]
 
     // The race-pace (goal-effort) block in a rehearsal: Z4 for the 10K rehearsal

@@ -553,13 +553,23 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             // the week reads rehearsal + easy running (the R10 "extreme week"
             // fix: Yasso 59min + Threshold 41min + Rehearsal 165min was a real
             // Int marathon week).
-            if weekWorkouts.contains(where: {
-                $0.workout.subtype == .raceRehearsalM || $0.workout.subtype == .raceRehearsalHM
-            }) {
+            let hasRehearsalM = weekWorkouts.contains { $0.workout.subtype == .raceRehearsalM }
+            let hasRehearsalHM = weekWorkouts.contains { $0.workout.subtype == .raceRehearsalHM }
+            if hasRehearsalM {
+                // Marathon rehearsal (150min+ with a big MP block) IS the week.
                 weekWorkouts.removeAll {
                     $0.type == "interval" || $0.type == "interval2" || $0.type == "threshold"
                         || $0.workout.subtype == .marathonPace
                 }
+            } else if hasRehearsalHM {
+                // Half rehearsal is ~85-90min with a 20-30min HMP block — the week
+                // keeps ONE other quality session (drop extras + standalone MP),
+                // otherwise three peak weeks read as rehearsal + jogging (R10.2).
+                weekWorkouts.removeAll { $0.workout.subtype == .marathonPace }
+                let qualityIdx = weekWorkouts.indices.filter {
+                    ["interval", "interval2", "threshold"].contains(weekWorkouts[$0].type)
+                }
+                for i in qualityIdx.dropFirst().reversed() { weekWorkouts.remove(at: i) }
             }
 
             // EASY RUN (fills remaining slots). Daniels: 70-80% of weekly volume

@@ -570,7 +570,7 @@ public struct PaceZoneConverter {
     private static func tickLongSegments(_ w: Workout) -> Workout {
         guard segmentTickSubtypes.contains(w.subtype), w.duration > 0 else { return w }
         var changed = false
-        let intervals = w.intervals.map { iv -> WorkoutInterval in
+        var intervals = w.intervals.map { iv -> WorkoutInterval in
             // ≥10min segments tick to 5min; shorter WU/CD tick to whole minutes
             // (a 9:38 cooldown reads as 10:00, not a raw scale artifact).
             let unit: Double = iv.duration >= 600 ? 300.0 : 60.0
@@ -581,6 +581,32 @@ public struct PaceZoneConverter {
                                    target: iv.target)
         }
         guard changed else { return w }
+        // Ticking each segment can swallow a small km-floor scale (every segment
+        // rounds back down). Reconcile: pad the LONGEST slower segment in 5-min
+        // steps until the ticked total is within 2.5min of the pre-tick total.
+        let rawSum = w.intervals.reduce(0.0) { $0 + $1.duration }
+        var tickedSum = intervals.reduce(0.0) { $0 + $1.duration }
+        while tickedSum <= rawSum - 150 {
+            let fastest = intervals.compactMap { iv -> Double? in
+                if case .paceTarget(let b, let rel) = iv.target { return Double(b) * rel }
+                return nil
+            }.min() ?? 0
+            guard let big = intervals.indices
+                .filter({ iv in
+                    if case .paceTarget(let b, let rel) = intervals[iv].target {
+                        return Double(b) * rel > fastest + 5
+                    }
+                    return true
+                })
+                .max(by: { intervals[$0].duration < intervals[$1].duration })
+            else { break }
+            let iv = intervals[big]
+            intervals[big] = WorkoutInterval(id: iv.id, type: iv.type,
+                                             duration: iv.duration + 300,
+                                             distance: iv.distance,
+                                             targetType: iv.targetType, target: iv.target)
+            tickedSum += 300
+        }
         let newDur = Int64(intervals.reduce(0.0) { $0 + $1.duration }.rounded())
         guard newDur > 0 else { return w }
         let factor = Double(newDur) / Double(w.duration)
@@ -763,7 +789,16 @@ public struct PaceZoneConverter {
         // Rehearsals/fast-finish: the titled WORK dose ("90min @ MP") is the
         // prescription — km-fitting stretches/shrinks only the easy WU/CD
         // segments and delivers the work block exactly as titled (#178).
-        let workSec = workout.intervals.filter { $0.type == .work }
+        // "Work" by PACE INTENT, not interval type: the HM rehearsal catalog
+        // types its easy WU/CD segments as Work (Z2-targeted), which made
+        // flexSec 0 and silently disabled dose preservation. The dose = the
+        // fastest pace group (within 5s/km of the fastest segment).
+        func paceOf(_ iv: WorkoutInterval) -> Double {
+            if case .paceTarget(let b, let rel) = iv.target { return Double(b) * rel }
+            return Double(easyPace)
+        }
+        let fastest = workout.intervals.map(paceOf).min() ?? 0
+        let workSec = workout.intervals.filter { paceOf($0) <= fastest + 5 }
             .reduce(0.0) { $0 + $1.duration }
         let flexSec = Double(workout.duration) - workSec
         let flexTarget = Double(workout.duration) * factor - workSec
@@ -774,7 +809,8 @@ public struct PaceZoneConverter {
             // longer than the window target. The dose is the prescription.
             let fFlex = max(0.3, flexTarget / flexSec)
             scaledIntervals = workout.intervals.map { iv in
-                let d = iv.type == .work ? iv.duration : max(300.0, iv.duration * fFlex)
+                let isDose = paceOf(iv) <= fastest + 5
+                let d = isDose ? iv.duration : max(300.0, iv.duration * fFlex)
                 return WorkoutInterval(id: iv.id, type: iv.type, duration: d,
                                        distance: iv.distance, targetType: iv.targetType,
                                        target: iv.target)
