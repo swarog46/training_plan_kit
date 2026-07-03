@@ -245,3 +245,31 @@ extension VDOT {
     }
 }
 
+
+// MARK: - Race-pace inversion
+
+extension VDOT {
+    /// The VDOT whose predicted race pace at `distanceMeters` equals
+    /// `racePaceSecondsPerKm` (bisection over the amateur-elite range).
+    /// Used by recalibration to recover a plan's implied fitness from its
+    /// stored planned pace when no fresher signal exists.
+    public static func fromRacePace(secondsPerKm pace: Int, distanceMeters: Int) -> VDOT? {
+        guard pace > 120, distanceMeters >= 1000 else { return nil }
+        func paceFor(_ v: Double) -> Int {
+            let cand = VDOT(value: v)
+            switch distanceMeters {
+            case 42195: return cand.marathonPaceSecondsPerKm
+            case 21097: return cand.halfMarathonPaceSecondsPerKm
+            case 10000: return cand.tenKPaceSecondsPerKm
+            default:    return cand.fiveKPaceSecondsPerKm
+            }
+        }
+        var lo = 15.0, hi = 85.0
+        guard paceFor(lo) >= pace, paceFor(hi) <= pace else { return nil }
+        for _ in 0..<40 {
+            let mid = (lo + hi) / 2
+            if paceFor(mid) > pace { lo = mid } else { hi = mid }
+        }
+        return VDOT(value: (lo + hi) / 2)
+    }
+}

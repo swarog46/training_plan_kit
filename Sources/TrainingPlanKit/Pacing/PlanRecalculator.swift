@@ -232,8 +232,9 @@ public enum PlanRecalculator {
     }
 
     /// The stored plan's planned race pace = the basePace of any Z3/race
-    /// paceTarget in a FUTURE event (MP blocks render exactly at it).
-    private static func storedPlannedRacePace(_ plan: Plan) -> Int? {
+    /// paceTarget in a FUTURE event (MP blocks render exactly at it). Public:
+    /// the app's detector derives the plan's implied fitness from it.
+    public static func storedPlannedRacePace(_ plan: Plan) -> Int? {
         for e in plan.events where !e.isCompleted {
             for iv in e.workout.intervals {
                 if case .paceTarget(let base, let rel) = iv.target,

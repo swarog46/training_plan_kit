@@ -272,3 +272,19 @@ extension PlanRecalculatorTests {
         return nil
     }
 }
+
+extension PlanRecalculatorTests {
+    // 12. Pace→VDOT inversion round-trips (the missed-week door derives the
+    //     plan's implied fitness from its stored planned pace).
+    func testRacePaceVDOTInversionRoundTrips() {
+        for v in [28.0, 38.0, 52.0] {
+            let vdot = VDOT(value: v)
+            let pace = vdot.marathonPaceSecondsPerKm
+            let back = VDOT.fromRacePace(secondsPerKm: pace, distanceMeters: 42195)
+            XCTAssertNotNil(back)
+            XCTAssertEqual(back!.value, v, accuracy: 0.3, "round-trip within a third of a point")
+        }
+        XCTAssertNil(VDOT.fromRacePace(secondsPerKm: 60, distanceMeters: 42195),
+                     "absurd pace → nil, not garbage")
+    }
+}
