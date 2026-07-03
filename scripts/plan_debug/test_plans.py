@@ -4099,6 +4099,60 @@ except (OSError, ValueError) as e:
 
 # --- report ----------------------------------------------------------
 
+# === R15: long-plan long-run dynamics (growth cap + Beg 3h exposure) ====
+#
+# 2026-07-04: the km floor used to complete at 60% of ANY plan, so 24-30w
+# plans piled up 3h+ long runs and phase boundaries produced +40-70% weekly
+# jumps (user report: Beg 42K 27w went 2h -> 3h20 -> 2h30). Fixed by the
+# length-aware floor ramp (full at 1 - 6/weeks) + render growth cap
+# (<= +25%/+15min vs last non-deload, rehearsals included) + Beg 42K
+# exposure backstop (<= 3 runs >= 3h at any length). These checks pin all
+# three on RENDERED curves across standard AND long plan lengths.
+section("R15: rendered long-run chain caps + Beg 42K 3h exposure")
+
+R15_LR_SUBS = {'steadyLong', 'progressiveLong', 'long', 'raceRehearsalM',
+               'raceRehearsalHM', 'raceRehearsal10K', 'fastFinish'}
+
+def _r15_lr_curve(label, anchors, weeks):
+    env = os.environ.copy()
+    env.update(anchors)
+    env["WEEKS"] = str(weeks)
+    out = subprocess.run([PLAN_DEBUG, "pacedump", label], capture_output=True,
+                         text=True, env=env).stdout
+    w = parse_plan(out, f"{label.split(' (')[0]} ({weeks}w)") or {}
+    curve = []
+    for wk in sorted(w):
+        best = 0
+        for sub, dur, _pace in w[wk]:
+            if sub in R15_LR_SUBS:
+                best = max(best, dur)
+        if best:
+            curve.append(best)
+    return curve
+
+R15_CASES = [
+    ("Beg 42K", 5000, 1980, "beg", 42195, [20, 24, 27, 30], True),
+    ("Int 42K", 5000, 1500, "int", 42195, [18, 24, 30], False),
+    ("Adv 42K", 5000, 1140, "adv", 42195, [18, 24, 30], False),
+    ("Beg 21K", 5000, 1980, "beg", 21097, [14, 24], False),
+]
+for _label, _dist, _time, _lvl, _tgt, _weeks_list, _beg_m in R15_CASES:
+    for _wknum in _weeks_list:
+        _anchors = _progress_anchors(_dist, _time, _lvl, _tgt, _wknum)
+        _curve = _r15_lr_curve(_label, _anchors, _wknum)
+        _jumps = [(i + 1, max(_curve[i-1], _curve[i-2]), _curve[i])
+                  for i in range(2, len(_curve))
+                  if max(_curve[i-1], _curve[i-2]) >= 70
+                  and _curve[i] > max(_curve[i-1], _curve[i-2]) * 1.35]
+        check(f"{_label} {_wknum}w rendered LR: no week >35% above prior 2-wk max",
+              not _jumps and len(_curve) >= 5,
+              f"jumps(wk,ref,val)={_jumps[:3]} curve={_curve}", full=True)
+        if _beg_m:
+            _n3h = sum(1 for d in _curve if d >= 180)
+            check(f"{_label} {_wknum}w: <=3 long runs >=3h",
+                  _n3h <= 3, f"got {_n3h}: curve={_curve}", full=True)
+
+
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")
 print(f"Failed: {len(failed)}")
