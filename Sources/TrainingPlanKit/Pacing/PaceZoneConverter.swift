@@ -963,6 +963,30 @@ public struct PaceZoneConverter {
                 prevNonDeloadLongSec = out[i].workout.duration
             }
         }
+        // R14 "soften it": a BEGINNER marathon must not repeat the identical
+        // floor-pinned peak long run two build weeks running (Slow tier read
+        // 3.5h x2 back-to-back). The SECOND consecutive same-length peak LR
+        // steps down to 0.90x — an absorption week; the peak itself stays.
+        if isBeginner, raceDistanceMeters == 42195 {
+            var lrIdxByWeek: [Int: Int] = [:]
+            for (i, e) in out.enumerated()
+            where longRunSubtypes.contains(e.workout.subtype) && !e.isDeloadWeek && !e.isTaperWeek {
+                if let cur = lrIdxByWeek[e.planWeekIndex],
+                   out[cur].workout.duration >= e.workout.duration { continue }
+                lrIdxByWeek[e.planWeekIndex] = i
+            }
+            let weeks = lrIdxByWeek.keys.sorted()
+            for (a, b) in zip(weeks, weeks.dropFirst()) where b == a + 1 {
+                let da = out[lrIdxByWeek[a]!].workout.duration
+                let ib = lrIdxByWeek[b]!
+                let db = out[ib].workout.duration
+                if abs(Double(da - db)) <= 300, Double(da) >= 150 * 60 {
+                    let target = Int64((Double(db) * 0.90 / 300.0).rounded() * 300.0)
+                    out[ib].workout = scaleWorkout(out[ib].workout, toSeconds: target)
+                }
+            }
+        }
+
         // R12/R13 — medium-long ceiling (runs AFTER the #171 deload clamp: the
         // clamp can shrink a deload week's long run below an MLR that was valid
         // pre-clamp — R13 Cmp finding, 6/81 Half deload weeks inverted): after every clamp, no week's mediumLong

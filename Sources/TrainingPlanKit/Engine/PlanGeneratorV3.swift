@@ -1400,8 +1400,11 @@ func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: 
 /// toward the target: at most +30% per run, 5-min ticked, build weeks only.
 func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout)],
                           targetDurationMins: Double, isDeloading: Bool,
-                          phase: TrainingPhase) {
+                          phase: TrainingPhase, weeklyCapMins: Double? = nil) {
     guard !isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
+    // R14: beginner-marathon roof — never top a week past the cap (the Slow
+    // tier was stacking to 5.9h peak weeks purely from added easy time).
+    let targetDurationMins = min(targetDurationMins, weeklyCapMins ?? .infinity)
     let aeroSubs: Set<WorkoutSubtype> = [.easy, .mediumLong, .recovery]
     let delivered = weekWorkouts.reduce(0.0) { $0 + Double($1.workout.duration) }
     let targetSec = targetDurationMins * 60.0

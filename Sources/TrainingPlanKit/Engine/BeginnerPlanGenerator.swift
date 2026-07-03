@@ -730,7 +730,8 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
 
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
             topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
-                                 isDeloading: isDeloading, phase: phase)
+                                 isDeloading: isDeloading, phase: phase,
+                                 weeklyCapMins: config.distance == 42195 ? 320 : nil)
             workoutsByWeek[week] = weekWorkouts
         } while false
     }

@@ -488,3 +488,12 @@ targets now DELIVER: 42K Typical avg 215/239/274min (Beg/Int/Adv), peaks
 (45-75min), MLRs 90-110min, deload dips read deeper vs fuller build weeks.
 Invariants: Beg<Int<Adv ladder holds per distance; easy runs stay ≤ the week's
 MLR ≤ LR; aerobic shares may sit near their (updated) ceilings; no ACWR spikes.
+
+## Round 14 — beginner-marathon softening (2026-07-03)
+
+Slow-tier Beg 42K read 5.9h peak weeks with the identical floor-pinned ~28km
+long run twice running. Two guards: (1) a SECOND consecutive same-length
+(±5min) non-deload peak LR ≥150min steps down to 0.90× (absorption week —
+the peak itself stays, late); (2) Beg-42K weekly top-up roofed at 320min.
+Expected shape now: LRs like 200/210/190/170 across W12-15, peaks
+~320-350min by tier. Back-to-back identical 3h+ beginner long runs = a bug.
