@@ -554,7 +554,11 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
 
                 if config.distance == 5000 {
                     // 5K Advanced: easy in BASE; SPEED/PEAK alternates ~70% easy / 30% progression.
-                    if phase == .base || !progressionWeek {
+                    // R12: never a SECOND progression-shaped run in one week.
+                    let fiveKHasProgression = weekWorkouts.contains {
+                        $0.workout.subtype == .progression || $0.workout.subtype == .progressiveLong
+                    }
+                    if phase == .base || !progressionWeek || fiveKHasProgression {
                         if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("easy", easy))
                         }
@@ -574,6 +578,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     // placed), this slot stays plain easy.
                     let hasProgressionShape = weekWorkouts.contains {
                         $0.workout.subtype == .progression || $0.workout.subtype == .progressiveLong
+                            || $0.workout.subtype == .raceRehearsalM
+                            || $0.workout.subtype == .raceRehearsalHM
                     }
                     if !progressionWeek || hasProgressionShape {
                         if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: false) {

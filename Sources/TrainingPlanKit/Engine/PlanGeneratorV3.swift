@@ -647,7 +647,10 @@ class PlanGeneratorV3 {
     // Canonical marathon-rehearsal MP-segment ladder (minutes). The PEAK
     // rehearsal steps UP this ladder so the MP block progresses 60→75→90(→105),
     // Pfitz-style, instead of parking on the largest rung every rehearsal week.
-    static let rehearsalMPLadder = [60, 75, 90, 105]
+    static let rehearsalMPLadder = [60, 70, 90, 105]  // 3-occurrence plans climb 60/70/90;
+    // the 105 rung snaps to the catalog's 90 (no bigger template exists yet), so
+    // 4-occurrence Cmp plans top out 60/70/90/90 — a real 4th rung needs a
+    // ~100min raceRehearsalM template added to the catalog.
 
     // Half / 10K rehearsal race-pace-segment ladders (minutes). Same idea, scaled
     // to the shorter race: the HMP block builds toward ~30min, the 10KP toward
@@ -1346,8 +1349,13 @@ func rescaledV3(_ w: Workout, toSeconds target: Int64) -> Workout {
 func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: Workout)]) {
     let longSubs: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong,
                                          .raceRehearsalM, .raceRehearsalHM, .fastFinish]
+    // Compare against the LARGEST medium-long — Cmp weeks carry 2-4 of them
+    // (base extra + forced pick + fill), and first-match let the rest slip
+    // past the guard (R12 Cmp finding: 27% of weeks inverted).
     guard let li = weekWorkouts.firstIndex(where: { longSubs.contains($0.workout.subtype) }),
-          let mi = weekWorkouts.firstIndex(where: { $0.workout.subtype == .mediumLong }),
+          let mi = weekWorkouts.indices
+              .filter({ weekWorkouts[$0].workout.subtype == .mediumLong })
+              .max(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration }),
           weekWorkouts[mi].workout.duration > weekWorkouts[li].workout.duration
     else { return }
     let l = weekWorkouts[li].workout, m = weekWorkouts[mi].workout

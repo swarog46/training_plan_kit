@@ -145,8 +145,19 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 for i in 0..<numWorkouts {
                     if i == 0 {
                         // First workout: progression run (short)
-                        let progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+                        var progressivePool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
                             .filter { $0.duration >= 40 * 60 && $0.duration <= 50 * 60 }
+                        // R12: the race-week tune-up prefers the 3-tier kick shape
+                        // (easy→goal→faster, has a Z4 tail) — long variants were
+                        // selecting the flat Z2→Z3 template and giving the most
+                        // committed athletes the weakest final sharpener.
+                        let withKick = progressivePool.filter { w in
+                            w.intervals.contains { iv in
+                                if case .heartRateZone(let z) = iv.target { return z >= 4 }
+                                return false
+                            }
+                        }
+                        if !withKick.isEmpty { progressivePool = withKick }
                         if let progressive = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.5, targetDuration: 45, usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("progressive_race", progressive))
                         }

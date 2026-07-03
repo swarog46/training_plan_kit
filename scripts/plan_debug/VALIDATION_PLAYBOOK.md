@@ -463,7 +463,7 @@ Supersedes anything above that contradicts it. Engine state as of kit `e694b36`:
   21K 16-18km Beg / 16-21km Int+Adv (Cmp 18-22); floors ramp in by ~60% of plan,
   off in taper; rehearsals take the floor too (work split by PACE INTENT, the
   segment tick reconciles to the scaled total). Beg-42K minute ceiling 245.
-- **Rehearsal ladders:** M 60→75→90→105; HM 20→25→30; 10K 10→15→20. Rungs
+- **Rehearsal ladders:** M 60→70→90 (+4th rung repeats 90 on Cmp until a >90min template exists); HM 20→25→30; 10K 10→15→20. Rungs
   monotonic by occurrence, deload weeks skip (rung shifts, R5-2), titled dose
   delivered exactly (#178).
 - **Variety:** intervals lead; ladders at most 1 week in 3; hills a flavor

@@ -522,6 +522,22 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 }
             }
 
+            // R8-5(a), ported from Int (R12 Beg finding): a MARATHON-rehearsal
+            // week carries no other quality for a beginner — the 3h+ rehearsal
+            // IS the week. A HALF-rehearsal week keeps exactly one.
+            if weekWorkouts.contains(where: { $0.workout.subtype == .raceRehearsalM }) {
+                weekWorkouts.removeAll {
+                    $0.type == "interval" || $0.type == "threshold"
+                        || $0.workout.subtype == .marathonPace
+                }
+            } else if weekWorkouts.contains(where: { $0.workout.subtype == .raceRehearsalHM }) {
+                weekWorkouts.removeAll { $0.workout.subtype == .marathonPace }
+                let qualityIdx = weekWorkouts.indices.filter {
+                    ["interval", "threshold"].contains(weekWorkouts[$0].type)
+                }
+                for i in qualityIdx.dropFirst().reversed() { weekWorkouts.remove(at: i) }
+            }
+
             // EASY RUN (fills remaining slots). Daniels: 70-80% of weekly volume
             // should be easy — on a 3-day beginner plan that's 1 hard + 1 long + 1
             // easy. So this slot is easy by default; progression is the ~30% variant.
