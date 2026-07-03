@@ -104,6 +104,12 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 if config.distance < 21000, !config.isVO2Max {
                     pool = pool.filter { $0.subtype != .intervals && $0.subtype != .ladderIntervals }
                 }
+                // TAPER keeps quality but not VO2 — a beginner's race-week-adjacent
+                // sessions sharpen at threshold/race pace, never fresh Z5 stress.
+                if phase == .taper {
+                    let noZ5 = pool.filter { !isRealZ5($0) }
+                    if !noZ5.isEmpty { pool = noZ5 }
+                }
                 // Gate Time Trials by milestone cadence (2-3 per PEAK cycle, never sharing).
                 if !ttWeek {
                     pool = pool.filter { $0.subtype != .timeTrial }
@@ -133,6 +139,28 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                             result = result.filter { !($0.subtype == vsub && !isRealZ5($0)) }
                         }
                     }
+                }
+                // R10/#185 phase flavor: BASE builds the engine — no race-
+                // specific sharpening tools yet; PEAK sharpens — race-specific
+                // work leads when the pool has it. SPEED keeps the full mix.
+                if phase == .base, !config.isVO2Max {
+                    // Onboarding weeks (1-2) additionally stay Z5-free — the
+                    // flavor filter must not promote reps into week 1.
+                    if weekInPhase <= 1 {
+                        let noZ5 = result.filter { !isRealZ5($0) }
+                        if !noZ5.isEmpty { result = noZ5 }
+                    }
+                    let generalOnly = result.filter {
+                        ![WorkoutSubtype.tenkPace, .fivekPace, .mileRepeats, .yasso800]
+                            .contains($0.subtype)
+                    }
+                    if !generalOnly.isEmpty { result = generalOnly }
+                } else if phase == .peak, !config.isVO2Max {
+                    let raceSpecific = result.filter {
+                        [WorkoutSubtype.tenkPace, .fivekPace, .yasso800, .timeTrial]
+                            .contains($0.subtype)
+                    }
+                    if !raceSpecific.isEmpty { result = raceSpecific }
                 }
                 if week % 3 != 2 {
                     let noLadders = result.filter { $0.subtype != .ladderIntervals }
@@ -207,7 +235,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             // session (the base-phase minute floor keeps it a ~25min dose).
             // Half/marathon only: the 2-day 5K/10K beginner weeks have no room
             // (quality would crowd out the easy runs entirely).
-            if phase == .base && weekInPhase >= 2 && config.distance >= 21000
+            if phase == .base && weekInPhase >= 2 && week >= 2 && config.distance >= 21000
                 && config.trainingDays.count >= 3 {
                 shouldAddIntervals = true
             }

@@ -123,6 +123,28 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 }
                 // R10: ladders are the exotic garnish, not the staple — allow
                 // them in the pool only every third week (plain intervals lead).
+                // R10/#185 phase flavor: BASE builds the engine — no race-
+                // specific sharpening tools yet; PEAK sharpens — race-specific
+                // work leads when the pool has it. SPEED keeps the full mix.
+                if phase == .base, !config.isVO2Max {
+                    // Onboarding weeks (1-2) additionally stay Z5-free — the
+                    // flavor filter must not promote reps into week 1.
+                    if weekInPhase <= 1 {
+                        let noZ5 = result.filter { !isRealZ5($0) }
+                        if !noZ5.isEmpty { result = noZ5 }
+                    }
+                    let generalOnly = result.filter {
+                        ![WorkoutSubtype.tenkPace, .fivekPace, .mileRepeats, .yasso800]
+                            .contains($0.subtype)
+                    }
+                    if !generalOnly.isEmpty { result = generalOnly }
+                } else if phase == .peak, !config.isVO2Max {
+                    let raceSpecific = result.filter {
+                        [WorkoutSubtype.tenkPace, .fivekPace, .yasso800, .timeTrial]
+                            .contains($0.subtype)
+                    }
+                    if !raceSpecific.isEmpty { result = raceSpecific }
+                }
                 if week % 3 != 2 {
                     let noLadders = result.filter { $0.subtype != .ladderIntervals }
                     if !noLadders.isEmpty { result = noLadders }
@@ -393,6 +415,19 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     longRunTypes.append(.fastFinish)
                 }
                 let peakWeekIndex = week - baseDur - speedDur
+                // R10: the HALF gets the same forced rehearsal alternation the
+                // 10K has — the selector otherwise picks steadyLong every week
+                // and the plan never practices HM pace (the 72min accessible
+                // cap also banned every rehearsal template until today).
+                if config.distance == 21097 && peakDur >= 2 {
+                    let scheduledHM = peakWeekIndex % 2 == 1
+                    if scheduledHM && !isDeloading {
+                        longRunTypes.removeAll {
+                            $0 == .steadyLong || $0 == .long
+                            || $0 == .progressiveLong || $0 == .fastFinish
+                        }
+                    }
+                }
                 if config.distance == 10000 && peakDur >= 2 {
                     // 10K: alternate raceRehearsal10K with plain steady in PEAK to
                     // guarantee the tune-up exposure (selector picks steady otherwise).
