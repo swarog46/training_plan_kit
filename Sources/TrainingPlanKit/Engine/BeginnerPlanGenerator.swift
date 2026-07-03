@@ -729,6 +729,8 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             applyDeloadReshaping(&weekWorkouts, weekIndex: week, phase: phase, isDeloading: isDeloading)
 
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
+            topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
+                                 isDeloading: isDeloading, phase: phase)
             workoutsByWeek[week] = weekWorkouts
         } while false
     }

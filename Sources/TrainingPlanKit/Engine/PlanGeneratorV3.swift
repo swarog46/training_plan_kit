@@ -1362,3 +1362,41 @@ func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: 
     weekWorkouts[li] = (weekWorkouts[li].type, rescaledV3(l, toSeconds: m.duration))
     weekWorkouts[mi] = (weekWorkouts[mi].type, rescaledV3(m, toSeconds: l.duration))
 }
+
+// MARK: - Aerobic volume top-up (#152 / Roadmap-5)
+
+/// Selection under-delivers vs the config's weekly duration target (slot
+/// fractions + template inventory cap what a fixed day count can hold), and
+/// the ACWR ramp cap then chains every later week off that shortfall — which
+/// collapsed the per-level volume spread the configs encode (42K: Beg 222 /
+/// Int 265 / Adv 328 min). Close the gap by scaling the week's PLAIN-AEROBIC
+/// runs (easy / mediumLong / recovery — never the long run, never quality) up
+/// toward the target: at most +30% per run, 5-min ticked, build weeks only.
+func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout)],
+                          targetDurationMins: Double, isDeloading: Bool,
+                          phase: TrainingPhase) {
+    guard !isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
+    let aeroSubs: Set<WorkoutSubtype> = [.easy, .mediumLong, .recovery]
+    let delivered = weekWorkouts.reduce(0.0) { $0 + Double($1.workout.duration) }
+    let targetSec = targetDurationMins * 60.0
+    let deficit = targetSec - delivered
+    guard deficit >= 300 else { return }
+    let aeroIdx = weekWorkouts.indices.filter {
+        aeroSubs.contains(weekWorkouts[$0].workout.subtype)
+            && !weekWorkouts[$0].workout.intervals.contains { iv in
+                if case .heartRateZone(let z) = iv.target { return z >= 4 }
+                return false
+            }
+    }
+    let aeroSec = aeroIdx.reduce(0.0) { $0 + Double(weekWorkouts[$1].workout.duration) }
+    guard aeroSec > 0 else { return }
+    let factor = min(1.30, (aeroSec + deficit) / aeroSec)
+    guard factor > 1.02 else { return }
+    for i in aeroIdx {
+        let w = weekWorkouts[i].workout
+        let raw = Double(w.duration) * factor
+        let ticked = Int64((raw / 300.0).rounded() * 300.0)
+        guard ticked > w.duration else { continue }
+        weekWorkouts[i] = (weekWorkouts[i].type, rescaledV3(w, toSeconds: ticked))
+    }
+}

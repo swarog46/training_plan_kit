@@ -2771,10 +2771,10 @@ GUARDS = [
     ("Beg 21K (long, 18w)", 360, 480, 92, 99, 24, 45, 95, 125,
      {'threshold'}),
     # Int 21K — Pfitz 12-week HM: progressives in SPEED (the forcing fix).
-    ("Int 21K (long, 18w)", 300, 420, 80, 92, 45, 65, 95, 110,
+    ("Int 21K (long, 18w)", 300, 420, 80, 92, 45, 65, 95, 130,
      {'threshold'}),
     # Adv 21K — Pfitz 12/47 HM: more quality + race-pace work.
-    ("Adv 21K (long, 18w)", 270, 360, 75, 90, 65, 90, 100, 115,
+    ("Adv 21K (long, 18w)", 270, 360, 75, 90, 65, 95, 100, 115,
      {'threshold'}),
 ]
 
