@@ -17,7 +17,7 @@ cd training_plan_kit
 ./scripts/plan_debug/build.sh        # swiftc, no Xcode/SPM; ~10s
 ```
 
-Always drive plans with the **production catalog** (713 workouts), not the 60-
+Always drive plans with the **production catalog** (716 workouts), not the 60-
 workout sample baked into the binary:
 
 ```bash
@@ -62,7 +62,12 @@ current VDOT (build-band ~55, clear ~58+).
 > unquoted `$var`. A `for spec in "...";  set -- $spec` loop silently collapses to
 > one arg and every row falls back to defaults. Use explicit calls or `${=spec}`.
 
-Reference manifest (regenerate if the pace math changes):
+**The app path is `progress` mode** (current → projected END anchors; see R6-0):
+```bash
+DIST=5000 TIME=1440 LEVEL=int TARGET=21097 WEEKS=14 ./plan_debug progress
+# → RACE_PACE/EASY_PACE/SPEED_PACE + *_END — pass ALL SIX to pacedump
+```
+Legacy fixed-anchor manifest (no ENDs — only for legacy-mode spot checks):
 ```
 5K  typ RACE=288 EASY=357 SPEED=288 | slow RACE=432 EASY=493 SPEED=432
 10K typ RACE=300 EASY=358 SPEED=289 | slow RACE=450 EASY=493 SPEED=432
@@ -102,7 +107,9 @@ re-derive the expected value and measure the gap:
 - Volume sane for the distance (5K < 10K < half < marathon weekly minutes).
 
 ### D. Progression *through* the plan (check across short/rec/long)
-- Quality paces **sharpen** week-to-week (easing-in), don't jump.
+- Quality (Z5-class, MP, 10K-pace) renders FLAT at planned-fitness anchors —
+  the DOSE progresses, the pace doesn't (R8-4). Threshold and easy are the only
+  movers (current-fitness anchors). A quality pace that drifts week-to-week is a bug.
 - Weekly load/volume **builds** then tapers; long run **grows** monotonically then drops.
 - Workout **complexity grows** (e.g. 4×6min → 3×12min threshold; 8×75s → 12×90s hills).
 - Short plans (front-trimmed) aren't broken; long/max plans don't plateau or repeat.
@@ -118,7 +125,7 @@ re-derive the expected value and measure the gap:
 
 Garbage in → garbage findings. Confirm:
 ```bash
-grep -h "Loaded" /tmp/plan_audit/*.txt | sort -u      # every file = 713 workouts
+grep -h "Loaded" /tmp/plan_audit/*.txt | sort -u      # every file = 716 workouts
 grep -liE "FAILED|fatal|nil" /tmp/plan_audit/*.txt    # expect none
 # pace outlier scan: flag <2:50 or >10:30 /km
 # spot-check: slow easy compressed (not 9:xx), easy < race, long run grows,
@@ -178,11 +185,14 @@ Suggested slices:
 
 Checks distilled from a manual Intermediate/Advanced read (2026-06). Each is a
 standing invariant to re-verify after engine/catalog/pace-math changes. Prod
-catalog only (`WORKOUTS_PATH=$PROD`, currently 713 workouts). Anchors via
+catalog only (`WORKOUTS_PATH=$PROD`, currently 716 workouts). Anchors via
 `vdotpaces` (typical VDOT ~40, plus a fast runner where noted). Verdicts as
 found at review time — re-confirm, don't assume.
 
-### C1 — Progression Run must show a real easy→fast spread (REAL BUG)
+### C1 — Progression Run must show a real easy→fast spread (FIXED; keep as standing check)
+*(2026-07-03: the Z3→Z4 collapse class is fixed — 5K/10K demote Z3→Z2 in those templates,
+and threshold is now capped 5s/km faster than planned MP so Z3/Z4 blocks can't invert.
+The invariant below stands; the mechanism text is historical.)*
 A `progression` workout that renders a single pace or a ≤5s/km span is a defect
 (the owner saw `[4:25, 4:26]` and a lone `4:25`). **Mechanism:** the catalog has
 two "Progression Run" shapes — `Z2→Z3` (fine: easy→race, ~50s spread) and
@@ -210,7 +220,12 @@ speed) that floor pins Z4 to ≈race, so both blocks collapse onto race pace.
   from the pool (keep `Z2→Z3` + the `Z2/Z3/Z4` 3x-NN), OR render the Z3 block at
   ~Z2-easy when its neighbour Z4 is race-floored, so the two steps don't collide.
 
-### C2 — Int 21K should get a raceRehearsalHM in PEAK (REAL GAP, mild)
+### C2 — Int 21K raceRehearsalHM (RESOLVED 2026-07-03)
+*(Root cause was the accessible 21K `maxLongRunMinutes: 72` silently filtering every
+75-130min rehearsal template, plus no forcing hook. Fixed: caps 110/120 (Beg/Int), forced
+peak alternation, HM rung ladder 20→25→30, and the km-floor now applies to rehearsals
+(pace-intent work split). Check: Int 21K ≥2 rehearsals, rungs 20/25/30, 85-90min @ ~16km.)*
+Historical finding:
 Int 42K carries `raceRehearsalM` and Adv 21K/Beg 21K carry `raceRehearsalHM`, but
 **Int 21K carries ZERO** (dump grep: Int21K=0, Adv21K=13, Beg21K=3, Int42K=12).
 - Confirm: `WORKOUTS_PATH=$PROD ./plan_debug dump "Int 21K" | grep -c raceRehearsalHM` → 0.
@@ -321,9 +336,9 @@ run pace inversion".)
 accessible (+ competitive / VO2 / maintenance). The Acc Beg 21K bug hid because reviews
 only looked at the textbook matrices users never see.
 
-### R4-5 — Beginner long-run ceilings
-Beg **half** peak ≤ ~110min (~13km — not a 2h novice half; half floor is beginner-aware
-13km vs 16km). Beg **marathon** peak ≤ ~190min.
+### R4-5 — Beginner long-run ceilings (SUPERSEDED by R8-1)
+Now: Beg half peaks 16-18km (cap 110min); Beg marathon peaks 28-32km with a 245min
+ceiling. The old 13km/190min values predate the R8 km floors — do not enforce them.
 
 ### Gemini triage — what to validate vs ignore
 - **VALIDATE:** long-run build (R4-1); progression order (R4-3); beginner ceilings (R4-5);
@@ -370,9 +385,10 @@ with its rendered pace (WU/work/jog/CD). On any rehearsal / MP workout:
 warmup and cooldown ≥15 s/km slower than the MP block (≥8 s/km on legacy
 renders). No workout may show one identical pace across WU/work/CD.
 
-**R6-2 · Intervals vs 5K.** Z5 work never slower than the runner's current 5K
-pace, and at true VO2 target (0.96×5K, rep-length-aware) from 60% of the plan.
-10K-pace work: ≤1.03×5K, race-floored.
+**R6-2 · Intervals vs 5K (superseded by R8-4).** Z5-class work renders FLAT at
+rep-length targets × PLANNED 5K from week 1 (0.88 ≤90s / 0.92 ≤3min / 0.96 longer+hills);
+never slower than the planned 5K. 10K-pace work = 1.01×planned 5K flat (exact planned
+race pace on 10K plans). The old "eases to target by 60%" band no longer exists.
 
 **R6-3 · MP at the PLANNED race pace (revised 2026-07-02, same day).** Race-pace
 work is practiced AT the planned (projected race-day) pace from the first MP
@@ -418,8 +434,11 @@ family (threshold/mileRepeats) stays a CURRENT-fitness stimulus on the
 moving 5K anchor (LT→tempo 1.07→1.02). Ladders/pyramids route as interval
 work regardless of their catalog Z4 tag.
 
-**R8-5 · Week composition.** (a) A rehearsal week carries NO standalone
-Marathon Pace session — the rehearsal is the MP dose. (b) An intervals week
+**R8-5 · Week composition.** (a) A MARATHON-rehearsal week carries no other
+quality at all for Beg/Int (the 150min+ rehearsal IS the week; Adv keeps ≤1);
+a HALF-rehearsal week keeps exactly ONE other quality (the ~85-90min rehearsal
+alone would read as a junk week). No rehearsal week carries a standalone
+Marathon Pace session. (b) An intervals week
 doesn't also carry mile repeats (one rep-shaped session per week, Beg/Int).
 (c) The weekly LONG run out-lasts any medium-long run (durations swap if a
 fixed template inverts them). (d) Deload/taper rules from R5/R6 unchanged.
@@ -429,5 +448,32 @@ strides — a 6×25s session is textbook, not excessive. Shakeouts keep ≥3 rep
 
 **R8-7 · Blessed-fails discipline.** The python suite's blessed-fail list
 shrinks, never silently grows: Cmp snapshot drifts and known inversions are
-listed in the R8 baseline (15 lines, /tmp is NOT the home for it — regen via
+listed in the current baseline (14 lines, /tmp is NOT the home for it — regen via
 test_plans.py and compare). Fix underlying causes instead of re-blessing.
+
+## Round 12 — current engine truth (2026-07-03, post Int-21K fix)
+
+Supersedes anything above that contradicts it. Engine state as of kit `e694b36`:
+
+- **Pace model:** MP/rehearsal blocks + Z5-class (intervals/ladders/pyramids/hills)
+  + 10K-pace = FLAT at planned-fitness anchors (R8-4). Threshold = current-fitness
+  LT curve (1.07→1.02 ×5K-now), capped ≥5s/km FASTER than planned MP. Easy/long =
+  current-fitness easy anchor, moving. Race day itself renders at planned race pace.
+- **Long runs:** km windows with floors AND caps — 42K 28-33km (Cmp 32-35),
+  21K 16-18km Beg / 16-21km Int+Adv (Cmp 18-22); floors ramp in by ~60% of plan,
+  off in taper; rehearsals take the floor too (work split by PACE INTENT, the
+  segment tick reconciles to the scaled total). Beg-42K minute ceiling 245.
+- **Rehearsal ladders:** M 60→75→90→105; HM 20→25→30; 10K 10→15→20. Rungs
+  monotonic by occurrence, deload weeks skip (rung shifts, R5-2), titled dose
+  delivered exactly (#178).
+- **Variety:** intervals lead; ladders at most 1 week in 3; hills a flavor
+  (≤~30% of rep sessions); short reps (≤2:30) preferred for beginners; "5K Pace"
+  at most every other week on 5K plans; 10K-pace variants ramp.
+- **Phase flavor:** BASE = no race-specific subtypes (tenkPace/fivekPace/
+  mileRepeats/yasso) and no Z5 in weeks 1-2; PEAK prefers race-specific work;
+  quality by W3 in every half/marathon plan (plan-week, not phase-week).
+- **Week shape:** ≤1 rep-shaped session/week (Beg/Int); rehearsal-week rules per
+  R8-5(a) as amended; long ≥ medium-long; deloads ~20% aerobic-only (R5).
+- **Tooling:** `audit_long_runs.sh` is trustworthy again (regex + duration-column
+  fixes — it ran vacuously green before 2026-07-03). Blessed python fails: 14
+  lines, all pre-existing Cmp-snapshot class + the #189 Beg-42K-short W1 edge.
