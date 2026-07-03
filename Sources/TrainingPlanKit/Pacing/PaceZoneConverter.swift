@@ -694,37 +694,6 @@ public struct PaceZoneConverter {
     /// Long runs are generated pace-blind in minutes; at render a fast runner
     /// overshoots and a slow runner falls short, so scale duration uniformly to
     /// fit the window (paces, targets and the easy/fast split are preserved).
-    /// Effective km-floor for an event, expressed in seconds at the workout's
-    /// own rendered paces. nil when no floor applies (short race, taper, pf≥0.9).
-    private static func kmFloorSeconds(for event: WorkoutEvent,
-                                       raceDistanceMeters: Int?,
-                                       isCompetitive: Bool,
-                                       isBeginner: Bool,
-                                       floorRampEnd: Double,
-                                       startDate: Date,
-                                       totalSpan: TimeInterval) -> Int64? {
-        let floorKm: Double
-        switch raceDistanceMeters {
-        case 42195: floorKm = isCompetitive ? 32 : 28
-        case 21097: floorKm = isCompetitive ? 18 : (isBeginner ? 16 : 16)
-        default: return nil
-        }
-        guard totalSpan > 0, !event.isTaperWeek else { return nil }
-        let pf = max(0, min(1.0, event.date.timeIntervalSince(startDate) / totalSpan))
-        guard pf < 0.90 else { return nil }
-        let effKm = floorKm * min(1.0, pf / max(0.01, floorRampEnd))
-        guard effKm > 0 else { return nil }
-        let km = event.workout.intervals.reduce(0.0) { acc, iv in
-            if case .paceTarget(let base, let rel) = iv.target, base > 0 {
-                return acc + iv.duration / (Double(base) * rel)
-            }
-            return acc
-        }
-        guard km > 0 else { return nil }
-        let secondsPerKm = Double(event.workout.duration) / km
-        return Int64((effKm * secondsPerKm / 300.0).rounded() * 300.0)
-    }
-
     private static func clampLongRunDistance(
         _ workout: Workout,
         conversationalPace: Int?,
@@ -938,7 +907,7 @@ public struct PaceZoneConverter {
         // legacy fixed-anchor behavior.
         let vdotAnchored = racePaceEnd != nil
 
-        let rendered = events.map { event in
+        var rendered = events.map { event in
             // Calculate progression factor: 0.0 at plan start → 1.0 at plan end
             let elapsed = event.date.timeIntervalSince(startDate)
             let progressionFactor = max(0, min(1.0, elapsed / totalDuration))
@@ -981,6 +950,30 @@ public struct PaceZoneConverter {
         // across tiers AND fitness levels, reaching weeks whose HR-side long run didn't
         // dip (cut-vs-trajectory, or a reused MP rehearsal) that a render coefficient
         // can't. Keys on the generator's real deload flag (event.isDeloadWeek).
+        // Beginner 42K peak-exposure backstop: at most THREE runs ≥3h,
+        // whatever the plan length (30w earns more base, not more peaks —
+        // Higdon-Novice-class exposure). The length-aware floor ramp already
+        // spreads the build; this trims the odd extra on very long plans by
+        // scaling the EARLIEST over-3h runs to 175min (rehearsal titles rebuild
+        // correctly under scaling since #178). Runs BEFORE the #171 clamp so
+        // deload weeks track the adjusted values.
+        if isBeginner, raceDistanceMeters == 42195 {
+            let scalable = longRunSubtypes
+            var overIdx: [Int] = []
+            for (i, e) in rendered.enumerated()
+            where longRunSubtypes.contains(e.workout.subtype)
+                && !e.isDeloadWeek && !e.isTaperWeek
+                && e.workout.duration >= 180 * 60 {
+                overIdx.append(i)
+            }
+            var excess = overIdx.count - 3
+            if excess > 0 {
+                for i in overIdx where excess > 0 && scalable.contains(rendered[i].workout.subtype) {
+                    rendered[i].workout = scaleWorkout(rendered[i].workout, toSeconds: 175 * 60)
+                    excess -= 1
+                }
+            }
+        }
         var out = rendered
         // The long run = the LONGEST long-run-subtype workout in a week (a week can also
         // hold a short mid-week run of the same subtype). Group by plan week so the clamp
@@ -1040,27 +1033,16 @@ public struct PaceZoneConverter {
                out[cur].workout.duration >= e.workout.duration { continue }
             chainIdxByWeek[e.planWeekIndex] = i
         }
-        let growthCappable: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong]
+        let growthCappable = longRunSubtypes   // rehearsals too (#178 makes scaling safe)
         var chainPrevSec: Int64? = nil
-        let totalSpan = endDate.timeIntervalSince(startDate)
         for wk in chainIdxByWeek.keys.sorted() {
             let i = chainIdxByWeek[wk]!
             if out[i].isDeloadWeek || out[i].isTaperWeek { continue }
             if let prev = chainPrevSec, growthCappable.contains(out[i].workout.subtype) {
-                var cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
-                // The km floor OUTRANKS the growth cap: a marathon build must
-                // still deliver its 28km-class runs. Where the week's effective
-                // floor demands more minutes than the chain cap allows, the
-                // floor wins (the length-aware ramp keeps such steps gradual).
-                if let floorSec = kmFloorSeconds(for: out[i],
-                                                 raceDistanceMeters: raceDistanceMeters,
-                                                 isCompetitive: isCompetitive,
-                                                 isBeginner: isBeginner,
-                                                 floorRampEnd: floorRampEnd,
-                                                 startDate: startDate,
-                                                 totalSpan: totalSpan) {
-                    cap = max(cap, floorSec)
-                }
+                // Cap WINS over the km floor: the length-aware ramp raises the
+                // floor gradually, so a capped week reaches full floor within
+                // +25% steps a week later — no cliff, marathon prep intact.
+                let cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
                 if out[i].workout.duration > cap {
                     out[i].workout = scaleWorkout(out[i].workout, toSeconds: cap)
                 }
