@@ -190,3 +190,85 @@ final class PlanRecalculatorTests: XCTestCase {
         XCTAssertEqual(clean.detrainedVDOT.value, 38.0, accuracy: 0.01)
     }
 }
+
+extension PlanRecalculatorTests {
+
+    // 7. MISSED (incomplete, past-dated) workouts stay in the calendar exactly
+    //    as they were — the record of what was skipped is part of the plan.
+    func testMissedPastWorkoutsPreserved() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 4) // W5-6 happened but NOT completed
+        let asOf = cal.date(byAdding: .weekOfYear, value: 7, to: start)!
+        let missedBefore = plan.events.filter { !$0.isCompleted && $0.date < asOf }
+        XCTAssertFalse(missedBefore.isEmpty, "fixture must contain missed events")
+        let r = PlanRecalculator.recalculate(input(plan, vdot: VDOT(value: 37.5), asOf: asOf))
+        for old in missedBefore {
+            let kept = r.events.first { $0.id == old.id }
+            XCTAssertNotNil(kept, "missed event stays in the plan")
+            XCTAssertEqual(kept?.date, old.date)
+            XCTAssertEqual(kept?.isCompleted, false)
+            XCTAssertEqual(kept.flatMap(self.mpPaceForTest), self.mpPaceForTest(old),
+                           "missed event's workout untouched")
+        }
+    }
+
+    // 8. Competitive plans are goal-locked: recalculate is a structured no-op.
+    func testCompetitivePlanIsNoOp() {
+        var plan = makePlan(currentVDOT: VDOT(value: 55), completedWeeks: 6)
+        plan.difficultyLevel = .competitive
+        let asOf = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        let r = PlanRecalculator.recalculate(input(plan, vdot: VDOT(value: 58), asOf: asOf))
+        XCTAssertEqual(r.replacedCount, 0)
+        XCTAssertEqual(r.events.count, plan.events.count)
+    }
+
+    // 9. asOf at/after race day: nothing to re-anchor, plan returned unchanged.
+    func testPastRaceDayIsNoOp() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 17)
+        let r = PlanRecalculator.recalculate(
+            input(plan, vdot: VDOT(value: 40), asOf: race))
+        XCTAssertEqual(r.replacedCount, 0)
+    }
+
+    // 10. Week-1 recalc (nothing completed yet): every event re-anchors and the
+    //     backward-extrapolation degenerates safely to the plain current anchor.
+    func testFreshPlanFullReanchor() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 0)
+        let asOf = cal.date(byAdding: .day, value: 1, to: start)!
+        let newVDOT = VDOT(value: 36.5)  // opener TT says slower than assumed
+        let r = PlanRecalculator.recalculate(input(plan, vdot: newVDOT, asOf: asOf))
+        XCTAssertGreaterThan(r.newPlannedRacePace, r.oldPlannedRacePace ?? 0,
+                             "slower runner → slower (more honest) planned race pace")
+        let future = r.events.filter { $0.date >= asOf }
+        XCTAssertEqual(r.replacedCount, future.count, "whole plan re-anchored")
+    }
+
+    // 11. THE TT SCENARIO end-to-end — how a time trial actually moves the plan:
+    //     W9 20:00 TT covers 4.30km → VDOT.from(4300m, 1200s) ≈ real fitness →
+    //     recalculate → every remaining MP block lands on the NEW planned pace,
+    //     faster than the old one but inside the ±6% rail.
+    func testTimeTrialResultReanchorsPlan() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 9)
+        let asOf = cal.date(byAdding: .weekOfYear, value: 9, to: start)!
+        guard let ttVDOT = VDOT.from(distanceMeters: 4300, timeSeconds: 1200) else {
+            return XCTFail("TT VDOT derivation failed")
+        }
+        XCTAssertGreaterThan(ttVDOT.value, 38, "fixture: the TT shows MORE fitness than assumed")
+        let r = PlanRecalculator.recalculate(input(plan, vdot: ttVDOT, asOf: asOf))
+        let old = r.oldPlannedRacePace ?? 0
+        XCTAssertLessThan(r.newPlannedRacePace, old, "TT gain → faster planned race pace")
+        XCTAssertGreaterThanOrEqual(Double(r.newPlannedRacePace), Double(old) * 0.94,
+                                    "…but never beyond the per-checkpoint rail")
+        for e in r.events where e.date >= asOf {
+            if let mp = mpPaceForTest(e) {
+                XCTAssertEqual(mp, r.newPlannedRacePace)
+            }
+        }
+    }
+
+    private func mpPaceForTest(_ e: WorkoutEvent) -> Int? {
+        for iv in e.workout.intervals {
+            if case .paceTarget(let b, let rel) = iv.target, abs(rel - 1.0) < 0.001 { return b }
+        }
+        return nil
+    }
+}

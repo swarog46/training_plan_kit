@@ -74,6 +74,22 @@ public enum PlanRecalculator {
 
     public static func recalculate(_ input: Input) -> Result {
         let plan = input.plan
+        // Guard: only non-Pro RACE plans recalibrate. Competitive is goal-locked
+        // (the plan IS the goal pace — fitness checkpoints don't move it) and
+        // maintenance/VO2 have no race anchor to shift.
+        guard plan.raceDistance >= 5000, plan.difficultyLevel != .competitive else {
+            return Result(events: plan.events, replacedCount: 0,
+                          newPlannedRacePace: storedPlannedRacePace(plan) ?? 0,
+                          oldPlannedRacePace: storedPlannedRacePace(plan),
+                          projectedVDOT: input.currentVDOT, clampedToRail: false)
+        }
+        // Guard: nothing left to re-anchor once the race is here.
+        guard input.asOf < plan.endDate else {
+            return Result(events: plan.events, replacedCount: 0,
+                          newPlannedRacePace: storedPlannedRacePace(plan) ?? 0,
+                          oldPlannedRacePace: storedPlannedRacePace(plan),
+                          projectedVDOT: input.currentVDOT, clampedToRail: false)
+        }
         let cal = Calendar.current
         let remainingWeeks = max(1, cal.dateComponents(
             [.weekOfYear], from: input.asOf, to: plan.endDate).weekOfYear ?? 1)
