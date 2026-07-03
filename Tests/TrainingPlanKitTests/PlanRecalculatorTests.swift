@@ -312,3 +312,61 @@ extension PlanRecalculatorTests {
         }
     }
 }
+
+// MARK: - #174 long-run growth cap
+
+final class LongRunGrowthCapTests: XCTestCase {
+    private let cal = Calendar.current
+    private let start = Calendar.current.startOfDay(for: Date())
+
+    /// HR-side long runs with a deliberate phase cliff (90 → 150min) and a
+    /// deload: render must cap build-chain growth at +25%/+15min while the
+    /// deload keeps its #171 cut and later weeks still reach their targets.
+    func testBuildChainCliffIsCapped() {
+        let planId = UUID()
+        let end = cal.date(byAdding: .weekOfYear, value: 8, to: start)!
+        let minutes: [Int] = [60, 70, 75, 90, 150, 160, 170, 175]   // W5 cliff +67%
+        var events: [WorkoutEvent] = []
+        for (w, m) in minutes.enumerated() {
+            let workout = Workout(
+                id: Int64(100 + w), title: "Long Run", type: .longRun,
+                subtype: .steadyLong, trainingType: .timeBased,
+                targetType: .heartRate, duration: Int64(m * 60), distance: 0,
+                key: "lr\(w)", trainingLoad: Int64(m * 100),
+                intervals: [WorkoutInterval(id: 0, type: .work, duration: Double(m * 60),
+                                            distance: 0, targetType: .heartRate,
+                                            target: .heartRateZone(zone: 2))],
+                workRestRatio: 1, workDuration: Int64(m * 60), restDuration: 0,
+                workDistance: 0, restDistance: 0)
+            var e = WorkoutEvent(workout: workout, planId: planId,
+                                 date: cal.date(byAdding: .day, value: w * 7 + 5, to: start)!)
+            e.planWeekIndex = w
+            if w == 2 { e.isDeloadWeek = true }
+            events.append(e)
+        }
+        let rendered = PaceZoneConverter.applyPaceProgression(
+            to: events, racePace: 330, conversationalPace: 420, speedPace: 290,
+            config: .beginner, startDate: start, endDate: end,
+            racePaceEnd: 320, conversationalPaceEnd: 410, speedPaceEnd: 280,
+            raceDistanceMeters: 42195, isBeginner: true)
+
+        var prevNonDeload: Double? = nil
+        for e in rendered.sorted(by: { $0.planWeekIndex < $1.planWeekIndex }) {
+            let d = Double(e.workout.duration)
+            if e.isDeloadWeek { continue }
+            if let prev = prevNonDeload {
+                let cap = max(prev + 900, prev * 1.25) + 300   // +tick tolerance
+                XCTAssertLessThanOrEqual(d, cap,
+                    "W\(e.planWeekIndex) long run \(Int(d/60))min exceeds growth cap vs \(Int(prev/60))min")
+            }
+            prevNonDeload = d
+        }
+        // The cliff week specifically: was 150min HR-side, must land ≤ ~118min
+        let w4 = rendered.first { $0.planWeekIndex == 4 }!
+        XCTAssertLessThanOrEqual(w4.workout.duration, Int64(120 * 60),
+            "cliff week must be capped (+25% of ~90min, ticked)")
+        // And the final week must still climb (the cap spreads, not flattens)
+        let w7 = rendered.first { $0.planWeekIndex == 7 }!
+        XCTAssertGreaterThan(w7.workout.duration, w4.workout.duration)
+    }
+}

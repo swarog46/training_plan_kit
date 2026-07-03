@@ -81,9 +81,15 @@ def verdict(durs):
     if pidx == 0:                       return ("INVERTED", "peak is week-1 (%dmin); never builds → %s"%(peak,durs))
     if rise < 0.10:                     return ("FLAT", "rise only %.0f%% (%d→%d) → %s"%(rise*100,start,peak,durs))
     if pinned_n >= 5 and rise < 0.25:   return ("FLOOR-PINNED", "%dmin repeats %dx → %s"%(cnt.most_common(1)[0][0],pinned_n,durs))
+    # #174: build-chain cliff — a week jumping >35% above the max of the two
+    # prior weeks (two-week max ≈ skip-the-deload). Ignore tiny bases (<70min).
+    for i in range(2, len(durs)):
+        ref = max(durs[i-1], durs[i-2])
+        if ref >= 70 and durs[i] > ref * 1.35:
+            return ("JUMPY", "W%d %d→%dmin (+%.0f%%) → %s"%(i+1, ref, durs[i], (durs[i]/ref-1)*100, durs))
     return ("OK", "%d→%d (+%.0f%%), peak@%d/%d"%(start,peak,rise*100,pidx+1,len(durs)))
 
-order = {"INVERTED":0,"FLAT":1,"FLOOR-PINNED":2,"OK":3,"SKIP":4}
+order = {"INVERTED":0,"JUMPY":1,"FLAT":2,"FLOOR-PINNED":3,"OK":4,"SKIP":5}
 out = []
 for combo, wkmap in rows.items():
     durs = [wkmap[w] for w in sorted(wkmap)]
@@ -91,9 +97,9 @@ for combo, wkmap in rows.items():
     out.append((order[v], combo, v, msg))
 out.sort()
 print("\n================= LONG-RUN BUILD AUDIT =================")
-flagged = [o for o in out if o[2] in ("INVERTED","FLAT","FLOOR-PINNED")]
+flagged = [o for o in out if o[2] in ("INVERTED","JUMPY","FLAT","FLOOR-PINNED")]
 for _, combo, v, msg in out:
-    if v in ("INVERTED","FLAT","FLOOR-PINNED"):
+    if v in ("INVERTED","JUMPY","FLAT","FLOOR-PINNED"):
         print(f"  ⚠️ {v:13} {combo:34} {msg}")
 print(f"\n  ── {len(flagged)} flagged / {len([o for o in out if o[2]!='SKIP'])} judged ({len([o for o in out if o[2]=='OK'])} OK, {len([o for o in out if o[2]=='SKIP'])} skipped) ──")
 print("  (SKIP = <3 long-run weeks, e.g. 5K/10K speed tiers)")

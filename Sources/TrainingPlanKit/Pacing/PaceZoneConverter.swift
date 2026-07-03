@@ -987,6 +987,33 @@ public struct PaceZoneConverter {
             }
         }
 
+        // #174 — long-run build-chain growth cap: week-over-week, a non-deload
+        // long run may exceed the LAST NON-DELOAD long run by at most +25%
+        // (or +15min, whichever is larger). Kills the phase-boundary cliffs the
+        // 27w Beg 42K showed (70→120min, +71%; slow tier 3h20 arriving in one
+        // step) — the excess spreads forward since later weeks' targets stand.
+        // Rehearsals/fastFinish keep their titled dose (never capped, #178) but
+        // do advance the chain; deload/taper weeks neither cap nor advance it.
+        var chainIdxByWeek: [Int: Int] = [:]
+        for (i, e) in out.enumerated() where longRunSubtypes.contains(e.workout.subtype) {
+            if let cur = chainIdxByWeek[e.planWeekIndex],
+               out[cur].workout.duration >= e.workout.duration { continue }
+            chainIdxByWeek[e.planWeekIndex] = i
+        }
+        let growthCappable: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong]
+        var chainPrevSec: Int64? = nil
+        for wk in chainIdxByWeek.keys.sorted() {
+            let i = chainIdxByWeek[wk]!
+            if out[i].isDeloadWeek || out[i].isTaperWeek { continue }
+            if let prev = chainPrevSec, growthCappable.contains(out[i].workout.subtype) {
+                let cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
+                if out[i].workout.duration > cap {
+                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: cap)
+                }
+            }
+            chainPrevSec = out[i].workout.duration
+        }
+
         // R12/R13 — medium-long ceiling (runs AFTER the #171 deload clamp: the
         // clamp can shrink a deload week's long run below an MLR that was valid
         // pre-clamp — R13 Cmp finding, 6/81 Half deload weeks inverted): after every clamp, no week's mediumLong
