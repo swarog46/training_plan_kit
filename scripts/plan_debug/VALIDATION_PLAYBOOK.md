@@ -497,3 +497,15 @@ long run twice running. Two guards: (1) a SECOND consecutive same-length
 the peak itself stays, late); (2) Beg-42K weekly top-up roofed at 320min.
 Expected shape now: LRs like 200/210/190/170 across W12-15, peaks
 ~320-350min by tier. Back-to-back identical 3h+ beginner long runs = a bug.
+
+## Round 15 (2026-07-04) — long-plan pacing
+- Long-run BUILD-CHAIN growth cap: non-deload long ≤ last non-deload × 1.25
+  (or +15min), 5-min ticked; rehearsals advance the chain uncapped; the km
+  floor OUTRANKS the cap (28km-class runs always delivered).
+- Length-aware floor ramp: full km floor at `1 − 6/planWeeks` (min 0.60) —
+  peak arrives ~4 build weeks + taper before race at ANY length. 27w Beg 42K:
+  six 3h+ runs → three; peak 205min lands W22/27.
+- audit_long_runs.sh gained JUMPY (week >35% above prior 2-week max).
+- ⚠️ test_plans.py fail-set drifts with RUN DATE (deload↔week alignment):
+  14 fails 07-03 vs 16 fails 07-04 at the SAME commit. Always compare
+  same-day HEAD vs change; never a stored baseline file.
