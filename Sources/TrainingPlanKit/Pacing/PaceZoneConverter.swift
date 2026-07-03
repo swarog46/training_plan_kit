@@ -383,10 +383,14 @@ public struct PaceZoneConverter {
                 newTarget = .paceTarget(basePace: racePace, relative: relative)
             }
         case .noRange:
-            // Assign easy pace (zone 2 equivalent) for warmup/rest/cooldown with no target
+            // Warmup/rest/cooldown render at easy pace. RECOVERY-type intervals
+            // render at the zone-1 multiplier (the slower between-reps jog):
+            // the catalog's short recoveries are noRange for HR honesty (HR
+            // can't reach Z1 in 60-90s), but their PACE must stay the Z1 jog —
+            // this keeps the Z1→noRange catalog sweep a byte-exact noop.
             floorAtBasePace = true
             let easyRelative = progressiveMultiplier(
-                for: 2,
+                for: interval.type == .recovery ? 1 : 2,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
                 progressionFactor: progressionFactor,
