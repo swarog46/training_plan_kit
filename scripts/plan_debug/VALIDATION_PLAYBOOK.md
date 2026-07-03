@@ -477,3 +477,14 @@ Supersedes anything above that contradicts it. Engine state as of kit `e694b36`:
 - **Tooling:** `audit_long_runs.sh` is trustworthy again (regex + duration-column
   fixes — it ran vacuously green before 2026-07-03). Blessed python fails: 14
   lines, all pre-existing Cmp-snapshot class + the #189 Beg-42K-short W1 edge.
+
+## Round 13 — per-level volume spread (2026-07-03, kit b78fb4b)
+
+`topUpAerobicVolumeV3`: build weeks scale their plain-aerobic runs (easy/MLR/
+recovery — never the LR, never quality) up toward the config's weekly-duration
+target (≤+30%/run, 5-min tick; deload/taper/race exempt). The configs' per-level
+targets now DELIVER: 42K Typical avg 215/239/274min (Beg/Int/Adv), peaks
+340/372/406. Expected side effects (not bugs): midweek easies run longer
+(45-75min), MLRs 90-110min, deload dips read deeper vs fuller build weeks.
+Invariants: Beg<Int<Adv ladder holds per distance; easy runs stay ≤ the week's
+MLR ≤ LR; aerobic shares may sit near their (updated) ceilings; no ACWR spikes.
