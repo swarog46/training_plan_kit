@@ -384,7 +384,12 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     // Deload weeks never force MP — a down week runs a plain aerobic long
                     // (cut the stressor; the rehearsal IS the stressor). A slot a deload
                     // suppresses shifts to the next non-deload peak week (rung not lost).
-                    let scheduledMP = peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
+                    // Short PEAK phases (≤6w, e.g. the 18w half's 5-week peak)
+                    // can't fit the full rung ladder on alternation — schedule
+                    // every non-deload peak week so the 20/25/30 ladder lands
+                    // (R13 Cmp finding: the 18w half never reached its 30min rung).
+                    let scheduledMP = (peakDur <= 6 && !ttWeek)
+                        || peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1
                     let isMPSegmentWeek = !isDeloading && (scheduledMP || pendingRehearsalSlot)
                     if isDeloading && scheduledMP { pendingRehearsalSlot = true }
                     else if isMPSegmentWeek { pendingRehearsalSlot = false }

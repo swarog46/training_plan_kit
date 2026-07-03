@@ -482,7 +482,7 @@ Supersedes anything above that contradicts it. Engine state as of kit `e694b36`:
 
 `topUpAerobicVolumeV3`: build weeks scale their plain-aerobic runs (easy/MLR/
 recovery — never the LR, never quality) up toward the config's weekly-duration
-target (≤+30%/run, 5-min tick; deload/taper/race exempt). The configs' per-level
+target (shared ≤1.30 factor, floor-ticked to 5min, capped below the week's long run; deload/taper/race exempt). The configs' per-level
 targets now DELIVER: 42K Typical avg 215/239/274min (Beg/Int/Adv), peaks
 340/372/406. Expected side effects (not bugs): midweek easies run longer
 (45-75min), MLRs 90-110min, deload dips read deeper vs fuller build weeks.

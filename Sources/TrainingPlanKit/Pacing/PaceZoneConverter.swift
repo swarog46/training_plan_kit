@@ -936,37 +936,12 @@ public struct PaceZoneConverter {
             return updatedEvent
         }
 
-        // R12 — medium-long ceiling: after every clamp, no week's mediumLong
-        // may out-last its long-family run (the km window can shrink the long
-        // run AFTER generation swapped them; this pass makes the invariant
-        // hold at render, whatever generation did).
-        var processedEvents = rendered
-        var longestByWeek: [Int: Double] = [:]
-        for e in processedEvents where e.planWeekIndex >= 0 {
-            let sub = e.workout.subtype
-            if sub == .long || sub == .steadyLong || sub == .progressiveLong
-                || sub == .raceRehearsalM || sub == .raceRehearsalHM
-                || sub == .raceRehearsal10K || sub == .fastFinish {
-                longestByWeek[e.planWeekIndex] = max(longestByWeek[e.planWeekIndex] ?? 0,
-                                                     Double(e.workout.duration))
-            }
-        }
-        processedEvents = processedEvents.map { e in
-            guard e.workout.subtype == .mediumLong, e.planWeekIndex >= 0,
-                  let longest = longestByWeek[e.planWeekIndex], longest > 0,
-                  Double(e.workout.duration) > longest else { return e }
-            var out = e
-            let target = Int64((longest / 300.0).rounded(.down) * 300.0)
-            out.workout = scaleWorkout(e.workout, toSeconds: max(target, 1800))
-            return out
-        }
-
         // #171 — Deload long-run clamp. Each BUILD-phase deload week's long run renders
         // at ~0.80x the prior non-deload week's DELIVERED long run: an exact ~20% dip
         // across tiers AND fitness levels, reaching weeks whose HR-side long run didn't
         // dip (cut-vs-trajectory, or a reused MP rehearsal) that a render coefficient
         // can't. Keys on the generator's real deload flag (event.isDeloadWeek).
-        var out = processedEvents
+        var out = rendered
         // The long run = the LONGEST long-run-subtype workout in a week (a week can also
         // hold a short mid-week run of the same subtype). Group by plan week so the clamp
         // and the prior-week reference both key off the real long run, not the short one.
@@ -988,6 +963,35 @@ public struct PaceZoneConverter {
                 prevNonDeloadLongSec = out[i].workout.duration
             }
         }
+        // R12/R13 — medium-long ceiling (runs AFTER the #171 deload clamp: the
+        // clamp can shrink a deload week's long run below an MLR that was valid
+        // pre-clamp — R13 Cmp finding, 6/81 Half deload weeks inverted): after every clamp, no week's mediumLong
+        // may out-last its long-family run (the km window can shrink the long
+        // run AFTER generation swapped them; this pass makes the invariant
+        // hold at render, whatever generation did).
+                var longestByWeek: [Int: Double] = [:]
+        for e in out where e.planWeekIndex >= 0 {
+            let sub = e.workout.subtype
+            if sub == .long || sub == .steadyLong || sub == .progressiveLong
+                || sub == .raceRehearsalM || sub == .raceRehearsalHM
+                || sub == .raceRehearsal10K || sub == .fastFinish {
+                longestByWeek[e.planWeekIndex] = max(longestByWeek[e.planWeekIndex] ?? 0,
+                                                     Double(e.workout.duration))
+            }
+        }
+        out = out.map { e in
+            guard e.workout.subtype == .mediumLong || e.workout.subtype == .easy
+                    || e.workout.subtype == .recovery,
+                  e.planWeekIndex >= 0,
+                  let longest = longestByWeek[e.planWeekIndex], longest > 0,
+                  Double(e.workout.duration) > longest else { return e }
+            var out = e
+            let target = Int64((longest / 300.0).rounded(.down) * 300.0)
+            out.workout = scaleWorkout(e.workout, toSeconds: max(target, 1800))
+            return out
+        }
+
+
         return out
     }
 

@@ -887,7 +887,21 @@ class PlanGeneratorV3 {
                 if let prog = progressionPool.min(by: {
                     abs(Int($0.duration / 60) - targetMins) < abs(Int($1.duration / 60) - targetMins)
                 }) {
-                    week[heaviest.offset] = ("deload_progression", prog)
+                    let hasProgShape = week.enumerated().contains {
+                        $0.offset != heaviest.offset
+                            && $0.element.workout.subtype == .progression
+                    }
+                    if hasProgShape {
+                        // R13: never a second progression-shaped run — deload
+                        // swaps to plain easy instead.
+                        if let easy = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy]).min(by: {
+                            abs($0.duration - prog.duration) < abs($1.duration - prog.duration)
+                        }) {
+                            week[heaviest.offset] = ("deload_easy", easy)
+                        }
+                    } else {
+                        week[heaviest.offset] = ("deload_progression", prog)
+                    }
                 } else if !soleQuality,
                           let easy = selectWorkoutByTargetV3(workouts: easyRuns,
                                               targetLoad: Double(heaviest.element.workout.trainingLoad) * 0.6,
@@ -941,7 +955,19 @@ class PlanGeneratorV3 {
                 if let pick = progressionPool
                     .filter({ abs(Int($0.duration / 60) - qMins) <= 12 && $0.trainingLoad < q.trainingLoad })
                     .min(by: { abs(Int($0.duration / 60) - qMins) < abs(Int($1.duration / 60) - qMins) }) {
-                    week[qIdx] = ("deload_progression", pick)
+                    let hasProgShape2 = week.enumerated().contains {
+                        $0.offset != qIdx
+                            && $0.element.workout.subtype == .progression
+                    }
+                    if hasProgShape2 {
+                        if let easy = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy]).min(by: {
+                            abs($0.duration - pick.duration) < abs($1.duration - pick.duration)
+                        }) {
+                            week[qIdx] = ("deload_easy", easy)
+                        }
+                    } else {
+                        week[qIdx] = ("deload_progression", pick)
+                    }
                     lightenedQuality = true
                     break
                 }
@@ -1392,10 +1418,24 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
     guard aeroSec > 0 else { return }
     let factor = min(1.30, (aeroSec + deficit) / aeroSec)
     guard factor > 1.02 else { return }
+    // No scaled run may reach the week's long-run-slot session — the LR stays
+    // the week's longest run (R13 fitness finding: a topped-up 65min easy
+    // out-lasted a 60min progressive long in the VO2 block).
+    let longSubs: Set<WorkoutSubtype> = [.long, .steadyLong, .progressiveLong,
+                                         .raceRehearsalM, .raceRehearsalHM,
+                                         .raceRehearsal10K, .fastFinish]
+    let longestLR = weekWorkouts
+        .filter { longSubs.contains($0.workout.subtype) }
+        .map { Double($0.workout.duration) }.max()
     for i in aeroIdx {
         let w = weekWorkouts[i].workout
-        let raw = Double(w.duration) * factor
-        let ticked = Int64((raw / 300.0).rounded() * 300.0)
+        var raw = Double(w.duration) * factor
+        if let lr = longestLR { raw = min(raw, lr - 300) }
+        // A plain "Easy Run" stays an easy run — 75min ceiling (R13 Int
+        // finding: an easy-role fill rendered 85min and read as a mislabeled
+        // medium-long). MLR-tagged runs may go longer.
+        if w.subtype == .easy || w.subtype == .recovery { raw = min(raw, 75 * 60) }
+        let ticked = Int64((raw / 300.0).rounded(.down) * 300.0)
         guard ticked > w.duration else { continue }
         weekWorkouts[i] = (weekWorkouts[i].type, rescaledV3(w, toSeconds: ticked))
     }
