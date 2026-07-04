@@ -711,11 +711,19 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 let capMins = 430
                 func weekMins() -> Int { weekWorkouts.reduce(0) { $0 + Int($1.workout.duration) / 60 } }
                 let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]
+                // Fallback victims for weeks with no easy/MLR at all (R18 P1:
+                // 22w W19 = 2×MP + steadyLong + progression + strides, 449min,
+                // untrimmable) — shrink progression/strides before giving up.
+                let fallback: Set<WorkoutSubtype> = [.progression, .strides]
                 var guardCount = 0
                 while weekMins() > capMins, guardCount < 10 {
                     guardCount += 1
-                    guard let idx = weekWorkouts.indices
-                        .filter({ trimmable.contains(weekWorkouts[$0].workout.subtype) })
+                    let primary = weekWorkouts.indices
+                        .filter { trimmable.contains(weekWorkouts[$0].workout.subtype) }
+                    let pool = primary.isEmpty
+                        ? weekWorkouts.indices.filter { fallback.contains(weekWorkouts[$0].workout.subtype) }
+                        : primary
+                    guard let idx = pool
                         .max(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration })
                     else { break }
                     let w = weekWorkouts[idx].workout

@@ -4178,7 +4178,7 @@ for _wk in [30]:
           90 in _rungs and 105 not in _rungs,
           f"rungs={_rungs}", full=True)
 
-for _wk in [24, 30]:
+for _wk in [18, 22, 24, 30]:
     _a = _progress_anchors(5000, 1140, "adv", 42195, _wk)
     _w = parse_plan(_r18_dump("Adv 42K", _a, _wk), f"Adv 42K ({_wk}w)") or {}
     _tot = {k: sum(d for _s, d, _p in v) for k, v in _w.items()}
