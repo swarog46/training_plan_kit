@@ -4205,12 +4205,38 @@ check("Cmp 21K 18w HMP ladder completes 20/25/30 (taper-W1 spill)",
 
 _CMP_M330 = {"ADAPTIVE": "1", "RACE_PACE": "298", "EASY_PACE": "375", "SPEED_PACE": "262",
              "RACE_PACE_END": "298", "EASY_PACE_END": "375", "SPEED_PACE_END": "262"}
+def _r18_long_kms(txt):
+    # Real km from the segment breakdown — a MINUTES proxy undercounts
+    # rehearsals (MP segments cover 32km in ~175-180min, not 185+).
+    kms, blocks, pending = [], 0, False
+    for ln in txt.splitlines():
+        m = re.match(r"^W\s*(\d+):", ln)
+        if m:
+            if int(m.group(1)) == 1:
+                blocks += 1
+                if blocks == 2:
+                    break
+            continue
+        if re.search(r"\[(steadyLong|progressiveLong|raceRehearsalM|fastFinish)\]", ln):
+            pending = True
+            continue
+        if pending and ln.strip().startswith("\u21b3"):
+            segs = re.findall(r"(\d+):(\d\d)(?::\d\d)? @ (\d+):(\d\d)/km", ln)
+            if segs:
+                kms.append(sum((int(a)*60+int(b))/(int(c)*60+int(d)) for a, b, c, d in segs))
+            pending = False
+        elif pending:
+            mm = re.search(r"(\d+)min\s+(\d+):(\d\d)/km", ln)
+            if mm:
+                kms.append(int(mm.group(1))*60/(int(mm.group(2))*60+int(mm.group(3))))
+            pending = False
+    return kms
+
 for _wk in [18, 24]:
-    _w = parse_plan(_r18_dump("Cmp 42K", _CMP_M330, _wk), f"Cmp 42K ({_wk}w)") or {}
-    _longs = [d for v in _w.values() for _s, d, _p in v
-              if _s in R15_LR_SUBS and d >= 185]
-    check(f"Cmp 42K {_wk}w @3:30: >=2 long runs >=185min (~32km, #197)",
-          len(_longs) >= 2, f"qualifying={sorted(_longs)}", full=True)
+    _kms = _r18_long_kms(_r18_dump("Cmp 42K", _CMP_M330, _wk))
+    _big = sorted(round(k, 1) for k in _kms if k >= 31.9)
+    check(f"Cmp 42K {_wk}w @3:30: >=2 long runs >=32km (#197)",
+          len(_big) >= 2, f"qualifying={_big}", full=True)
 
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")
