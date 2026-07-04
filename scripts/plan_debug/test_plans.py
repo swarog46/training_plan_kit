@@ -4165,21 +4165,25 @@ for _label, _dist, _time, _lvl, _tgt, _weeks_list, _beg_m in R15_CASES:
 # ~10% cutback held <180min. Guard: no Beg 42K long-run valley deeper than 20%
 # below the peak that follows it.
 section("Beg 42K: no deep pre-peak long-run valley")
-for _wk in [16, 20, 24, 27]:
-    _a = _progress_anchors(5000, 1980, "beg", 42195, _wk)
-    _curve = _r15_lr_curve("Beg 42K", _a, _wk)
-    # The approach to the PEAK long run must be smooth: the week right before the
-    # peak must not be a deep valley (>20% below the peak). Early-build deloads at
-    # low volume are exempt — a steep ramp there is normal; this pins only the
-    # peak run-up the smoothing targets.
-    _pk = max(range(len(_curve) - 2), key=lambda k: _curve[k]) if len(_curve) > 2 else 0
-    _bad = None
-    if _pk >= 2:
-        _pre = _curve[_pk - 1]
-        if _pre < _curve[_pk - 2] and (_curve[_pk] - _pre) / _curve[_pk] > 0.20:
-            _bad = (_pk + 1, _curve[_pk - 2], _pre, _curve[_pk])
-    check(f"Beg 42K {_wk}w: peak long-run run-up not a deep valley",
-          _bad is None, f"valley(peakwk,prev,dip,peak)={_bad} curve={_curve}", full=True)
+# Both Slow (1980) and Typical (1620) tiers — the softening's tight-margin
+# cases cluster in Typical (R20 agent: 20w/27w within ~1pt of the bar), so both
+# are pinned to catch a future regression past 20%.
+for _time in [1980, 1620]:
+    for _wk in [16, 20, 24, 27]:
+        _a = _progress_anchors(5000, _time, "beg", 42195, _wk)
+        _curve = _r15_lr_curve("Beg 42K", _a, _wk)
+        # The approach to the PEAK long run must be smooth: the week right before
+        # the peak must not be a deep valley (>20% below the peak). Early-build
+        # deloads at low volume are exempt — a steep ramp there is normal; this
+        # pins only the peak run-up the smoothing targets.
+        _pk = max(range(len(_curve) - 2), key=lambda k: _curve[k]) if len(_curve) > 2 else 0
+        _bad = None
+        if _pk >= 2:
+            _pre = _curve[_pk - 1]
+            if _pre < _curve[_pk - 2] and (_curve[_pk] - _pre) / _curve[_pk] > 0.20:
+                _bad = (_pk + 1, _curve[_pk - 2], _pre, _curve[_pk])
+        check(f"Beg 42K {_wk}w t{_time}: peak long-run run-up not a deep valley",
+              _bad is None, f"valley(peakwk,prev,dip,peak)={_bad} curve={_curve}", full=True)
 
 # === R18: long-variant scheduling guards (#201 rung, #202 Adv cap) =======
 #
