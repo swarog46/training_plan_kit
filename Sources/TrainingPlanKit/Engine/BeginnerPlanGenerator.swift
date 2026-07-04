@@ -732,6 +732,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
                                  isDeloading: isDeloading, phase: phase,
                                  weeklyCapMins: config.distance == 42195 ? 320 : nil)
+            stripOnboardingZ5(&weekWorkouts, week: week, phase: phase)
             workoutsByWeek[week] = weekWorkouts
         } while false
     }

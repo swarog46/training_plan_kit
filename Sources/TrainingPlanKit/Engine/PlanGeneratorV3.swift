@@ -560,6 +560,27 @@ class PlanGeneratorV3 {
         w.subtype != .strides && hasZone5(w)
     }
 
+    // #189: displayed BASE weeks 1-2 must open Z5-free (onboarding). Two gaps let
+    // one through: (a) paths that append the lead quality directly bypass the
+    // in-pool strip, and (b) front-trimmed plans generate full-length then drop
+    // the first `weeksToTrim` weeks, so the DISPLAYED W1 is a mid-base generation
+    // week (Beg 42K 14w opened W1 on a base-3/4 deload with 5K-pace intervals —
+    // both the pool strip's weekInPhase<=1 and a raw week<=1 gate miss it).
+    // Key on the displayed index (week - weeksToTrim). Swap any real-Z5 session to
+    // the closest-duration easy run. Non-VO2 only (VO2 carries Z5 from week 1).
+    func stripOnboardingZ5(_ weekWorkouts: inout [(type: String, workout: Workout)], week: Int, phase: TrainingPhase) {
+        let displayedWeek = week - weeksToTrim
+        guard !config.isVO2Max, phase == .base, displayedWeek >= 0, displayedWeek <= 1 else { return }
+        let pool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy])
+            .filter { !isRealZ5($0) }
+        guard !pool.isEmpty else { return }
+        for i in weekWorkouts.indices where isRealZ5(weekWorkouts[i].workout) {
+            let target = weekWorkouts[i].workout.duration
+            let sub = pool.min { abs($0.duration - target) < abs($1.duration - target) }!
+            weekWorkouts[i] = ("easy", sub)
+        }
+    }
+
     // Total Z5 work minutes in a workout (the VO2 "dose" — what actually
     // develops VO2max, independent of the session's easy WU/CD bulk).
     func z5DoseMinutes(_ w: Workout) -> Int {

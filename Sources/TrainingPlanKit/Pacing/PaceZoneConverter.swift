@@ -996,13 +996,28 @@ public struct PaceZoneConverter {
             longestIdxByWeek[e.planWeekIndex] = i
         }
         var prevNonDeloadLongSec: Int64? = nil
-        for wk in longestIdxByWeek.keys.sorted() {
+        let clampWeeks = longestIdxByWeek.keys.sorted()
+        for (wi, wk) in clampWeeks.enumerated() {
             let i = longestIdxByWeek[wk]!
             if out[i].isDeloadWeek {
                 if let prev = prevNonDeloadLongSec {
                     // ~20% cut, but never below the 60-min aerobic long-run floor (base-phase
                     // deloads off a short prior run would otherwise dip under it).
-                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: max(Int64(3600), Int64((Double(prev) * 0.80).rounded())))
+                    var target = max(Int64(3600), Int64((Double(prev) * 0.80).rounded()))
+                    // Beg 42K: a deload immediately before a HIGHER peak long run
+                    // renders a valley-then-spike (200→160→210). Soften to a ~10%
+                    // cutback so the run-up to the peak is smooth — Pfitz approaches
+                    // the peak long run cleanly, not via a deep cut one week out.
+                    // Held strictly under 180min so it never adds a 4th ≥3h beginner
+                    // exposure week (the ≤3 backstop, #180).
+                    if isBeginner, raceDistanceMeters == 42195, wi + 1 < clampWeeks.count {
+                        let nIdx = longestIdxByWeek[clampWeeks[wi + 1]]!
+                        if !out[nIdx].isDeloadWeek, !out[nIdx].isTaperWeek,
+                           out[nIdx].workout.duration > prev {
+                            target = max(target, min(Int64((Double(prev) * 0.90).rounded()), Int64(175 * 60)))
+                        }
+                    }
+                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: target)
                 }
             } else {
                 prevNonDeloadLongSec = out[i].workout.duration

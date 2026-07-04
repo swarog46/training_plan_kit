@@ -578,3 +578,19 @@ margin (LOAD margin +19% healthy — minutes alone understate intensity).
 ⚠️ `dump` mode shows PRE-rescale durations — cap audits must use `pacedump`
 (465 vs true 432 on the same week). Stale strides title after trim ("4 x 25s"
 rendering 21s reps) — cosmetic, unfixed.
+
+## Round 20 (2026-07-04) — Beg-24w smooth peak run-up + #189 onboarding Z5
+- Beg 24w choppy tail (200→160→210 valley-then-spike): #171 deload clamp now
+  softens a deload that sits immediately before a HIGHER peak to ~0.90× (was
+  0.80×), held <180min so it never adds a 4th ≥3h beginner week. Tail now
+  200→175→210. Beg-marathon only; other lengths' peak run-ups already smooth.
+  Guard: "Beg 42K peak long-run run-up not a deep valley" (checks ONLY the
+  peak predecessor — early-build deep deloads at low volume are exempt).
+- #189 SOLVED (root finally found): the trim is front-trim (generate full,
+  drop first `weeksToTrim` weeks + shift), so displayed-W1 = a MID-BASE
+  generation week (Beg 42K 14w → base 3/4 deload, weekInPhase 3). Both the
+  pool strip (weekInPhase<=1) and a raw week<=1 gate miss it. `stripOnboardingZ5`
+  keys on the DISPLAYED index (week - weeksToTrim ≤ 1), swaps real-Z5 → closest
+  easy. Wired Beg only (Int/Adv W1 already clean). Test Z5-W1/W1-2 now PASS
+  (12→10 fails). ⚠️ dump header `[base 3/4]` is the DISPLAYED phase position —
+  use it, not the generation weekInPhase, to reason about front-trimmed W1.
