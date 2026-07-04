@@ -4218,7 +4218,7 @@ def _r18_long_kms(txt):
                     break
             continue
         if re.search(r"\[(steadyLong|progressiveLong|raceRehearsalM|fastFinish)\]", ln):
-            pending = True
+            pending = ln          # save the LR line — single-pace runs carry km here
             continue
         if pending and ln.strip().startswith("\u21b3"):
             segs = re.findall(r"(\d+):(\d\d)(?::\d\d)? @ (\d+):(\d\d)/km", ln)
@@ -4226,7 +4226,7 @@ def _r18_long_kms(txt):
                 kms.append(sum((int(a)*60+int(b))/(int(c)*60+int(d)) for a, b, c, d in segs))
             pending = False
         elif pending:
-            mm = re.search(r"(\d+)min\s+(\d+):(\d\d)/km", ln)
+            mm = re.search(r"(\d+)min\s+(\d+):(\d\d)/km", pending)
             if mm:
                 kms.append(int(mm.group(1))*60/(int(mm.group(2))*60+int(mm.group(3))))
             pending = False
