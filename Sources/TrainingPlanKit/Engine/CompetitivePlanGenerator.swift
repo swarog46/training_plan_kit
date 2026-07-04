@@ -616,7 +616,10 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             if phase == .base && weekWorkouts.count < maxWorkoutsPerWeek {
                 // Competitive: add a medium-long easy (60-90min) for Pfitz-style
                 // weekly volume.
-                if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: false) {
+                // Plain easy only — the MLR slots own .mediumLong (R19 P1: this
+                // pre-fill slot was the last one still leaking a 3rd MLR in BASE).
+                let plainEasy = easyRuns.filter { $0.subtype != .mediumLong }
+                if let easy = selectWorkoutByTargetV3(workouts: plainEasy, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: false) {
                     weekWorkouts.append(("easy", easy))
                 }
             }

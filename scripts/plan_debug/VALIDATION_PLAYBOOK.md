@@ -563,3 +563,18 @@ R18 python guards: Int-30w-rung + Adv 24/30w ≤440. Same-day fails: 12, 0 new.
   deload label must not veto it: pass isDeloading && !spillRehearsal to
   rampRehearsalMPSegment). 12w stays 20/25 by design (4-wk PEAK).
 - R18 guards: + Beg-30w-stays-60 check. Same-day fails 12, 0 new.
+
+## Round 19 (2026-07-04) — final certification (2 sonnet agents)
+Cmp 42K/21K: rung timing, #197 (all 8 marathon combos incl. 3:30 at every
+length — segment-km method), volume bands/caps (0 breaches vs phase-scaled
+caps), taper monotonic 16/16 — CERTIFIED. Non-Cmp spot: PASS (fallback trim
+renders sane; spill unreachable outside Cmp; matrices regenerate-diff empty).
+Fixed from findings: BASE bonus slot now excludes .mediumLong (R19 P1 — the
+last 3-MLR leak; W2/W4-class base weeks back to 2).
+Accepted/parked: half 32w MLR mode=1 (forced-MLR alternation `week%2` under
+low early targets — revisit only if dose audit flags); 18w marathon ladder =
+60/70/90 (3 slots by phase math, correct); half 18w peak/base +2min minutes
+margin (LOAD margin +19% healthy — minutes alone understate intensity).
+⚠️ `dump` mode shows PRE-rescale durations — cap audits must use `pacedump`
+(465 vs true 432 on the same week). Stale strides title after trim ("4 x 25s"
+rendering 21s reps) — cosmetic, unfixed.
