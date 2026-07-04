@@ -2759,11 +2759,12 @@ GUARDS = [
     # and lands 4 marathonPace sessions in PEAK (Pfitz "12mi @ MP"
     # signature workout) where previously it had 0. Aerobic share drops
     # to ~77% (more Z3 time from dedicated MP runs) — Pfitz "general
-    # aerobic 75-80%" aligned. LR band now 175-195: the floor-ramp (2026-06-28)
-    # builds the long run progressively, so the peak is a *built* ~180min, not a
-    # flat-floored cap. See the Adv-cap section for the <=195 ceiling guard.
+    # aerobic 75-80%" aligned. LR band 170-195 (was 175-195): #199 tick
+    # discipline (2026-07-04) closed the km-cap leak — the old 175 floor was
+    # calibrated against 33.2-33.5km renders leaking past the 33km cap; honest
+    # <=33km at Adv fit pace is ~170min. Floor side unchanged (28km delivered).
     # Aerobic cap 84: deload LRs plain aerobic (no MP rehearsal on down weeks, 2026-07-01).
-    ("Adv 42K (long, 22w)", 280, 380, 72, 88, 85, 110, 175, 195,
+    ("Adv 42K (long, 22w)", 280, 380, 72, 88, 85, 110, 170, 195,
      {'marathonPace', 'threshold'}),
     # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
     # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),

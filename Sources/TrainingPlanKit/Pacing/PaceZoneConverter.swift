@@ -390,7 +390,7 @@ public struct PaceZoneConverter {
             // this keeps the Z1→noRange catalog sweep a byte-exact noop.
             floorAtBasePace = true
             let easyRelative = progressiveMultiplier(
-                for: interval.type == .recovery ? 1 : 2,
+                for: (interval.type == .recovery || interval.type == .rest) ? 1 : 2,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
                 progressionFactor: progressionFactor,
@@ -794,6 +794,14 @@ public struct PaceZoneConverter {
             let capFactor = Double(advMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
+        // #199 tick discipline: floor-lifts tick UP (the window minimum is a
+        // guarantee), cap-clamps tick DOWN (the ceiling is a promise) — nearest
+        // rounding leaked both ways (34.15km past a 33 cap; 31.7 under a 32 floor).
+        let rawSec = Double(workout.duration) * factor
+        let ticked = factor > 1
+            ? (rawSec / 300).rounded(.up) * 300
+            : (rawSec / 300).rounded(.down) * 300
+        factor = max(ticked, minSec) / Double(workout.duration)
         var newDurationSec = Int((Double(workout.duration) * factor).rounded())
 
         func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
@@ -1046,7 +1054,11 @@ public struct PaceZoneConverter {
                 // Cap WINS over the km floor: the length-aware ramp raises the
                 // floor gradually, so a capped week reaches full floor within
                 // +25% steps a week later — no cliff, marathon prep intact.
-                let cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
+                var cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
+                // #199: ceiling — tick nearest unless that crosses it, then drop
+                // one tick (blanket tick-down cascaded -5min through the chain).
+                let nearestTick = Int64((Double(cap) / 300).rounded()) * 300
+                cap = nearestTick <= cap ? nearestTick : nearestTick - 300
                 if out[i].workout.duration > cap {
                     out[i].workout = scaleWorkout(out[i].workout, toSeconds: cap)
                 }
