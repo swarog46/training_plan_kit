@@ -29,7 +29,34 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             prevPhase = phase
             
             // Calculate targets
-            let rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
+            var rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
+            // #158: Cmp duration targets in PHYSICAL minutes. The boost×amplifier
+            // model produced 1496-min "targets" the ceilings ignored (rendered
+            // 469; Pfitz 18/70 peaks 660-720). Fixed per-distance peak — length
+            // buys more base weeks, never a lower peak — with a phase-anchored
+            // ramp; PEAK > SPEED > BASE by construction at every length, which
+            // also cures the 12w peak<base and 36w speed>peak inversions (R16).
+            if config.distance >= 21097 {
+                // Duration-native peak: Pfitz 18/70 is ~70mi; in minutes that's
+                // pace-dependent (~590min @3:00 goal, ~660 @3:30). Generation is
+                // pace-blind, so 620 targets the 3:15 mid-band; render paces make
+                // faster runners' weeks shorter in minutes, same in km — correct.
+                let peakMin: Double = config.distance == 42195 ? 660 : 530
+                let p = rawTargets.phaseProgression
+                let frac: Double
+                switch phase {
+                case .base:  frac = 0.72 + 0.12 * p
+                case .speed: frac = 0.84 + 0.08 * p
+                case .peak:  frac = 0.92 + 0.08 * p
+                case .taper: frac = 0.80 - 0.25 * p
+                case .race:  frac = 0.40
+                }
+                var dur = peakMin * frac
+                if rawTargets.isDeloading { dur *= 0.85 }
+                rawTargets = WeeklyTargets(load: rawTargets.load, duration: dur,
+                                           isDeloading: rawTargets.isDeloading,
+                                           phaseProgression: p)
+            }
             // ACWR ramp cap (DURATION): cap volume at 1.25× the recent 3-week max,
             // scaling load with the cut. See BeginnerPlanGenerator for the rationale.
             let targets: WeeklyTargets = {
@@ -656,6 +683,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // session at >=5/wk, else swap the heaviest quality for easy/progression).
             // Runs last so it sees the fully-assembled week. BUILD phases only.
             applyDeloadReshaping(&weekWorkouts, weekIndex: week, phase: phase, isDeloading: isDeloading)
+
+            // #158: Cmp weeks now top up to the PHYSICAL duration target like
+            // every other level — without this, the Pfitz-class targets were
+            // aspirational (selection composed ~470-530min weeks regardless).
+            topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
+                                 isDeloading: isDeloading, phase: phase,
+                                 isCompetitive: true)
 
             enforceLongOverMediumLongV3(&weekWorkouts)
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }

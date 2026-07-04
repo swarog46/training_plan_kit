@@ -738,7 +738,13 @@ class PlanGeneratorV3 {
         let rehearsals = pool.filter { $0.subtype == sub }
         let available = Array(Set(rehearsals.map { rehearsalSegmentMinutes($0, subtype: sub) })).sorted()
         guard available.count >= 2 else { return pool }
-        let ladder = PlanGeneratorV3.rehearsalSegmentLadder(sub)
+        var ladder = PlanGeneratorV3.rehearsalSegmentLadder(sub)
+        // Short competitive marathon (≤14w): the runner is race-fit — skip the
+        // 60min intro rung so the plan's 2 rehearsal slots still climb to a
+        // real 90 instead of stalling at 60/70 (#198, R16).
+        if sub == .raceRehearsalM, config.runnerLevel == .competitive, totalWeeks <= 14 {
+            ladder = Array(ladder.dropFirst())
+        }
         let ladderTarget = ladder[min(priorRehearsalCount, ladder.count - 1)]
         // Snap the ladder target to the nearest available catalog rung.
         guard let targetSize = available.min(by: {
@@ -1400,7 +1406,8 @@ func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: 
 /// toward the target: at most +30% per run, 5-min ticked, build weeks only.
 func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout)],
                           targetDurationMins: Double, isDeloading: Bool,
-                          phase: TrainingPhase, weeklyCapMins: Double? = nil) {
+                          phase: TrainingPhase, weeklyCapMins: Double? = nil,
+                          isCompetitive: Bool = false) {
     guard !isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
     // R14: beginner-marathon roof — never top a week past the cap (the Slow
     // tier was stacking to 5.9h peak weeks purely from added easy time).
@@ -1419,7 +1426,9 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
     }
     let aeroSec = aeroIdx.reduce(0.0) { $0 + Double(weekWorkouts[$1].workout.duration) }
     guard aeroSec > 0 else { return }
-    let factor = min(1.30, (aeroSec + deficit) / aeroSec)
+    // Cmp stretches further: Pfitz-class weeks need the aerobic body to carry
+    // more of the physical target (#158) — non-Cmp keeps the 1.30 guard.
+    let factor = min(isCompetitive ? 2.0 : 1.30, (aeroSec + deficit) / aeroSec)
     guard factor > 1.02 else { return }
     // No scaled run may reach the week's long-run-slot session — the LR stays
     // the week's longest run (R13 fitness finding: a topped-up 65min easy
@@ -1437,7 +1446,9 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
         // A plain "Easy Run" stays an easy run — 75min ceiling (R13 Int
         // finding: an easy-role fill rendered 85min and read as a mislabeled
         // medium-long). MLR-tagged runs may go longer.
-        if w.subtype == .easy || w.subtype == .recovery { raw = min(raw, 75 * 60) }
+        if w.subtype == .easy || w.subtype == .recovery {
+            raw = min(raw, (isCompetitive ? 100 : 75) * 60)   // Pfitz GA runs run longer
+        }
         let ticked = Int64((raw / 300.0).rounded(.down) * 300.0)
         guard ticked > w.duration else { continue }
         weekWorkouts[i] = (weekWorkouts[i].type, rescaledV3(w, toSeconds: ticked))
