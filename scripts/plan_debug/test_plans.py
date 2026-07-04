@@ -325,7 +325,7 @@ section("Marathon long-run peak durations match references")
 ref = [
     ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 170, "Higdon Novice 1: 180, capped ~190"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
-    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 175, "floor-ramp built peak ~180; capped ~195"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 170, "leak-free 33km cap ≈170-175 at Adv pace (#199, 2026-07-04)"),
     # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
     # run at 38km — at 5:00/km easy that's ~190min, which already exceeds Pfitz
     # 18/85's 22mi (~35km/177min). Old 200min floor was pace-blind. Govern by km.
