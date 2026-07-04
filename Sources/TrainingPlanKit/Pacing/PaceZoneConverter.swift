@@ -1066,6 +1066,42 @@ public struct PaceZoneConverter {
             chainPrevSec = out[i].workout.duration
         }
 
+        // #197 — Cmp marathon 32km guarantee: a competitive build must deliver
+        // >=2 long runs >=32km (the 20-mile-class runs race day is built on).
+        // The ramped floor gives slower goals (3:15-3:45) only ONE such week on
+        // most lengths — their second candidate lands pre-full-ramp at 27-31km.
+        // Lift the LARGEST near-misses (>=28km, non-deload/taper) to 32km,
+        // tick-UP, until two qualify. Rehearsal titles rebuild under scaling (#178).
+        if isCompetitive, raceDistanceMeters == 42195 {
+            func kmOf(_ w: Workout) -> Double {
+                w.intervals.reduce(0.0) { acc, iv in
+                    if case .paceTarget(let b, let rel) = iv.target, b > 0 {
+                        return acc + iv.duration / (Double(b) * rel)
+                    }
+                    return acc
+                }
+            }
+            var candidates: [(idx: Int, km: Double)] = []
+            var qualifying = 0
+            for (i, e) in out.enumerated()
+            where longRunSubtypes.contains(e.workout.subtype)
+                && !e.isDeloadWeek && !e.isTaperWeek {
+                let km = kmOf(e.workout)
+                if km >= 32.0 { qualifying += 1 }
+                else if km >= 28.0 { candidates.append((i, km)) }
+            }
+            candidates.sort { $0.km > $1.km }
+            var c = 0
+            while qualifying < 2, c < candidates.count {
+                let (i, km) = candidates[c]; c += 1
+                let w = out[i].workout
+                let targetSec = Double(w.duration) * (32.0 / km)
+                let ticked = Int64((targetSec / 300).rounded(.up) * 300)
+                out[i].workout = scaleWorkout(w, toSeconds: ticked)
+                qualifying += 1
+            }
+        }
+
         // R12/R13 — medium-long ceiling (runs AFTER the #171 deload clamp: the
         // clamp can shrink a deload week's long run below an MLR that was valid
         // pre-clamp — R13 Cmp finding, 6/81 Half deload weeks inverted): after every clamp, no week's mediumLong

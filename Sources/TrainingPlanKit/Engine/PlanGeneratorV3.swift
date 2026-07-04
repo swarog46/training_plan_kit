@@ -648,9 +648,9 @@ class PlanGeneratorV3 {
     // rehearsal steps UP this ladder so the MP block progresses 60→75→90(→105),
     // Pfitz-style, instead of parking on the largest rung every rehearsal week.
     static let rehearsalMPLadder = [60, 70, 90, 105]  // 3-occurrence plans climb 60/70/90;
-    // the 105 rung snaps to the catalog's 90 (no bigger template exists yet), so
-    // 4-occurrence Cmp plans top out 60/70/90/90 — a real 4th rung needs a
-    // ~100min raceRehearsalM template added to the catalog.
+    // 4-occurrence plans reach the full 105 (catalog template id 60010,
+    // added 2026-07-04). Short competitive marathons (≤14w) drop the 60
+    // rung so 2 slots still climb 70→90 (see rampRehearsalMPSegment).
 
     // Half / 10K rehearsal race-pace-segment ladders (minutes). Same idea, scaled
     // to the shorter race: the HMP block builds toward ~30min, the 10KP toward

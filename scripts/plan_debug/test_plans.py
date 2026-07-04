@@ -878,10 +878,10 @@ CMP_SNAPSHOTS = [
     # Additional bump 12002 → 12123 from the alternating-week mediumLong
     # forcing — Cmp 42K build picks 90-100min ML on even weeks where
     # selector previously picked 80min easy. 2026-06-16: 12123→11809.
-    # 2026-07-04: 11809→12218 — #158 double-MLR + physical targets (deliberate
-    # Pfitz 18/70 dose lift; peaks 553→630min at 18w).
+    # 2026-07-04: 11809→12218 (#158 dose lift) → 11953 (R17 fixes same day:
+    # phase-scaled caps, single MLR fill [core+1=Pfitz 2], 60010 duration fix).
     # 165→162 sessions from the same peak-volume cap.
-    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 12218, 162, 200),
+    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 11953, 162, 200),
 ]
 for header, fil, rp, ep, exp_total, exp_sess, exp_peak in CMP_SNAPSHOTS:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)

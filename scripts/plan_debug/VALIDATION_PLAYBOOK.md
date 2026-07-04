@@ -524,3 +524,17 @@ byte-identical vs pre-fix binaries; zone map 716/716 clean.
   decision pending (#200).
 - Int long lengths: 30w drops the 90min rung; 14w mono-Intervals (#201).
 - Adv shipping 24/30w peak weeks stack past band (#202).
+
+## Round 17 (2026-07-04) — post-dose-lift re-audit (3 sonnet agents)
+Non-Cmp: PASS twice over — 6 matrices regenerate byte-identical at HEAD;
+before/after binary diff clean; 105 template architecturally can't leak
+(eligibleDistances=[42195] + rung index never reached below Cmp); 1194 jogs
+in-band. Cmp fixes landed same-day: cap now PHASE-SCALED (.88/.97/1.05 ×
+peak target) and runs AFTER topUp (was pre-topUp → 52 breaches up to +24%);
+MLR = core + ONE fill (2/wk modal — second fill had made it 3); half peak
+target 570 (PEAK>BASE now 8/8 combos both distances); 60010 duration field
+fixed 9600→9900 (agent-caught clone bug). Snapshot 12218→11953.
+⚠️ `phases` mode dur= column is PRE-OVERRIDE for Cmp (calls
+calculateWeeklyTargetsV3 directly) — don't trust it for Cmp volume.
+Residual (tracked): 3:30-goal ≥2×32km holds only at 18w (#197 reopened);
+36w peak modest (555); #201/#202 untouched.
