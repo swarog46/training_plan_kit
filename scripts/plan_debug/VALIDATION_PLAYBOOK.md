@@ -551,3 +551,15 @@ real peaks were 460-505 (NOT 380-420: the naive week-sum regex grabs the
 Matrices: only advanced_plans_ios.md ±15 lines (MLR shrinks in stacked weeks).
 R18 python guards: Int-30w-rung + Adv 24/30w ≤440. Same-day fails: 12, 0 new.
 #197 render guarantee (≥2×32km, Cmp 42K) landed kit 6a4e696 — agent-check item.
+
+## Round 18 addenda (2026-07-04, post-agent fixes)
+- Beg/VO2/Maint sweep: PASS (48/48 Beg rehearsals = 60min; LOCKED days 17/17;
+  VO2 0 rehearsals + Z5 progression; Maint light-week formula exact).
+- #202 fallback trim (progression/strides) for weeks with no easy/MLR
+  (22w W19 449min was untrimmable); cap stays 430; Adv km band floor 85→82
+  (old floor was calibrated on the stacked 460-505 weeks the cap removes).
+- Half 18w HMP ladder: pending rung now SPILLS into taper W1 (half only,
+  ladder incomplete only — 24w must not grow a junk 4th rung; taper W1's
+  deload label must not veto it: pass isDeloading && !spillRehearsal to
+  rampRehearsalMPSegment). 12w stays 20/25 by design (4-wk PEAK).
+- R18 guards: + Beg-30w-stays-60 check. Same-day fails 12, 0 new.

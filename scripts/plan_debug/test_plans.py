@@ -2766,7 +2766,10 @@ GUARDS = [
     # calibrated against 33.2-33.5km renders leaking past the 33km cap; honest
     # <=33km at Adv fit pace is ~170min. Floor side unchanged (28km delivered).
     # Aerobic cap 84: deload LRs plain aerobic (no MP rehearsal on down weeks, 2026-07-01).
-    ("Adv 42K (long, 22w)", 280, 380, 72, 88, 85, 110, 170, 195,
+    # km floor 85→82 (2026-07-04, #202): the old 85+ peaks included 460-505min
+    # stacked weeks the 430 cap now removes; leak-free peak ≈83km (440min of
+    # mixed running at Adv paces). Band tracks the capped, honest composition.
+    ("Adv 42K (long, 22w)", 280, 380, 72, 88, 82, 110, 170, 195,
      {'marathonPace', 'threshold'}),
     # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
     # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),
@@ -4177,6 +4180,12 @@ for _wk in [30]:
     check(f"Int 42K {_wk}w MP rungs reach 90 (ladder end-aligned)",
           90 in _rungs and 105 not in _rungs,
           f"rungs={_rungs}", full=True)
+
+_a = _progress_anchors(5000, 1980, "beg", 42195, 30)
+_txt = _r18_dump("Beg 42K", _a, 30)
+_brungs = sorted(set(int(x) for x in re.findall(r"\((\d+)min @ MP\)", _txt)))
+check("Beg 42K 30w rehearsal stays 60min (Beg exempt from intro-drop)",
+      _brungs == [60], f"rungs={_brungs}", full=True)
 
 for _wk in [18, 22, 24, 30]:
     _a = _progress_anchors(5000, 1140, "adv", 42195, _wk)

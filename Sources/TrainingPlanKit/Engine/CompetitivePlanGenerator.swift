@@ -393,6 +393,25 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
 
             // PEAK weeks: open the long-run pool to the distance-matched race
             // rehearsal (eligibleDistances pins each to one race). See Beginner.
+            // R18 P1: a rung suppressed by a deload on the LAST peak week used to
+            // die at the phase boundary (18w half: 5-wk PEAK with TT + 2 deloads
+            // delivered 20/25, never 30). Spill it into the first taper week —
+            // Pfitz runs the last race-pace session 10-14 days out anyway.
+            // (Taper W1 always carries the deload label — that label means "no new
+            // stressor" in BUILD; here it must not veto the final race-pace touch.)
+            // Half only, and only if the 20/25/30 ladder is incomplete — plans
+            // that finished in PEAK must not grow a junk 4th rung in taper.
+            let spillRehearsal = phase == .taper && weekInPhase == 0 && pendingRehearsalSlot
+                && config.distance == 21097
+                && priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur) < 3
+            if spillRehearsal {
+                pendingRehearsalSlot = false
+                for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
+                where rehearsal.eligibleDistances.contains(config.distance) {
+                    longRunTypes.append(rehearsal)
+                }
+                longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
+            }
             if phase == .peak {
                 for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
                 where rehearsal.eligibleDistances.contains(config.distance) {
@@ -470,7 +489,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // peak weeks (60→75→90) so it doesn't park on the largest rung.
                 if phase == .peak {
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false, isDeloading: isDeloading)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false,
+                        isDeloading: isDeloading && !spillRehearsal)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's
