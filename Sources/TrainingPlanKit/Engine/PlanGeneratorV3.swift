@@ -739,11 +739,18 @@ class PlanGeneratorV3 {
         let available = Array(Set(rehearsals.map { rehearsalSegmentMinutes($0, subtype: sub) })).sorted()
         guard available.count >= 2 else { return pool }
         var ladder = PlanGeneratorV3.rehearsalSegmentLadder(sub)
-        // Short competitive marathon (≤14w): the runner is race-fit — skip the
-        // 60min intro rung so the plan's 2 rehearsal slots still climb to a
-        // real 90 instead of stalling at 60/70 (#198, R16).
-        if sub == .raceRehearsalM, config.runnerLevel == .competitive, totalWeeks <= 14 {
-            ladder = Array(ladder.dropFirst())
+        if sub == .raceRehearsalM {
+            if config.runnerLevel == .competitive {
+                // Short competitive marathon (≤14w): the runner is race-fit — skip
+                // the 60min intro rung so 2 slots still climb 70→90 (#198, R16).
+                if totalWeeks <= 14 { ladder = Array(ladder.dropFirst()) }
+            } else {
+                // Non-competitive: 105 is the Cmp signature rung — Int/Adv cap at
+                // 90 (Pfitz 18/55-65 class). Long plans (≥28w) reach only 2
+                // rehearsal slots, so drop the 60 intro to still deliver 90 (#201).
+                ladder = Array(ladder.prefix(3))
+                if totalWeeks >= 28 { ladder = Array(ladder.dropFirst()) }
+            }
         }
         let ladderTarget = ladder[min(priorRehearsalCount, ladder.count - 1)]
         // Snap the ladder target to the nearest available catalog rung.

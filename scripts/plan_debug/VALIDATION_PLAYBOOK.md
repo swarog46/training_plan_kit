@@ -538,3 +538,16 @@ fixed 9600→9900 (agent-caught clone bug). Snapshot 12218→11953.
 calculateWeeklyTargetsV3 directly) — don't trust it for Cmp volume.
 Residual (tracked): 3:30-goal ≥2×32km holds only at 18w (#197 reopened);
 36w peak modest (555); #201/#202 untouched.
+
+## Round 18 (2026-07-04) — #201/#202 + guards
+#201: non-Cmp marathon ladder = prefix(3) (105 stays Cmp signature); ≥28w
+drops the 60 intro → Int/Adv 30w deliver 70→90 (was 60/70, no 90). 18-24w
+unchanged. Monotony re-check: Acc Int 21K 14w W11-13 now three DIFFERENT
+Interval templates (6/5/10 seg) — subtype-only repetition remains (pool
+flavor decision, folded into #173 family).
+#202: Adv 42K post-topUp weekly cap 430min, shrink largest easy/MLR only —
+real peaks were 460-505 (NOT 380-420: the naive week-sum regex grabs the
+"(60min @ MP" rung, not the 150min total — sum the LAST min token per line).
+Matrices: only advanced_plans_ios.md ±15 lines (MLR shrinks in stacked weeks).
+R18 python guards: Int-30w-rung + Adv 24/30w ≤440. Same-day fails: 12, 0 new.
+#197 render guarantee (≥2×32km, Cmp 42K) landed kit 6a4e696 — agent-check item.

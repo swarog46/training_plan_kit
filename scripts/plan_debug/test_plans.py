@@ -4156,6 +4156,36 @@ for _label, _dist, _time, _lvl, _tgt, _weeks_list, _beg_m in R15_CASES:
                   _n3h <= 3, f"got {_n3h}: curve={_curve}", full=True)
 
 
+# === R18: long-variant scheduling guards (#201 rung, #202 Adv cap) =======
+#
+# 2026-07-04: Int/Adv 42K >=28w reach only 2 rehearsal slots, so the ladder
+# drops its 60min intro there (delivers 70->90; 18-24w keep 60/70/90). 105
+# stays Cmp-only. Adv 42K weeks cap at 430min post-topUp (rehearsal+MLR+rep
+# stacking hit 460-505 on long variants; Pfitz 18/55-65 tops out ~420).
+section("R18: long-variant rung + Adv weekly cap")
+
+def _r18_dump(label, anchors, weeks):
+    env = os.environ.copy(); env.update(anchors); env["WEEKS"] = str(weeks)
+    return subprocess.run([PLAN_DEBUG, "pacedump", label], capture_output=True,
+                          text=True, env=env).stdout
+
+for _wk in [30]:
+    _a = _progress_anchors(5000, 1500, "int", 42195, _wk)
+    _txt = _r18_dump("Int 42K", _a, _wk)
+    _rungs = re.findall(r"\((\d+)min @ MP\)", _txt.split("W 1:")[2] if _txt.count("W 1:") > 1 else _txt)
+    _rungs = [int(x) for x in dict.fromkeys(_rungs)]
+    check(f"Int 42K {_wk}w MP rungs reach 90 (ladder end-aligned)",
+          90 in _rungs and 105 not in _rungs,
+          f"rungs={_rungs}", full=True)
+
+for _wk in [24, 30]:
+    _a = _progress_anchors(5000, 1140, "adv", 42195, _wk)
+    _w = parse_plan(_r18_dump("Adv 42K", _a, _wk), f"Adv 42K ({_wk}w)") or {}
+    _tot = {k: sum(d for _s, d, _p in v) for k, v in _w.items()}
+    _peak = max(_tot.values()) if _tot else 0
+    check(f"Adv 42K {_wk}w max weekly total <= 440 (cap 430 + tick slack)",
+          0 < _peak <= 440, f"peak week={_peak}min", full=True)
+
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")
 print(f"Failed: {len(failed)}")
