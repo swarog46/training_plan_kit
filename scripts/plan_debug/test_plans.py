@@ -4195,6 +4195,23 @@ for _wk in [18, 22, 24, 30]:
     check(f"Adv 42K {_wk}w max weekly total <= 440 (cap 430 + tick slack)",
           0 < _peak <= 440, f"peak week={_peak}min", full=True)
 
+# Cmp guards (fixed goal-pace anchors — Cmp is goal-locked, no VDOT ramp)
+_CMP_HM = {"ADAPTIVE": "1", "RACE_PACE": "241", "EASY_PACE": "320", "SPEED_PACE": "225",
+           "RACE_PACE_END": "241", "EASY_PACE_END": "320", "SPEED_PACE_END": "225"}
+_txt = _r18_dump("Cmp 21K", _CMP_HM, 18)
+_h = [int(x) for x in dict.fromkeys(re.findall(r"\((\d+)min @ HMP\)", _txt))]
+check("Cmp 21K 18w HMP ladder completes 20/25/30 (taper-W1 spill)",
+      _h[:3] == [20, 25, 30], f"rungs={_h}", full=True)
+
+_CMP_M330 = {"ADAPTIVE": "1", "RACE_PACE": "298", "EASY_PACE": "375", "SPEED_PACE": "262",
+             "RACE_PACE_END": "298", "EASY_PACE_END": "375", "SPEED_PACE_END": "262"}
+for _wk in [18, 24]:
+    _w = parse_plan(_r18_dump("Cmp 42K", _CMP_M330, _wk), f"Cmp 42K ({_wk}w)") or {}
+    _longs = [d for v in _w.values() for _s, d, _p in v
+              if _s in R15_LR_SUBS and d >= 185]
+    check(f"Cmp 42K {_wk}w @3:30: >=2 long runs >=185min (~32km, #197)",
+          len(_longs) >= 2, f"qualifying={sorted(_longs)}", full=True)
+
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")
 print(f"Failed: {len(failed)}")
