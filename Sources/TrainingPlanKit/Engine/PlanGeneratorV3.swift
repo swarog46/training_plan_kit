@@ -745,11 +745,15 @@ class PlanGeneratorV3 {
                 // the 60min intro rung so 2 slots still climb 70→90 (#198, R16).
                 if totalWeeks <= 14 { ladder = Array(ladder.dropFirst()) }
             } else {
-                // Non-competitive: 105 is the Cmp signature rung — Int/Adv cap at
-                // 90 (Pfitz 18/55-65 class). Long plans (≥28w) reach only 2
-                // rehearsal slots, so drop the 60 intro to still deliver 90 (#201).
+                // Non-competitive: 105 is the Cmp signature rung — cap at 90
+                // (Pfitz 18/55-65 class). Long plans (≥28w) reach only 2
+                // rehearsal slots, so Int/Adv drop the 60 intro to still deliver
+                // 90 (#201). Beginners keep the gentle 60 at every length (#98).
                 ladder = Array(ladder.prefix(3))
-                if totalWeeks >= 28 { ladder = Array(ladder.dropFirst()) }
+                let level = config.runnerLevel
+                if totalWeeks >= 28, level == .intermediate || level == .advanced {
+                    ladder = Array(ladder.dropFirst())
+                }
             }
         }
         let ladderTarget = ladder[min(priorRehearsalCount, ladder.count - 1)]
