@@ -606,7 +606,14 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // Fill with easy runs; 21K+ prefers a longer "medium-long" first fill
                 // so weekly volume grows at 4+ days.
                 let isLongRace = config.distance >= 21000
-                let isFirstFill = !weekWorkouts.contains { $0.type.contains("fill") }
+                let fillCount = weekWorkouts.filter { $0.type.contains("fill") }.count
+                let isFirstFill = fillCount == 0
+                // Pfitz signature (#158 phase 2): competitive half/marathon build
+                // weeks carry TWO medium-longs (Tue+Fri pattern). Second one only
+                // on non-deload build weeks; both draw from the real mediumLong
+                // pool so the top-up can stretch them past the easy cap.
+                let isBuildWeek = (phase == .base || phase == .speed || phase == .peak) && !isDeloading
+                let isSecondMLR = isLongRace && isBuildWeek && fillCount == 1
                 // Drop the Pfitz-MLR sizing in TAPER/RACE — tapering means shorter
                 // easies all around (Pfitz race-week easies are 30-45min, not 80-110).
                 let isTaperingDown = phase == .taper || phase == .race
@@ -614,7 +621,9 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     if isTaperingDown {
                         return phase == .race ? 30 : 40
                     } else if isLongRace && isFirstFill {
-                        return min(90, max(60, Int(targetDuration * 0.30)))
+                        return min(110, max(60, Int(targetDuration * 0.30)))
+                    } else if isSecondMLR {
+                        return min(95, max(60, Int(targetDuration * 0.26)))
                     } else {
                         return min(90, max(60, Int(targetDuration * 0.25)))
                     }
@@ -627,7 +636,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 if isTaperingDown {
                     easyTargetLoad = targetLoad * 0.08
                 } else {
-                    easyTargetLoad = targetLoad * (isLongRace && isFirstFill ? mlrLoadMult : fillLoadMult)
+                    easyTargetLoad = targetLoad * ((isLongRace && isFirstFill) ? mlrLoadMult
+                                                    : isSecondMLR ? 0.29 : fillLoadMult)
                 }
                 // Hard-cap easy duration when tapering so the selector can't pick a
                 // 60-90min MLR even when load scoring would prefer it.
@@ -636,11 +646,16 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     let taperCapMins = phase == .race ? 35 : 50
                     easyPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                         .filter { $0.duration <= taperCapMins * 60 }
+                } else if (isLongRace && isFirstFill && isBuildWeek) || isSecondMLR {
+                    // MLR fills pick real mediumLong templates when available —
+                    // the easy pool's subtype would pin them at the easy cap.
+                    let mlrPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.mediumLong])
+                    easyPool = mlrPool.isEmpty ? easyRuns : mlrPool
                 } else {
                     easyPool = easyRuns
                 }
                 if let easy = selectWorkoutByTargetV3(workouts: easyPool, targetLoad: easyTargetLoad, targetDuration: easyTargetMin, usedIds: &usedIds, isMaintenance: false) {
-                    weekWorkouts.append((isLongRace && isFirstFill ? "medium_long_fill" : "easy_fill", easy))
+                    weekWorkouts.append(((isLongRace && isFirstFill) || isSecondMLR ? "medium_long_fill" : "easy_fill", easy))
                 } else {
                     break  // Catalog exhausted
                 }
