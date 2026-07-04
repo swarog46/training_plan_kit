@@ -509,3 +509,18 @@ Expected shape now: LRs like 200/210/190/170 across W12-15, peaks
 - ⚠️ test_plans.py fail-set drifts with RUN DATE (deload↔week alignment):
   14 fails 07-03 vs 16 fails 07-04 at the SAME commit. Always compare
   same-day HEAD vs change; never a stored baseline file.
+
+## Round 16 (2026-07-04) — 5 sonnet agents, Cmp deep-dive
+Beg PASS (1 cosmetic tick P2). Catalog Z1→noRange sweep noop CONFIRMED
+byte-identical vs pre-fix binaries; zone map 716/716 clean.
+- **Cmp 42K NOT Pfitz 18/70-class on dose** (#158): peaks 472-538min vs
+  660-720 (-18-34%) at every length; weekly TARGETS are fantasy (1496 vs 469
+  rendered — peakBoost×amplifier on literal minutes); 12w peak < BASE W2;
+  36w SPEED > PEAK. Structure (taper/LT/MLR/variety) IS Pfitz-faithful.
+- Cmp slower goals (3:15-3:45) get 0-1 runs ≥32km (#197); MP ladder caps at
+  90min, 12w stalls at 70 (#198).
+- Tick discipline: caps leak up, floors leak down — ceil floors, floor caps (#199).
+- Rest(647, flat-easy jogs) vs Recovery(840, slower) split = 14-month accident;
+  decision pending (#200).
+- Int long lengths: 30w drops the 90min rung; 14w mono-Intervals (#201).
+- Adv shipping 24/30w peak weeks stack past band (#202).
