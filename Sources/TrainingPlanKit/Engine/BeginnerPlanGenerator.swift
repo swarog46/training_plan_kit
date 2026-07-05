@@ -661,9 +661,22 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     .min(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration })
                 if let i = easySlot {
                     let targetMin = Int(weekWorkouts[i].workout.duration / 60)
-                    if let strides = begStridesPool.min(by: {
-                        abs(Int($0.duration / 60) - targetMin) < abs(Int($1.duration / 60) - targetMin)
-                    }) {
+                    // Rotate the strides variant by plan week so consecutive weeks
+                    // never render identical — Acc tiers with a flat early duration
+                    // target used to pick the same 3×15s W1-W3 (B, 2026-07-05).
+                    // Rotate only WITHIN ±8min of the target so the week's volume is
+                    // preserved (different rep scheme, same duration band); fall back
+                    // to closest-duration when the band has no real choice.
+                    let near = begStridesPool
+                        .filter { abs(Int($0.duration / 60) - targetMin) <= 8 && stridesRepCount($0) >= 4 }
+                        .reduce(into: [String: Workout]()) { d, w in if d[w.title] == nil { d[w.title] = w } }
+                        .values.sorted { $0.trainingLoad < $1.trainingLoad }
+                    let strides = near.count >= 2
+                        ? near[week % near.count]
+                        : begStridesPool.min(by: {
+                            abs(Int($0.duration / 60) - targetMin) < abs(Int($1.duration / 60) - targetMin)
+                          })
+                    if let strides = strides {
                         weekWorkouts[i] = ("strides", strides)
                     }
                 }

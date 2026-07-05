@@ -4185,6 +4185,30 @@ for _time in [1980, 1620]:
         check(f"Beg 42K {_wk}w t{_time}: peak long-run run-up not a deep valley",
               _bad is None, f"valley(peakwk,prev,dip,peak)={_bad} curve={_curve}", full=True)
 
+# === Beg strides variety (B, 2026-07-05) ==================================
+# Acc tiers with a flat early duration target used to render identical strides
+# (3x15s) W1-W3. The fill now rotates the rep scheme by plan week within a
+# duration band. Guard: no 3 consecutive identical strides titles in a Beg plan.
+section("Beg strides: no 3 consecutive identical")
+def _beg_strides_titles(label, anchors, weeks):
+    env=os.environ.copy(); env.update(anchors); env["WEEKS"]=str(weeks)
+    out=subprocess.run([PLAN_DEBUG,"dump",label],capture_output=True,text=True,env=env).stdout
+    blocks=0; seq=[]
+    for ln in out.splitlines():
+        if re.match(r"^W\s*1 ",ln):
+            blocks+=1
+            if blocks==2: break
+        m=re.search(r"(Easy \+ Strides \([^)]*\))",ln)
+        if m: seq.append(m.group(1))
+    return seq
+for _lab,_t,_lvl,_tgt,_w in [("Beg 10K",1800,"beg",10000,12),("Acc Beg 10K",1800,"beg",10000,12),
+                             ("Beg 5K",1800,"beg",5000,9)]:
+    _a=_progress_anchors(5000,_t,_lvl,_tgt,_w)
+    _seq=_beg_strides_titles(_lab,_a,_w)
+    _run=[(i,_seq[i]) for i in range(2,len(_seq)) if _seq[i]==_seq[i-1]==_seq[i-2]]
+    check(f"{_lab} {_w}w: no 3 consecutive identical strides",
+          not _run and len(_seq)>=3, f"triples={_run[:2]} seq={_seq}", full=True)
+
 # === C1 progression-spread guard (regression 2026-07-05) ===================
 # Deload weeks were picking Z3→Z4 progression templates whose 2 WORK segments
 # collapse to <10s/km when Z3≈Z4 (HM fitness). Fix: deload progressions prefer
