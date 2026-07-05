@@ -687,7 +687,11 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     }
                     let near: [Workout] = perTitle
                         .filter { abs(Int($0.duration / 60) - targetMin) <= 8 }
-                        .sorted { $0.trainingLoad < $1.trainingLoad }
+                        // Title tiebreaker → DETERMINISTIC order: equal-load strides
+                        // (same duration, different pickup length) otherwise sort
+                        // unstably (Dictionary.values order is random), flaking the
+                        // week % variants pick and the generated plan run-to-run.
+                        .sorted { ($0.trainingLoad, $0.title) < ($1.trainingLoad, $1.title) }
                     let strides = near.count >= 2
                         ? near[week % near.count]
                         : begStridesPool.min(by: {
