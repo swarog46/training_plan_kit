@@ -4185,6 +4185,45 @@ for _time in [1980, 1620]:
         check(f"Beg 42K {_wk}w t{_time}: peak long-run run-up not a deep valley",
               _bad is None, f"valley(peakwk,prev,dip,peak)={_bad} curve={_curve}", full=True)
 
+# === C1 progression-spread guard (regression 2026-07-05) ===================
+# Deload weeks were picking Z3→Z4 progression templates whose 2 WORK segments
+# collapse to <10s/km when Z3≈Z4 (HM fitness). Fix: deload progressions prefer
+# easy-start (Z2→Z3). Guard: every rendered Progression Run's work-body segments
+# (WU/CD excluded) must span >=15s/km. Covers the 4 sites that regressed.
+section("C1: Progression Run work-body spread >=15s/km")
+def _prog_spreads(label, anchors, weeks):
+    env=os.environ.copy(); env.update(anchors); env["WEEKS"]=str(weeks)
+    out=subprocess.run([PLAN_DEBUG,"pacedump",label],capture_output=True,text=True,env=env).stdout
+    blocks=0; worst=None; rows=[]
+    for ln in out.splitlines():
+        if re.match(r"^W\s*1:",ln):
+            blocks+=1
+            if blocks==2: break
+        if "\u21b3" in ln and "progression" not in ln.lower():
+            pass
+    # collect the ↳ line that FOLLOWS a "Progression Run" header
+    blocks=0; pend=False
+    for ln in out.splitlines():
+        if re.match(r"^W\s*1:",ln):
+            blocks+=1
+            if blocks==2: break
+        if "Progression Run" in ln: pend=True; continue
+        if pend and "\u21b3" in ln:
+            segs=re.findall(r"(WU |CD )?\d+:\d\d @ (\d+):(\d\d)/km",ln)
+            work=[int(m)*60+int(s) for pfx,m,s in segs if not pfx]  # exclude WU/CD
+            if len(set(work))>=1 and work:
+                spread=max(work)-min(work)
+                rows.append(spread)
+            pend=False
+    return rows
+for _lab,_t,_lvl,_tgt,_w in [("Int 21K",1440,"int",21097,18),("Beg 21K",1800,"beg",21097,18),
+                             ("Int 42K",1440,"int",42195,24),("Int 42K",1440,"int",42195,30)]:
+    _a=_progress_anchors(_tgt if False else 5000,_t,_lvl,_tgt,_w)
+    _sp=_prog_spreads(_lab,_a,_w)
+    _bad=[x for x in _sp if x<15]
+    check(f"{_lab} {_w}w: all Progression Runs spread >=15s/km",
+          not _bad and len(_sp)>=1, f"spreads={_sp} under15={_bad}", full=True)
+
 # === R18: long-variant scheduling guards (#201 rung, #202 Adv cap) =======
 #
 # 2026-07-04: Int/Adv 42K >=28w reach only 2 rehearsal slots, so the ladder

@@ -560,6 +560,18 @@ class PlanGeneratorV3 {
         w.subtype != .strides && hasZone5(w)
     }
 
+    // A progression run must build from EASY — first work segment Z2. Z3→Z4
+    // templates (moderate→threshold) collapse to <10s/km when Z3≈Z4 (HM fitness),
+    // failing the C1 spread invariant. Deload progressions prefer easy-start ones:
+    // gentler for a recovery week AND a guaranteed easy→fast spread.
+    func progressionStartsEasy(_ w: Workout) -> Bool {
+        for iv in w.intervals where iv.type == .work {
+            if case .heartRateZone(let z) = iv.target { return z <= 2 }
+            return false
+        }
+        return false
+    }
+
     // #189: displayed BASE weeks 1-2 must open Z5-free (onboarding). Two gaps let
     // one through: (a) paths that append the lead quality directly bypass the
     // in-pool strip, and (b) front-trimmed plans generate full-length then drop
@@ -920,8 +932,10 @@ class PlanGeneratorV3 {
             if let heaviest = qualityCands.max(by: { $0.element.workout.trainingLoad < $1.element.workout.trainingLoad }) {
                 let targetMins = Int(heaviest.element.workout.duration / 60)
                 let soleQuality = qualityCands.count == 1
-                let progressionPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+                let allProg = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
                     .filter { abs(Int($0.duration / 60) - targetMins) <= 12 }
+                let easyStartProg = allProg.filter { progressionStartsEasy($0) }
+                let progressionPool = easyStartProg.isEmpty ? allProg : easyStartProg
                 if let prog = progressionPool.min(by: {
                     abs(Int($0.duration / 60) - targetMins) < abs(Int($1.duration / 60) - targetMins)
                 }) {
@@ -985,7 +999,9 @@ class PlanGeneratorV3 {
             // progression always preserves a quality body, so the floor is never broken.
             // VO2 blocks protect the (already-reduced) Z5 dose from this pass.
             let qIdxs = week.indices.filter { isQualityBody(week[$0].workout) && !protectedFromLighten(week[$0].workout) }
-            let progressionPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+            let allProg2 = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+            let easyStart2 = allProg2.filter { progressionStartsEasy($0) }
+            let progressionPool = easyStart2.isEmpty ? allProg2 : easyStart2
             var lightenedQuality = false
             for qIdx in qIdxs.sorted(by: { week[$0].workout.trainingLoad > week[$1].workout.trainingLoad }) {
                 let q = week[qIdx].workout

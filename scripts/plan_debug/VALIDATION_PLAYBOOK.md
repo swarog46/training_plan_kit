@@ -594,3 +594,17 @@ rendering 21s reps) — cosmetic, unfixed.
   easy. Wired Beg only (Int/Adv W1 already clean). Test Z5-W1/W1-2 now PASS
   (12→10 fails). ⚠️ dump header `[base 3/4]` is the DISPLAYED phase position —
   use it, not the generation weekInPhase, to reason about front-trimmed W1.
+
+## Round 21 (2026-07-05) — C1 progression-collapse fix (agent-found regression)
+Per-plan agent sweep found the C1 "Progression Run must spread ≥15s/km" invariant
+REGRESSED on deload weeks: Int 21K 18w, Beg 21K 18w, Int 42K 24w/30w rendered a
+`deload_progression` whose 2 WORK segments sat 3-13s/km apart. Root: progression
+templates split into Z2→Z3 (easy→MP, wide spread) and Z3→Z4 (MP→threshold, which
+collapse when Z3≈Z4 at HM/short fitness); the deload reshaping picked by DURATION
+only, zone-blind, so it grabbed Z3→Z4 collapsers. Fix: `progressionStartsEasy()`
+(first work seg Z2) — both deload progression selections now PREFER easy-start
+(gentler for a recovery week AND guaranteed spread), fallback to all if none.
+Now 42-70s spread everywhere. New automated guard "C1: Progression Run work-body
+spread ≥15s/km" (excludes WU/CD segs) pins the 4 sites — verified non-vacuous
+(pre-fix binary fails 3-13s). Matrices: 62 progression lines + ≤3 MLR fills
+(within day-cap), non-Cmp only. 60 swift, 10 python (0 new).
