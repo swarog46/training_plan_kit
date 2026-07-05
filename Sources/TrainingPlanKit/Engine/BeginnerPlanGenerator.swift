@@ -144,9 +144,11 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 // specific sharpening tools yet; PEAK sharpens — race-specific
                 // work leads when the pool has it. SPEED keeps the full mix.
                 if phase == .base, !config.isVO2Max {
-                    // Onboarding weeks (1-2) additionally stay Z5-free — the
-                    // flavor filter must not promote reps into week 1.
-                    if weekInPhase <= 1 {
+                    // Onboarding weeks + any BASE deload stay Z5-free — the flavor
+                    // filter must not promote reps into week 1, and a deload
+                    // (recovery) week must never carry hard VO2 (was: first
+                    // Intervals landing on the W3 base deload, z5=6, spiking it).
+                    if weekInPhase <= 1 || isDeloading {
                         let noZ5 = result.filter { !isRealZ5($0) }
                         if !noZ5.isEmpty { result = noZ5 }
                     }
@@ -230,13 +232,17 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             if config.profile.startsIntervalsInBase && phase == .base {
                 shouldAddIntervals = true // fitter tiers start intervals in Base
             }
-            // R8: quality must appear by W3, not after a 5-week aerobic-only
-            // opening — from the 3rd BASE week a beginner takes one light quality
-            // session (the base-phase minute floor keeps it a ~25min dose).
-            // Half/marathon only: the 2-day 5K/10K beginner weeks have no room
-            // (quality would crowd out the easy runs entirely).
-            if phase == .base && weekInPhase >= 2 && week >= 2 && config.distance >= 21000
-                && config.trainingDays.count >= 3 {
+            // Quality appears from BASE W2 (was W3): one week of pure onboarding
+            // is enough for the 3-4 day half/marathon beginner. The W2 pool is
+            // still Z5-stripped (weekInPhase<=1 below), so this first quality is a
+            // gentle Z4 threshold/hills, not VO2 — and it lands BEFORE the W3 base
+            // deload instead of spiking it (was: first Intervals on the deload).
+            // Half/marathon only: 2-day 5K/10K weeks have no room for it.
+            // Gate on the DISPLAYED week (week - weeksToTrim), not generation week:
+            // a front-trimmed plan's displayed W1 maps to a mid-base generation
+            // week, and must stay pure onboarding (else quality lands on W1).
+            if phase == .base && weekInPhase >= 1 && (week - weeksToTrim) >= 1
+                && config.distance >= 21000 && config.trainingDays.count >= 3 {
                 shouldAddIntervals = true
             }
             // VO2 block: VO2 IS the point — carry the Z5 dose into BASE too, but skip

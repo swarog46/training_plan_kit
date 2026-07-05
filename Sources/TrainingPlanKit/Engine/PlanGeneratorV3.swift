@@ -582,7 +582,12 @@ class PlanGeneratorV3 {
     // the closest-duration easy run. Non-VO2 only (VO2 carries Z5 from week 1).
     func stripOnboardingZ5(_ weekWorkouts: inout [(type: String, workout: Workout)], week: Int, phase: TrainingPhase) {
         let displayedWeek = week - weeksToTrim
-        guard !config.isVO2Max, phase == .base, displayedWeek >= 0, displayedWeek <= 1 else { return }
+        // Displayed W1 opens Z5-free in ANY phase — a heavily front-trimmed plan
+        // can open on a SPEED week (BASE fully trimmed), which the base-only gate
+        // used to miss. Displayed W2 stays Z5-free only in BASE (onboarding).
+        let isW1 = displayedWeek == 0
+        let isBaseW2 = phase == .base && displayedWeek == 1
+        guard !config.isVO2Max, isW1 || isBaseW2 else { return }
         let pool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy])
             .filter { !isRealZ5($0) }
         guard !pool.isEmpty else { return }

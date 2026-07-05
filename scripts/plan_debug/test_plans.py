@@ -4185,6 +4185,36 @@ for _time in [1980, 1620]:
         check(f"Beg 42K {_wk}w t{_time}: peak long-run run-up not a deep valley",
               _bad is None, f"valley(peakwk,prev,dip,peak)={_bad} curve={_curve}", full=True)
 
+# === Beg onboarding W2 + deload Z5-free (2026-07-05) ======================
+# Onboarding shortened to W1: half/marathon beginners take a gentle Z4 quality
+# from displayed W2 (was W3, which was the base deload → hard VO2 on a recovery
+# week). Guard: Beg 21K/42K W2 carries a quality session, and no BASE deload
+# week carries real Z5.
+section("Beg onboarding: W2 quality + base deloads Z5-free")
+def _beg_w2_and_deloads(label, anchors, weeks):
+    env=os.environ.copy(); env.update(anchors); env["WEEKS"]=str(weeks)
+    out=subprocess.run([PLAN_DEBUG,"dump",label],capture_output=True,text=True,env=env).stdout
+    blocks=0; cur=0; ph=""; dl=False; w2q=False; bad=[]
+    for ln in out.splitlines():
+        m=re.match(r"^W\s*(\d+)\s+\[(\w+)[^\]]*\]",ln)
+        if m:
+            cur=int(m.group(1)); ph=m.group(2); dl="deload" in ln.lower()
+            if cur==1 and blocks==0: pass
+            if cur==1:
+                blocks+=1
+                if blocks==2: break
+            continue
+        mm=re.search(r"z5=(\d+)",ln)
+        z5=mm and int(mm.group(1))>=3 and "strides" not in ln
+        if cur==2 and re.search(r"\[(threshold|intervals|hillRepeats|ladderIntervals)/",ln): w2q=True
+        if ph=="base" and dl and z5: bad.append(cur)
+    return w2q, bad
+for _lab,_tg,_w in [("Beg 21K",21097,14),("Beg 42K",42195,20),("Beg 42K",42195,27)]:
+    _a=_progress_anchors(5000,1800,"beg",_tg,_w)
+    _q,_bad=_beg_w2_and_deloads(_lab,_a,_w)
+    check(f"{_lab} {_w}w: W2 has quality + no Z5 on base deload",
+          _q and not _bad, f"w2_quality={_q} z5_deload_weeks={_bad}", full=True)
+
 # === Beg strides variety (B, 2026-07-05) ==================================
 # Acc tiers with a flat early duration target used to render identical strides
 # (3x15s) W1-W3. The fill now rotates the rep scheme by plan week within a
