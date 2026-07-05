@@ -1495,7 +1495,15 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
     for i in aeroIdx {
         let w = weekWorkouts[i].workout
         var raw = Double(w.duration) * factor
-        if let lr = longestLR { raw = min(raw, lr - 300) }
+        if let lr = longestLR {
+            raw = min(raw, lr - 300)
+        } else {
+            // No long run in the week (e.g. Adv 5K PEAK, shouldAddLong=false) —
+            // without an LR to cap against, a mediumLong fill ballooned to 120min
+            // (+38% week spike). Cap all fills at the easy/GA ceiling so none
+            // becomes a de-facto long run.
+            raw = min(raw, Double((isCompetitive ? 100 : 75) * 60))
+        }
         // A plain "Easy Run" stays an easy run — 75min ceiling (R13 Int
         // finding: an easy-role fill rendered 85min and read as a mislabeled
         // medium-long). MLR-tagged runs may go longer.
