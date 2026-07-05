@@ -703,6 +703,37 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
 
             topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
                                  isDeloading: isDeloading, phase: phase)
+
+            // #202: Adv marathon peak-week ceiling (~Pfitz 18/55-65 band tops out
+            // ~420). Long variants stacked rehearsal+MLR+rep to 430-455 — shrink
+            // the largest aerobic run (never a quality session) back under.
+            if config.distance >= 42195 {
+                let capMins = 430
+                func weekMins() -> Int { weekWorkouts.reduce(0) { $0 + Int($1.workout.duration) / 60 } }
+                let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]
+                // Fallback victims for weeks with no easy/MLR at all (R18 P1:
+                // 22w W19 = 2×MP + steadyLong + progression + strides, 449min,
+                // untrimmable) — shrink progression/strides before giving up.
+                let fallback: Set<WorkoutSubtype> = [.progression, .strides]
+                var guardCount = 0
+                while weekMins() > capMins, guardCount < 10 {
+                    guardCount += 1
+                    let primary = weekWorkouts.indices
+                        .filter { trimmable.contains(weekWorkouts[$0].workout.subtype) }
+                    let pool = primary.isEmpty
+                        ? weekWorkouts.indices.filter { fallback.contains(weekWorkouts[$0].workout.subtype) }
+                        : primary
+                    guard let idx = pool
+                        .max(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration })
+                    else { break }
+                    let w = weekWorkouts[idx].workout
+                    let overshoot = weekMins() - capMins
+                    let newMins = max(45, Int(w.duration) / 60 - max(5, min(overshoot, 30)))
+                    if newMins >= Int(w.duration) / 60 { break }
+                    weekWorkouts[idx].workout = rescaledV3(w, toSeconds: Int64(newMins * 60))
+                }
+            }
+
             enforceLongOverMediumLongV3(&weekWorkouts)
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }
             workoutsByWeek[week] = weekWorkouts

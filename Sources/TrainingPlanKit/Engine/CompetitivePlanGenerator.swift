@@ -29,7 +29,34 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             prevPhase = phase
             
             // Calculate targets
-            let rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
+            var rawTargets = calculateWeeklyTargetsV3(weekInPlan: week, weekInPhase: weekInPhase, phase: phase, phaseDurations: phaseDurations, config: config)
+            // #158: Cmp duration targets in PHYSICAL minutes. The boost×amplifier
+            // model produced 1496-min "targets" the ceilings ignored (rendered
+            // 469; Pfitz 18/70 peaks 660-720). Fixed per-distance peak — length
+            // buys more base weeks, never a lower peak — with a phase-anchored
+            // ramp; PEAK > SPEED > BASE by construction at every length, which
+            // also cures the 12w peak<base and 36w speed>peak inversions (R16).
+            if config.distance >= 21097 {
+                // Duration-native peak: Pfitz 18/70 is ~70mi; in minutes that's
+                // pace-dependent (~590min @3:00 goal, ~660 @3:30). Generation is
+                // pace-blind, so 620 targets the 3:15 mid-band; render paces make
+                // faster runners' weeks shorter in minutes, same in km — correct.
+                let peakMin: Double = config.distance == 42195 ? 660 : 570
+                let p = rawTargets.phaseProgression
+                let frac: Double
+                switch phase {
+                case .base:  frac = 0.72 + 0.12 * p
+                case .speed: frac = 0.84 + 0.08 * p
+                case .peak:  frac = 0.92 + 0.08 * p
+                case .taper: frac = 0.80 - 0.25 * p
+                case .race:  frac = 0.40
+                }
+                var dur = peakMin * frac
+                if rawTargets.isDeloading { dur *= 0.85 }
+                rawTargets = WeeklyTargets(load: rawTargets.load, duration: dur,
+                                           isDeloading: rawTargets.isDeloading,
+                                           phaseProgression: p)
+            }
             // ACWR ramp cap (DURATION): cap volume at 1.25× the recent 3-week max,
             // scaling load with the cut. See BeginnerPlanGenerator for the rationale.
             let targets: WeeklyTargets = {
@@ -366,6 +393,25 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
 
             // PEAK weeks: open the long-run pool to the distance-matched race
             // rehearsal (eligibleDistances pins each to one race). See Beginner.
+            // R18 P1: a rung suppressed by a deload on the LAST peak week used to
+            // die at the phase boundary (18w half: 5-wk PEAK with TT + 2 deloads
+            // delivered 20/25, never 30). Spill it into the first taper week —
+            // Pfitz runs the last race-pace session 10-14 days out anyway.
+            // (Taper W1 always carries the deload label — that label means "no new
+            // stressor" in BUILD; here it must not veto the final race-pace touch.)
+            // Half only, and only if the 20/25/30 ladder is incomplete — plans
+            // that finished in PEAK must not grow a junk 4th rung in taper.
+            let spillRehearsal = phase == .taper && weekInPhase == 0 && pendingRehearsalSlot
+                && config.distance == 21097
+                && priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur) < 3
+            if spillRehearsal {
+                pendingRehearsalSlot = false
+                for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
+                where rehearsal.eligibleDistances.contains(config.distance) {
+                    longRunTypes.append(rehearsal)
+                }
+                longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
+            }
             if phase == .peak {
                 for rehearsal: WorkoutSubtype in [.raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K]
                 where rehearsal.eligibleDistances.contains(config.distance) {
@@ -443,7 +489,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // peak weeks (60→75→90) so it doesn't park on the largest rung.
                 if phase == .peak {
                     pool = rampRehearsalMPSegment(pool, peakWeekIndex: week - baseDur - speedDur, peakDur: peakDur,
-                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false, isDeloading: isDeloading)
+                        priorRehearsalCount: priorPeakRehearsalCount(beforeWeek: week, baseDur: baseDur, speedDur: speedDur), force: true, windowGate: false,
+                        isDeloading: isDeloading && !spillRehearsal)
                 }
 
                 // Progressive long-run target by distance+level+phase from the config's
@@ -569,7 +616,10 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             if phase == .base && weekWorkouts.count < maxWorkoutsPerWeek {
                 // Competitive: add a medium-long easy (60-90min) for Pfitz-style
                 // weekly volume.
-                if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: false) {
+                // Plain easy only — the MLR slots own .mediumLong (R19 P1: this
+                // pre-fill slot was the last one still leaking a 3rd MLR in BASE).
+                let plainEasy = easyRuns.filter { $0.subtype != .mediumLong }
+                if let easy = selectWorkoutByTargetV3(workouts: plainEasy, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, isMaintenance: false) {
                     weekWorkouts.append(("easy", easy))
                 }
             }
@@ -579,7 +629,14 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // Fill with easy runs; 21K+ prefers a longer "medium-long" first fill
                 // so weekly volume grows at 4+ days.
                 let isLongRace = config.distance >= 21000
-                let isFirstFill = !weekWorkouts.contains { $0.type.contains("fill") }
+                let fillCount = weekWorkouts.filter { $0.type.contains("fill") }.count
+                let isFirstFill = fillCount == 0
+                // Pfitz signature (#158 phase 2): a core MLR already exists
+                // pre-fill; upgrading the FIRST fill to the mediumLong pool makes
+                // two per build week (Tue+Fri) — the second fill stays easy
+                // (three MLRs was the accidental modal case, R17 P2-2).
+                let isBuildWeek = (phase == .base || phase == .speed || phase == .peak) && !isDeloading
+                let isSecondMLR = false
                 // Drop the Pfitz-MLR sizing in TAPER/RACE — tapering means shorter
                 // easies all around (Pfitz race-week easies are 30-45min, not 80-110).
                 let isTaperingDown = phase == .taper || phase == .race
@@ -587,7 +644,9 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     if isTaperingDown {
                         return phase == .race ? 30 : 40
                     } else if isLongRace && isFirstFill {
-                        return min(90, max(60, Int(targetDuration * 0.30)))
+                        return min(110, max(60, Int(targetDuration * 0.30)))
+                    } else if isSecondMLR {
+                        return min(95, max(60, Int(targetDuration * 0.26)))
                     } else {
                         return min(90, max(60, Int(targetDuration * 0.25)))
                     }
@@ -600,7 +659,8 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 if isTaperingDown {
                     easyTargetLoad = targetLoad * 0.08
                 } else {
-                    easyTargetLoad = targetLoad * (isLongRace && isFirstFill ? mlrLoadMult : fillLoadMult)
+                    easyTargetLoad = targetLoad * ((isLongRace && isFirstFill) ? mlrLoadMult
+                                                    : isSecondMLR ? 0.29 : fillLoadMult)
                 }
                 // Hard-cap easy duration when tapering so the selector can't pick a
                 // 60-90min MLR even when load scoring would prefer it.
@@ -609,11 +669,19 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     let taperCapMins = phase == .race ? 35 : 50
                     easyPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: easySubtypes)
                         .filter { $0.duration <= taperCapMins * 60 }
+                } else if (isLongRace && isFirstFill && isBuildWeek) || isSecondMLR {
+                    // MLR fills pick real mediumLong templates when available —
+                    // the easy pool's subtype would pin them at the easy cap.
+                    let mlrPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.mediumLong])
+                    easyPool = mlrPool.isEmpty ? easyRuns : mlrPool
                 } else {
-                    easyPool = easyRuns
+                    // Generic fill: plain easy only — mediumLong stays exclusive
+                    // to the two labeled MLR slots (R17 P2-2: 3-MLR weeks were
+                    // the modal case because easySubtypes includes .mediumLong).
+                    easyPool = easyRuns.filter { $0.subtype != .mediumLong }
                 }
                 if let easy = selectWorkoutByTargetV3(workouts: easyPool, targetLoad: easyTargetLoad, targetDuration: easyTargetMin, usedIds: &usedIds, isMaintenance: false) {
-                    weekWorkouts.append((isLongRace && isFirstFill ? "medium_long_fill" : "easy_fill", easy))
+                    weekWorkouts.append(((isLongRace && isFirstFill) || isSecondMLR ? "medium_long_fill" : "easy_fill", easy))
                 } else {
                     break  // Catalog exhausted
                 }
@@ -634,28 +702,52 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 }
             }
 
-            // Peak-volume soft cap (marathon Adv/Cmp): shed excess from the largest
-            // aerobic FILL only, freeing a recovery day. See BeginnerPlanGenerator.
-            let weeklyCapMinutes: Int = {
-                guard config.distance >= 42195 else { return .max }
-                return 540   // Cmp marathon ~9.0h ceiling
-            }()
-            if weeklyCapMinutes != .max {
-                let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]
-                func weekMins() -> Int { weekWorkouts.reduce(0) { $0 + Int($1.workout.duration) / 60 } }
-                // Drop the largest aerobic fill until under the cap (keep >= 4
-                // sessions so a 6-day peak week never collapses below a real week).
-                while weekMins() > weeklyCapMinutes && weekWorkouts.count > 4 {
-                    let cands = weekWorkouts.enumerated().filter { trimmable.contains($0.element.workout.subtype) }
-                    guard let victim = cands.max(by: { Int($0.element.workout.duration) < Int($1.element.workout.duration) }) else { break }
-                    weekWorkouts.remove(at: victim.offset)
-                }
-            }
-
             // Recovery-week reshaping: remove real load on deload weeks (drop a
             // session at >=5/wk, else swap the heaviest quality for easy/progression).
             // Runs last so it sees the fully-assembled week. BUILD phases only.
             applyDeloadReshaping(&weekWorkouts, weekIndex: week, phase: phase, isDeloading: isDeloading)
+
+            // #158: Cmp weeks now top up to the PHYSICAL duration target like
+            // every other level — without this, the Pfitz-class targets were
+            // aspirational (selection composed ~470-530min weeks regardless).
+            topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
+                                 isDeloading: isDeloading, phase: phase,
+                                 isCompetitive: true)
+
+            // Peak-volume cap — AFTER topUp (R17 P1-2: the old pre-topUp trim was
+            // re-inflated by the 2.0× stretch, 52 breaches up to +24%). Tracks the
+            // physical peak target instead of a stale 540. Trims by SHRINKING the
+            // largest aerobic run (deleting whole MLRs was eating the second MLR).
+            let weeklyCapMinutes: Int = {
+                guard config.distance >= 21097 else { return .max }
+                let peakMin = config.distance == 42195 ? 660.0 : 570.0
+                // Phase-scaled: the cap enforces the curve's own shape top-side,
+                // so BASE can never out-deliver PEAK (12w did, R17 follow-up).
+                let phaseScale: Double
+                switch phase {
+                case .base:  phaseScale = 0.88
+                case .speed: phaseScale = 0.97
+                default:     phaseScale = 1.05
+                }
+                return Int(peakMin * phaseScale)
+            }()
+            if weeklyCapMinutes != .max {
+                let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]
+                func weekMins() -> Int { weekWorkouts.reduce(0) { $0 + Int($1.workout.duration) / 60 } }
+                var guardCount = 0
+                while weekMins() > weeklyCapMinutes, guardCount < 12 {
+                    guardCount += 1
+                    guard let idx = weekWorkouts.indices
+                        .filter({ trimmable.contains(weekWorkouts[$0].workout.subtype) })
+                        .max(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration })
+                    else { break }
+                    let w = weekWorkouts[idx].workout
+                    let overshoot = weekMins() - weeklyCapMinutes
+                    let newMins = max(45, Int(w.duration) / 60 - max(5, min(overshoot, 30)))
+                    if newMins >= Int(w.duration) / 60 { break }
+                    weekWorkouts[idx].workout = rescaledV3(w, toSeconds: Int64(newMins * 60))
+                }
+            }
 
             enforceLongOverMediumLongV3(&weekWorkouts)
             lastWeekHadZ5 = weekWorkouts.contains { isRealZ5($0.workout) }

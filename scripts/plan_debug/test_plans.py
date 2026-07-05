@@ -325,7 +325,7 @@ section("Marathon long-run peak durations match references")
 ref = [
     ("Beg 42K (long, 22w)", "Beg 42K (long", 330, 450, 170, "Higdon Novice 1: 180, capped ~190"),
     ("Int 42K (long, 22w)", "Int 42K (long", 300, 400, 180, "Pfitz 18/55: 195"),
-    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 175, "floor-ramp built peak ~180; capped ~195"),
+    ("Adv 42K (long, 22w)", "Adv 42K (long", 280, 380, 170, "leak-free 33km cap ≈170-175 at Adv pace (#199, 2026-07-04)"),
     # Pace-aware km-clamp (PaceZoneConverter) caps the competitive marathon long
     # run at 38km — at 5:00/km easy that's ~190min, which already exceeds Pfitz
     # 18/85's 22mi (~35km/177min). Old 200min floor was pace-blind. Govern by km.
@@ -877,9 +877,11 @@ CMP_SNAPSHOTS = [
     ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 9790, 124, 210),
     # Additional bump 12002 → 12123 from the alternating-week mediumLong
     # forcing — Cmp 42K build picks 90-100min ML on even weeks where
-    # selector previously picked 80min easy. 2026-06-16: 12123→11809,
+    # selector previously picked 80min easy. 2026-06-16: 12123→11809.
+    # 2026-07-04: 11809→12218 (#158 dose lift) → 11953 (R17 fixes same day:
+    # phase-scaled caps, single MLR fill [core+1=Pfitz 2], 60010 duration fix).
     # 165→162 sessions from the same peak-volume cap.
-    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 11809, 162, 200),
+    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 11953, 162, 200),
 ]
 for header, fil, rp, ep, exp_total, exp_sess, exp_peak in CMP_SNAPSHOTS:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)
@@ -2759,11 +2761,15 @@ GUARDS = [
     # and lands 4 marathonPace sessions in PEAK (Pfitz "12mi @ MP"
     # signature workout) where previously it had 0. Aerobic share drops
     # to ~77% (more Z3 time from dedicated MP runs) — Pfitz "general
-    # aerobic 75-80%" aligned. LR band now 175-195: the floor-ramp (2026-06-28)
-    # builds the long run progressively, so the peak is a *built* ~180min, not a
-    # flat-floored cap. See the Adv-cap section for the <=195 ceiling guard.
+    # aerobic 75-80%" aligned. LR band 170-195 (was 175-195): #199 tick
+    # discipline (2026-07-04) closed the km-cap leak — the old 175 floor was
+    # calibrated against 33.2-33.5km renders leaking past the 33km cap; honest
+    # <=33km at Adv fit pace is ~170min. Floor side unchanged (28km delivered).
     # Aerobic cap 84: deload LRs plain aerobic (no MP rehearsal on down weeks, 2026-07-01).
-    ("Adv 42K (long, 22w)", 280, 380, 72, 88, 85, 110, 175, 195,
+    # km floor 85→82 (2026-07-04, #202): the old 85+ peaks included 460-505min
+    # stacked weeks the 430 cap now removes; leak-free peak ≈83km (440min of
+    # mixed running at Adv paces). Band tracks the capped, honest composition.
+    ("Adv 42K (long, 22w)", 280, 380, 72, 88, 82, 110, 170, 195,
      {'marathonPace', 'threshold'}),
     # Beg 21K — 3-day, deliberately light (below classics). km floor 28→24:
     # C1 fix makes the 3rd slot pure easy on rehearsal weeks (was a progression),
@@ -4098,6 +4104,261 @@ except (OSError, ValueError) as e:
     check("ladderIntervals catalog readable", False, f"{e}")
 
 # --- report ----------------------------------------------------------
+
+# === R15: long-plan long-run dynamics (growth cap + Beg 3h exposure) ====
+#
+# 2026-07-04: the km floor used to complete at 60% of ANY plan, so 24-30w
+# plans piled up 3h+ long runs and phase boundaries produced +40-70% weekly
+# jumps (user report: Beg 42K 27w went 2h -> 3h20 -> 2h30). Fixed by the
+# length-aware floor ramp (full at 1 - 6/weeks) + render growth cap
+# (<= +25%/+15min vs last non-deload, rehearsals included) + Beg 42K
+# exposure backstop (<= 3 runs >= 3h at any length). These checks pin all
+# three on RENDERED curves across standard AND long plan lengths.
+section("R15: rendered long-run chain caps + Beg 42K 3h exposure")
+
+R15_LR_SUBS = {'steadyLong', 'progressiveLong', 'long', 'raceRehearsalM',
+               'raceRehearsalHM', 'raceRehearsal10K', 'fastFinish'}
+
+def _r15_lr_curve(label, anchors, weeks):
+    env = os.environ.copy()
+    env.update(anchors)
+    env["WEEKS"] = str(weeks)
+    out = subprocess.run([PLAN_DEBUG, "pacedump", label], capture_output=True,
+                         text=True, env=env).stdout
+    w = parse_plan(out, f"{label.split(' (')[0]} ({weeks}w)") or {}
+    curve = []
+    for wk in sorted(w):
+        best = 0
+        for sub, dur, _pace in w[wk]:
+            if sub in R15_LR_SUBS:
+                best = max(best, dur)
+        if best:
+            curve.append(best)
+    return curve
+
+R15_CASES = [
+    ("Beg 42K", 5000, 1980, "beg", 42195, [20, 24, 27, 30], True),
+    ("Int 42K", 5000, 1500, "int", 42195, [18, 24, 30], False),
+    ("Adv 42K", 5000, 1140, "adv", 42195, [18, 24, 30], False),
+    ("Beg 21K", 5000, 1980, "beg", 21097, [14, 24], False),
+]
+for _label, _dist, _time, _lvl, _tgt, _weeks_list, _beg_m in R15_CASES:
+    for _wknum in _weeks_list:
+        _anchors = _progress_anchors(_dist, _time, _lvl, _tgt, _wknum)
+        _curve = _r15_lr_curve(_label, _anchors, _wknum)
+        _jumps = [(i + 1, max(_curve[i-1], _curve[i-2]), _curve[i])
+                  for i in range(2, len(_curve))
+                  if max(_curve[i-1], _curve[i-2]) >= 70
+                  and _curve[i] > max(_curve[i-1], _curve[i-2]) * 1.35]
+        check(f"{_label} {_wknum}w rendered LR: no week >35% above prior 2-wk max",
+              not _jumps and len(_curve) >= 5,
+              f"jumps(wk,ref,val)={_jumps[:3]} curve={_curve}", full=True)
+        if _beg_m:
+            _n3h = sum(1 for d in _curve if d >= 180)
+            check(f"{_label} {_wknum}w: <=3 long runs >=3h",
+                  _n3h <= 3, f"got {_n3h}: curve={_curve}", full=True)
+
+
+# === Beg 42K pre-peak deload valley (Beg-24w smoothing, 2026-07-04) =======
+# A deload immediately before a HIGHER peak long run used to render a deep
+# valley (200->160->210). The #171 clamp now softens that specific case to a
+# ~10% cutback held <180min. Guard: no Beg 42K long-run valley deeper than 20%
+# below the peak that follows it.
+section("Beg 42K: no deep pre-peak long-run valley")
+# Both Slow (1980) and Typical (1620) tiers — the softening's tight-margin
+# cases cluster in Typical (R20 agent: 20w/27w within ~1pt of the bar), so both
+# are pinned to catch a future regression past 20%.
+for _time in [1980, 1620]:
+    for _wk in [16, 20, 24, 27]:
+        _a = _progress_anchors(5000, _time, "beg", 42195, _wk)
+        _curve = _r15_lr_curve("Beg 42K", _a, _wk)
+        # The approach to the PEAK long run must be smooth: the week right before
+        # the peak must not be a deep valley (>20% below the peak). Early-build
+        # deloads at low volume are exempt — a steep ramp there is normal; this
+        # pins only the peak run-up the smoothing targets.
+        _pk = max(range(len(_curve) - 2), key=lambda k: _curve[k]) if len(_curve) > 2 else 0
+        _bad = None
+        if _pk >= 2:
+            _pre = _curve[_pk - 1]
+            if _pre < _curve[_pk - 2] and (_curve[_pk] - _pre) / _curve[_pk] > 0.20:
+                _bad = (_pk + 1, _curve[_pk - 2], _pre, _curve[_pk])
+        check(f"Beg 42K {_wk}w t{_time}: peak long-run run-up not a deep valley",
+              _bad is None, f"valley(peakwk,prev,dip,peak)={_bad} curve={_curve}", full=True)
+
+# === Beg onboarding W2 + deload Z5-free (2026-07-05) ======================
+# Onboarding shortened to W1: half/marathon beginners take a gentle Z4 quality
+# from displayed W2 (was W3, which was the base deload → hard VO2 on a recovery
+# week). Guard: Beg 21K/42K W2 carries a quality session, and no BASE deload
+# week carries real Z5.
+section("Beg onboarding: W2 quality + base deloads Z5-free")
+def _beg_w2_and_deloads(label, anchors, weeks):
+    env=os.environ.copy(); env.update(anchors); env["WEEKS"]=str(weeks)
+    out=subprocess.run([PLAN_DEBUG,"dump",label],capture_output=True,text=True,env=env).stdout
+    blocks=0; cur=0; ph=""; dl=False; w2q=False; bad=[]
+    for ln in out.splitlines():
+        m=re.match(r"^W\s*(\d+)\s+\[(\w+)[^\]]*\]",ln)
+        if m:
+            cur=int(m.group(1)); ph=m.group(2); dl="deload" in ln.lower()
+            if cur==1 and blocks==0: pass
+            if cur==1:
+                blocks+=1
+                if blocks==2: break
+            continue
+        mm=re.search(r"z5=(\d+)",ln)
+        z5=mm and int(mm.group(1))>=3 and "strides" not in ln
+        if cur==2 and re.search(r"\[(threshold|intervals|hillRepeats|ladderIntervals)/",ln): w2q=True
+        if ph=="base" and dl and z5: bad.append(cur)
+    return w2q, bad
+for _lab,_tg,_w in [("Beg 21K",21097,14),("Beg 42K",42195,20),("Beg 42K",42195,27)]:
+    _a=_progress_anchors(5000,1800,"beg",_tg,_w)
+    _q,_bad=_beg_w2_and_deloads(_lab,_a,_w)
+    check(f"{_lab} {_w}w: W2 has quality + no Z5 on base deload",
+          _q and not _bad, f"w2_quality={_q} z5_deload_weeks={_bad}", full=True)
+
+# === Beg strides variety (B, 2026-07-05) ==================================
+# Acc tiers with a flat early duration target used to render identical strides
+# (3x15s) W1-W3. The fill now rotates the rep scheme by plan week within a
+# duration band. Guard: no 3 consecutive identical strides titles in a Beg plan.
+section("Beg strides: no 3 consecutive identical")
+def _beg_strides_titles(label, anchors, weeks):
+    env=os.environ.copy(); env.update(anchors); env["WEEKS"]=str(weeks)
+    out=subprocess.run([PLAN_DEBUG,"dump",label],capture_output=True,text=True,env=env).stdout
+    blocks=0; seq=[]
+    for ln in out.splitlines():
+        if re.match(r"^W\s*1 ",ln):
+            blocks+=1
+            if blocks==2: break
+        m=re.search(r"(Easy \+ Strides \([^)]*\))",ln)
+        if m: seq.append(m.group(1))
+    return seq
+for _lab,_t,_lvl,_tgt,_w in [("Beg 10K",1800,"beg",10000,12),("Acc Beg 10K",1800,"beg",10000,12),
+                             ("Beg 5K",1800,"beg",5000,9)]:
+    _a=_progress_anchors(5000,_t,_lvl,_tgt,_w)
+    # Onboarding window (first 5 strides sessions) — the reported bug was Acc
+    # W1-3 all-identical. Later long-strides weeks can repeat 6×25s (only long
+    # variant in the catalog at that duration), a known catalog-shape limit.
+    _seq=_beg_strides_titles(_lab,_a,_w)[:5]
+    _run=[(i,_seq[i]) for i in range(2,len(_seq)) if _seq[i]==_seq[i-1]==_seq[i-2]]
+    check(f"{_lab} {_w}w: onboarding strides vary (no 3 consecutive identical, first 5)",
+          not _run and len(set(_seq))>=3, f"triples={_run[:2]} seq={_seq}", full=True)
+
+# === C1 progression-spread guard (regression 2026-07-05) ===================
+# Deload weeks were picking Z3→Z4 progression templates whose 2 WORK segments
+# collapse to <10s/km when Z3≈Z4 (HM fitness). Fix: deload progressions prefer
+# easy-start (Z2→Z3). Guard: every rendered Progression Run's work-body segments
+# (WU/CD excluded) must span >=15s/km. Covers the 4 sites that regressed.
+section("C1: Progression Run work-body spread >=15s/km")
+def _prog_spreads(label, anchors, weeks):
+    env=os.environ.copy(); env.update(anchors); env["WEEKS"]=str(weeks)
+    out=subprocess.run([PLAN_DEBUG,"pacedump",label],capture_output=True,text=True,env=env).stdout
+    blocks=0; worst=None; rows=[]
+    for ln in out.splitlines():
+        if re.match(r"^W\s*1:",ln):
+            blocks+=1
+            if blocks==2: break
+        if "\u21b3" in ln and "progression" not in ln.lower():
+            pass
+    # collect the ↳ line that FOLLOWS a "Progression Run" header
+    blocks=0; pend=False
+    for ln in out.splitlines():
+        if re.match(r"^W\s*1:",ln):
+            blocks+=1
+            if blocks==2: break
+        if "Progression Run" in ln: pend=True; continue
+        if pend and "\u21b3" in ln:
+            segs=re.findall(r"(WU |CD )?\d+:\d\d @ (\d+):(\d\d)/km",ln)
+            work=[int(m)*60+int(s) for pfx,m,s in segs if not pfx]  # exclude WU/CD
+            if len(set(work))>=1 and work:
+                spread=max(work)-min(work)
+                rows.append(spread)
+            pend=False
+    return rows
+for _lab,_t,_lvl,_tgt,_w in [("Int 21K",1440,"int",21097,18),("Beg 21K",1800,"beg",21097,18),
+                             ("Int 42K",1440,"int",42195,24),("Int 42K",1440,"int",42195,30)]:
+    _a=_progress_anchors(_tgt if False else 5000,_t,_lvl,_tgt,_w)
+    _sp=_prog_spreads(_lab,_a,_w)
+    _bad=[x for x in _sp if x<15]
+    check(f"{_lab} {_w}w: all Progression Runs spread >=15s/km",
+          not _bad and len(_sp)>=1, f"spreads={_sp} under15={_bad}", full=True)
+
+# === R18: long-variant scheduling guards (#201 rung, #202 Adv cap) =======
+#
+# 2026-07-04: Int/Adv 42K >=28w reach only 2 rehearsal slots, so the ladder
+# drops its 60min intro there (delivers 70->90; 18-24w keep 60/70/90). 105
+# stays Cmp-only. Adv 42K weeks cap at 430min post-topUp (rehearsal+MLR+rep
+# stacking hit 460-505 on long variants; Pfitz 18/55-65 tops out ~420).
+section("R18: long-variant rung + Adv weekly cap")
+
+def _r18_dump(label, anchors, weeks):
+    env = os.environ.copy(); env.update(anchors); env["WEEKS"] = str(weeks)
+    return subprocess.run([PLAN_DEBUG, "pacedump", label], capture_output=True,
+                          text=True, env=env).stdout
+
+for _wk in [30]:
+    _a = _progress_anchors(5000, 1500, "int", 42195, _wk)
+    _txt = _r18_dump("Int 42K", _a, _wk)
+    _rungs = re.findall(r"\((\d+)min @ MP\)", _txt.split("W 1:")[2] if _txt.count("W 1:") > 1 else _txt)
+    _rungs = [int(x) for x in dict.fromkeys(_rungs)]
+    check(f"Int 42K {_wk}w MP rungs reach 90 (ladder end-aligned)",
+          90 in _rungs and 105 not in _rungs,
+          f"rungs={_rungs}", full=True)
+
+_a = _progress_anchors(5000, 1980, "beg", 42195, 30)
+_txt = _r18_dump("Beg 42K", _a, 30)
+_brungs = sorted(set(int(x) for x in re.findall(r"\((\d+)min @ MP\)", _txt)))
+check("Beg 42K 30w rehearsal stays 60min (Beg exempt from intro-drop)",
+      _brungs == [60], f"rungs={_brungs}", full=True)
+
+for _wk in [18, 22, 24, 30]:
+    _a = _progress_anchors(5000, 1140, "adv", 42195, _wk)
+    _w = parse_plan(_r18_dump("Adv 42K", _a, _wk), f"Adv 42K ({_wk}w)") or {}
+    _tot = {k: sum(d for _s, d, _p in v) for k, v in _w.items()}
+    _peak = max(_tot.values()) if _tot else 0
+    check(f"Adv 42K {_wk}w max weekly total <= 440 (cap 430 + tick slack)",
+          0 < _peak <= 440, f"peak week={_peak}min", full=True)
+
+# Cmp guards (fixed goal-pace anchors — Cmp is goal-locked, no VDOT ramp)
+_CMP_HM = {"ADAPTIVE": "1", "RACE_PACE": "241", "EASY_PACE": "320", "SPEED_PACE": "225",
+           "RACE_PACE_END": "241", "EASY_PACE_END": "320", "SPEED_PACE_END": "225"}
+_txt = _r18_dump("Cmp 21K", _CMP_HM, 18)
+_h = [int(x) for x in dict.fromkeys(re.findall(r"\((\d+)min @ HMP\)", _txt))]
+check("Cmp 21K 18w HMP ladder completes 20/25/30 (taper-W1 spill)",
+      _h[:3] == [20, 25, 30], f"rungs={_h}", full=True)
+
+_CMP_M330 = {"ADAPTIVE": "1", "RACE_PACE": "298", "EASY_PACE": "375", "SPEED_PACE": "262",
+             "RACE_PACE_END": "298", "EASY_PACE_END": "375", "SPEED_PACE_END": "262"}
+def _r18_long_kms(txt):
+    # Real km from the segment breakdown — a MINUTES proxy undercounts
+    # rehearsals (MP segments cover 32km in ~175-180min, not 185+).
+    kms, blocks, pending = [], 0, False
+    for ln in txt.splitlines():
+        m = re.match(r"^W\s*(\d+):", ln)
+        if m:
+            if int(m.group(1)) == 1:
+                blocks += 1
+                if blocks == 2:
+                    break
+            continue
+        if re.search(r"\[(steadyLong|progressiveLong|raceRehearsalM|fastFinish)\]", ln):
+            pending = ln          # save the LR line — single-pace runs carry km here
+            continue
+        if pending and ln.strip().startswith("\u21b3"):
+            segs = re.findall(r"(\d+):(\d\d)(?::\d\d)? @ (\d+):(\d\d)/km", ln)
+            if segs:
+                kms.append(sum((int(a)*60+int(b))/(int(c)*60+int(d)) for a, b, c, d in segs))
+            pending = False
+        elif pending:
+            mm = re.search(r"(\d+)min\s+(\d+):(\d\d)/km", pending)
+            if mm:
+                kms.append(int(mm.group(1))*60/(int(mm.group(2))*60+int(mm.group(3))))
+            pending = False
+    return kms
+
+for _wk in [18, 24]:
+    _kms = _r18_long_kms(_r18_dump("Cmp 42K", _CMP_M330, _wk))
+    _big = sorted(round(k, 1) for k in _kms if k >= 31.9)
+    check(f"Cmp 42K {_wk}w @3:30: >=2 long runs >=32km (#197)",
+          len(_big) >= 2, f"qualifying={_big}", full=True)
 
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")

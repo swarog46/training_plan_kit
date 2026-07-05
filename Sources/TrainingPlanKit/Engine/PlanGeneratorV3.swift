@@ -560,6 +560,44 @@ class PlanGeneratorV3 {
         w.subtype != .strides && hasZone5(w)
     }
 
+    // A progression run must build from EASY — first work segment Z2. Z3→Z4
+    // templates (moderate→threshold) collapse to <10s/km when Z3≈Z4 (HM fitness),
+    // failing the C1 spread invariant. Deload progressions prefer easy-start ones:
+    // gentler for a recovery week AND a guaranteed easy→fast spread.
+    func progressionStartsEasy(_ w: Workout) -> Bool {
+        for iv in w.intervals where iv.type == .work {
+            if case .heartRateZone(let z) = iv.target { return z <= 2 }
+            return false
+        }
+        return false
+    }
+
+    // #189: displayed BASE weeks 1-2 must open Z5-free (onboarding). Two gaps let
+    // one through: (a) paths that append the lead quality directly bypass the
+    // in-pool strip, and (b) front-trimmed plans generate full-length then drop
+    // the first `weeksToTrim` weeks, so the DISPLAYED W1 is a mid-base generation
+    // week (Beg 42K 14w opened W1 on a base-3/4 deload with 5K-pace intervals —
+    // both the pool strip's weekInPhase<=1 and a raw week<=1 gate miss it).
+    // Key on the displayed index (week - weeksToTrim). Swap any real-Z5 session to
+    // the closest-duration easy run. Non-VO2 only (VO2 carries Z5 from week 1).
+    func stripOnboardingZ5(_ weekWorkouts: inout [(type: String, workout: Workout)], week: Int, phase: TrainingPhase) {
+        let displayedWeek = week - weeksToTrim
+        // Displayed W1 opens Z5-free in ANY phase — a heavily front-trimmed plan
+        // can open on a SPEED week (BASE fully trimmed), which the base-only gate
+        // used to miss. Displayed W2 stays Z5-free only in BASE (onboarding).
+        let isW1 = displayedWeek == 0
+        let isBaseW2 = phase == .base && displayedWeek == 1
+        guard !config.isVO2Max, isW1 || isBaseW2 else { return }
+        let pool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy])
+            .filter { !isRealZ5($0) }
+        guard !pool.isEmpty else { return }
+        for i in weekWorkouts.indices where isRealZ5(weekWorkouts[i].workout) {
+            let target = weekWorkouts[i].workout.duration
+            let sub = pool.min { abs($0.duration - target) < abs($1.duration - target) }!
+            weekWorkouts[i] = ("easy", sub)
+        }
+    }
+
     // Total Z5 work minutes in a workout (the VO2 "dose" — what actually
     // develops VO2max, independent of the session's easy WU/CD bulk).
     func z5DoseMinutes(_ w: Workout) -> Int {
@@ -648,9 +686,9 @@ class PlanGeneratorV3 {
     // rehearsal steps UP this ladder so the MP block progresses 60→75→90(→105),
     // Pfitz-style, instead of parking on the largest rung every rehearsal week.
     static let rehearsalMPLadder = [60, 70, 90, 105]  // 3-occurrence plans climb 60/70/90;
-    // the 105 rung snaps to the catalog's 90 (no bigger template exists yet), so
-    // 4-occurrence Cmp plans top out 60/70/90/90 — a real 4th rung needs a
-    // ~100min raceRehearsalM template added to the catalog.
+    // 4-occurrence plans reach the full 105 (catalog template id 60010,
+    // added 2026-07-04). Short competitive marathons (≤14w) drop the 60
+    // rung so 2 slots still climb 70→90 (see rampRehearsalMPSegment).
 
     // Half / 10K rehearsal race-pace-segment ladders (minutes). Same idea, scaled
     // to the shorter race: the HMP block builds toward ~30min, the 10KP toward
@@ -738,7 +776,24 @@ class PlanGeneratorV3 {
         let rehearsals = pool.filter { $0.subtype == sub }
         let available = Array(Set(rehearsals.map { rehearsalSegmentMinutes($0, subtype: sub) })).sorted()
         guard available.count >= 2 else { return pool }
-        let ladder = PlanGeneratorV3.rehearsalSegmentLadder(sub)
+        var ladder = PlanGeneratorV3.rehearsalSegmentLadder(sub)
+        if sub == .raceRehearsalM {
+            if config.runnerLevel == .competitive {
+                // Short competitive marathon (≤14w): the runner is race-fit — skip
+                // the 60min intro rung so 2 slots still climb 70→90 (#198, R16).
+                if totalWeeks <= 14 { ladder = Array(ladder.dropFirst()) }
+            } else {
+                // Non-competitive: 105 is the Cmp signature rung — cap at 90
+                // (Pfitz 18/55-65 class). Long plans (≥28w) reach only 2
+                // rehearsal slots, so Int/Adv drop the 60 intro to still deliver
+                // 90 (#201). Beginners keep the gentle 60 at every length (#98).
+                ladder = Array(ladder.prefix(3))
+                let level = config.runnerLevel
+                if totalWeeks >= 28, level == .intermediate || level == .advanced {
+                    ladder = Array(ladder.dropFirst())
+                }
+            }
+        }
         let ladderTarget = ladder[min(priorRehearsalCount, ladder.count - 1)]
         // Snap the ladder target to the nearest available catalog rung.
         guard let targetSize = available.min(by: {
@@ -882,8 +937,10 @@ class PlanGeneratorV3 {
             if let heaviest = qualityCands.max(by: { $0.element.workout.trainingLoad < $1.element.workout.trainingLoad }) {
                 let targetMins = Int(heaviest.element.workout.duration / 60)
                 let soleQuality = qualityCands.count == 1
-                let progressionPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+                let allProg = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
                     .filter { abs(Int($0.duration / 60) - targetMins) <= 12 }
+                let easyStartProg = allProg.filter { progressionStartsEasy($0) }
+                let progressionPool = easyStartProg.isEmpty ? allProg : easyStartProg
                 if let prog = progressionPool.min(by: {
                     abs(Int($0.duration / 60) - targetMins) < abs(Int($1.duration / 60) - targetMins)
                 }) {
@@ -947,7 +1004,9 @@ class PlanGeneratorV3 {
             // progression always preserves a quality body, so the floor is never broken.
             // VO2 blocks protect the (already-reduced) Z5 dose from this pass.
             let qIdxs = week.indices.filter { isQualityBody(week[$0].workout) && !protectedFromLighten(week[$0].workout) }
-            let progressionPool = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+            let allProg2 = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.progression])
+            let easyStart2 = allProg2.filter { progressionStartsEasy($0) }
+            let progressionPool = easyStart2.isEmpty ? allProg2 : easyStart2
             var lightenedQuality = false
             for qIdx in qIdxs.sorted(by: { week[$0].workout.trainingLoad > week[$1].workout.trainingLoad }) {
                 let q = week[qIdx].workout
@@ -1400,7 +1459,8 @@ func enforceLongOverMediumLongV3(_ weekWorkouts: inout [(type: String, workout: 
 /// toward the target: at most +30% per run, 5-min ticked, build weeks only.
 func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout)],
                           targetDurationMins: Double, isDeloading: Bool,
-                          phase: TrainingPhase, weeklyCapMins: Double? = nil) {
+                          phase: TrainingPhase, weeklyCapMins: Double? = nil,
+                          isCompetitive: Bool = false) {
     guard !isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
     // R14: beginner-marathon roof — never top a week past the cap (the Slow
     // tier was stacking to 5.9h peak weeks purely from added easy time).
@@ -1419,7 +1479,9 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
     }
     let aeroSec = aeroIdx.reduce(0.0) { $0 + Double(weekWorkouts[$1].workout.duration) }
     guard aeroSec > 0 else { return }
-    let factor = min(1.30, (aeroSec + deficit) / aeroSec)
+    // Cmp stretches further: Pfitz-class weeks need the aerobic body to carry
+    // more of the physical target (#158) — non-Cmp keeps the 1.30 guard.
+    let factor = min(isCompetitive ? 2.0 : 1.30, (aeroSec + deficit) / aeroSec)
     guard factor > 1.02 else { return }
     // No scaled run may reach the week's long-run-slot session — the LR stays
     // the week's longest run (R13 fitness finding: a topped-up 65min easy
@@ -1433,11 +1495,21 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
     for i in aeroIdx {
         let w = weekWorkouts[i].workout
         var raw = Double(w.duration) * factor
-        if let lr = longestLR { raw = min(raw, lr - 300) }
+        if let lr = longestLR {
+            raw = min(raw, lr - 300)
+        } else {
+            // No long run in the week (e.g. Adv 5K PEAK, shouldAddLong=false) —
+            // without an LR to cap against, a mediumLong fill ballooned to 120min
+            // (+38% week spike). Cap all fills at the easy/GA ceiling so none
+            // becomes a de-facto long run.
+            raw = min(raw, Double((isCompetitive ? 100 : 75) * 60))
+        }
         // A plain "Easy Run" stays an easy run — 75min ceiling (R13 Int
         // finding: an easy-role fill rendered 85min and read as a mislabeled
         // medium-long). MLR-tagged runs may go longer.
-        if w.subtype == .easy || w.subtype == .recovery { raw = min(raw, 75 * 60) }
+        if w.subtype == .easy || w.subtype == .recovery {
+            raw = min(raw, (isCompetitive ? 100 : 75) * 60)   // Pfitz GA runs run longer
+        }
         let ticked = Int64((raw / 300.0).rounded(.down) * 300.0)
         guard ticked > w.duration else { continue }
         weekWorkouts[i] = (weekWorkouts[i].type, rescaledV3(w, toSeconds: ticked))

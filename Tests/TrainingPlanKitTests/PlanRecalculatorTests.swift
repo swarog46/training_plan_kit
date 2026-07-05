@@ -312,3 +312,193 @@ extension PlanRecalculatorTests {
         }
     }
 }
+
+// MARK: - #174 long-run growth cap
+
+final class LongRunGrowthCapTests: XCTestCase {
+    private let cal = Calendar.current
+    private let start = Calendar.current.startOfDay(for: Date())
+
+    /// HR-side long runs with a deliberate phase cliff (90 → 150min) and a
+    /// deload: render must cap build-chain growth at +25%/+15min while the
+    /// deload keeps its #171 cut and later weeks still reach their targets.
+    func testBuildChainCliffIsCapped() {
+        let planId = UUID()
+        let end = cal.date(byAdding: .weekOfYear, value: 8, to: start)!
+        let minutes: [Int] = [60, 70, 75, 90, 150, 160, 170, 175]   // W5 cliff +67%
+        var events: [WorkoutEvent] = []
+        for (w, m) in minutes.enumerated() {
+            let workout = Workout(
+                id: Int64(100 + w), title: "Long Run", type: .longRun,
+                subtype: .steadyLong, trainingType: .timeBased,
+                targetType: .heartRate, duration: Int64(m * 60), distance: 0,
+                key: "lr\(w)", trainingLoad: Int64(m * 100),
+                intervals: [WorkoutInterval(id: 0, type: .work, duration: Double(m * 60),
+                                            distance: 0, targetType: .heartRate,
+                                            target: .heartRateZone(zone: 2))],
+                workRestRatio: 1, workDuration: Int64(m * 60), restDuration: 0,
+                workDistance: 0, restDistance: 0)
+            var e = WorkoutEvent(workout: workout, planId: planId,
+                                 date: cal.date(byAdding: .day, value: w * 7 + 5, to: start)!)
+            e.planWeekIndex = w
+            if w == 2 { e.isDeloadWeek = true }
+            events.append(e)
+        }
+        let rendered = PaceZoneConverter.applyPaceProgression(
+            to: events, racePace: 330, conversationalPace: 420, speedPace: 290,
+            config: .beginner, startDate: start, endDate: end,
+            racePaceEnd: 320, conversationalPaceEnd: 410, speedPaceEnd: 280,
+            raceDistanceMeters: 42195, isBeginner: true)
+
+        var prevNonDeload: Double? = nil
+        for e in rendered.sorted(by: { $0.planWeekIndex < $1.planWeekIndex }) {
+            let d = Double(e.workout.duration)
+            if e.isDeloadWeek { continue }
+            if let prev = prevNonDeload {
+                let cap = max(prev + 900, prev * 1.25) + 300   // +tick tolerance
+                XCTAssertLessThanOrEqual(d, cap,
+                    "W\(e.planWeekIndex) long run \(Int(d/60))min exceeds growth cap vs \(Int(prev/60))min")
+            }
+            prevNonDeload = d
+        }
+        // The cliff week specifically: was 150min HR-side, must land ≤ ~118min
+        let w4 = rendered.first { $0.planWeekIndex == 4 }!
+        XCTAssertLessThanOrEqual(w4.workout.duration, Int64(120 * 60),
+            "cliff week must be capped (+25% of ~90min, ticked)")
+        // And the final week must still climb (the cap spreads, not flattens)
+        let w7 = rendered.first { $0.planWeekIndex == 7 }!
+        XCTAssertGreaterThan(w7.workout.duration, w4.workout.duration)
+    }
+}
+
+extension LongRunGrowthCapTests {
+
+    private func makeEvents(_ minutes: [(Int, WorkoutSubtype, Bool)],
+                            planId: UUID, start: Date) -> [WorkoutEvent] {
+        let cal = Calendar.current
+        return minutes.enumerated().map { (w, spec) in
+            let (m, sub, deload) = spec
+            let ivs: [WorkoutInterval]
+            if sub == .raceRehearsalM {
+                ivs = [
+                    WorkoutInterval(id: 0, type: .warmup, duration: Double(m * 60) * 0.3,
+                                    distance: 0, targetType: .heartRate, target: .heartRateZone(zone: 2)),
+                    WorkoutInterval(id: 1, type: .work, duration: Double(m * 60) * 0.5,
+                                    distance: 0, targetType: .heartRate, target: .heartRateZone(zone: 3)),
+                    WorkoutInterval(id: 2, type: .cooldown, duration: Double(m * 60) * 0.2,
+                                    distance: 0, targetType: .heartRate, target: .heartRateZone(zone: 2)),
+                ]
+            } else {
+                ivs = [WorkoutInterval(id: 0, type: .work, duration: Double(m * 60),
+                                       distance: 0, targetType: .heartRate,
+                                       target: .heartRateZone(zone: 2))]
+            }
+            let workout = Workout(id: Int64(500 + w), title: sub == .raceRehearsalM ? "Race Rehearsal" : "Long Run",
+                                  type: .longRun, subtype: sub, trainingType: .timeBased,
+                                  targetType: .heartRate, duration: Int64(m * 60), distance: 0,
+                                  key: "k\(w)", trainingLoad: Int64(m * 100), intervals: ivs,
+                                  workRestRatio: 1, workDuration: Int64(m * 60), restDuration: 0,
+                                  workDistance: 0, restDistance: 0)
+            var e = WorkoutEvent(workout: workout, planId: planId,
+                                 date: cal.date(byAdding: .day, value: w * 7 + 5, to: start)!)
+            e.planWeekIndex = w
+            e.isDeloadWeek = deload
+            return e
+        }
+    }
+
+    /// Rehearsals are growth-capped too: a floored 28km rehearsal arriving
+    /// right out of a deload must not spike past +25% of the last build week
+    /// (the 155→210 hole found 2026-07-04).
+    func testRehearsalJoinsGrowthCap() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let end = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        let events = makeEvents([
+            (140, .steadyLong, false),
+            (155, .steadyLong, false),
+            (135, .steadyLong, true),      // deload
+            (210, .raceRehearsalM, false), // wants to spike
+            (200, .steadyLong, false),
+            (175, .steadyLong, false),
+        ], planId: UUID(), start: start)
+        let rendered = PaceZoneConverter.applyPaceProgression(
+            to: events, racePace: 400, conversationalPace: 450, speedPace: 350,
+            config: .beginner, startDate: start, endDate: end,
+            racePaceEnd: 390, conversationalPaceEnd: 440, speedPaceEnd: 340,
+            raceDistanceMeters: 42195, isBeginner: true)
+        let reh = rendered.first { $0.workout.subtype == .raceRehearsalM }!
+        let capSecs = Double(155 * 60) * 1.25 + 300      // vs last non-deload + tick
+        XCTAssertLessThanOrEqual(Double(reh.workout.duration), capSecs,
+            "rehearsal must obey the growth cap (\(reh.workout.duration / 60)min)")
+    }
+
+    /// Beginner 42K: never more than THREE runs ≥3h, regardless of how many
+    /// the floor/generator produce — earliest extras scale under 3h.
+    func testBeginnerThreeHourExposureCappedAtThree() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let end = cal.date(byAdding: .weekOfYear, value: 10, to: start)!
+        let events = makeEvents([
+            (120, .steadyLong, false),
+            (150, .steadyLong, false),
+            (185, .steadyLong, false),
+            (150, .steadyLong, true),      // deload
+            (185, .steadyLong, false),
+            (190, .steadyLong, false),
+            (155, .steadyLong, true),      // deload
+            (195, .steadyLong, false),
+            (200, .steadyLong, false),
+            (185, .steadyLong, false),
+        ], planId: UUID(), start: start)
+        let rendered = PaceZoneConverter.applyPaceProgression(
+            to: events, racePace: 400, conversationalPace: 450, speedPace: 350,
+            config: .beginner, startDate: start, endDate: end,
+            racePaceEnd: 390, conversationalPaceEnd: 440, speedPaceEnd: 340,
+            raceDistanceMeters: 42195, isBeginner: true)
+        let over3h = rendered.filter {
+            !$0.isDeloadWeek && !$0.isTaperWeek && $0.workout.duration >= 180 * 60
+        }
+        XCTAssertLessThanOrEqual(over3h.count, 3,
+            "≥3h exposure must cap at 3 (got \(over3h.count))")
+        // The LAST peaks survive; the earliest oversized ones were reduced.
+        let w2 = rendered.first { $0.planWeekIndex == 2 }!
+        XCTAssertLessThan(w2.workout.duration, 180 * 60, "earliest 185 scales under 3h")
+        let w8 = rendered.first { $0.planWeekIndex == 8 }!
+        XCTAssertGreaterThanOrEqual(w8.workout.duration, 180 * 60, "late peak survives")
+    }
+
+    /// Length-aware floor ramp: at the same mid-plan progression point, a 30w
+    /// plan's km floor is WEAKER than an 18w plan's — long plans build slower.
+    func testFloorRampIsLengthAware() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        func rendered(atWeeks total: Int) -> Int64 {
+            let end = cal.date(byAdding: .weekOfYear, value: total, to: start)!
+            // One 100min easy long at ~62% through the plan (short of both ramps'
+            // full point, inside the floor window).
+            let day = Int(Double(total) * 7.0 * 0.62)
+            let w = Workout(id: 1, title: "Long Run", type: .longRun, subtype: .steadyLong,
+                            trainingType: .timeBased, targetType: .heartRate,
+                            duration: 6000, distance: 0, key: "lr", trainingLoad: 8000,
+                            intervals: [WorkoutInterval(id: 0, type: .work, duration: 6000,
+                                                        distance: 0, targetType: .heartRate,
+                                                        target: .heartRateZone(zone: 2))],
+                            workRestRatio: 1, workDuration: 6000, restDuration: 0,
+                            workDistance: 0, restDistance: 0)
+            var e = WorkoutEvent(workout: w, planId: UUID(),
+                                 date: cal.date(byAdding: .day, value: day, to: start)!)
+            e.planWeekIndex = Int(Double(total) * 0.62)
+            let out = PaceZoneConverter.applyPaceProgression(
+                to: [e], racePace: 400, conversationalPace: 450, speedPace: 350,
+                config: .beginner, startDate: start, endDate: end,
+                racePaceEnd: 390, conversationalPaceEnd: 440, speedPaceEnd: 340,
+                raceDistanceMeters: 42195, isBeginner: true)
+            return out[0].workout.duration
+        }
+        let d18 = rendered(atWeeks: 18)
+        let d30 = rendered(atWeeks: 30)
+        XCTAssertLessThan(d30, d18,
+            "same relative point: 30w floor (\(d30/60)min) must be weaker than 18w (\(d18/60)min)")
+    }
+}

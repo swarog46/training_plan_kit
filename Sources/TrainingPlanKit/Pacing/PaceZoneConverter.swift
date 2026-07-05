@@ -383,10 +383,14 @@ public struct PaceZoneConverter {
                 newTarget = .paceTarget(basePace: racePace, relative: relative)
             }
         case .noRange:
-            // Assign easy pace (zone 2 equivalent) for warmup/rest/cooldown with no target
+            // Warmup/rest/cooldown render at easy pace. RECOVERY-type intervals
+            // render at the zone-1 multiplier (the slower between-reps jog):
+            // the catalog's short recoveries are noRange for HR honesty (HR
+            // can't reach Z1 in 60-90s), but their PACE must stay the Z1 jog —
+            // this keeps the Z1→noRange catalog sweep a byte-exact noop.
             floorAtBasePace = true
             let easyRelative = progressiveMultiplier(
-                for: 2,
+                for: (interval.type == .recovery || interval.type == .rest) ? 1 : 2,
                 racePace: racePace,
                 conversationalPace: conversationalPace,
                 progressionFactor: progressionFactor,
@@ -506,6 +510,7 @@ public struct PaceZoneConverter {
         isBeginner: Bool = false,
         isAdvanced: Bool = false,
         isTaperWeek: Bool = false,
+        floorRampEnd: Double = 0.60,
         racePaceFinal: Int? = nil,
         speedPaceFinal: Int? = nil
     ) -> Workout {
@@ -559,7 +564,8 @@ public struct PaceZoneConverter {
                                     isBeginner: isBeginner,
                                     isAdvanced: isAdvanced,
                                     isTaperWeek: isTaperWeek,
-                                    progressionFactor: progressionFactor)
+                                    progressionFactor: progressionFactor,
+                                    floorRampEnd: floorRampEnd)
         return quantizeAerobicDuration(tickLongSegments(clamped))
     }
 
@@ -700,7 +706,8 @@ public struct PaceZoneConverter {
         isBeginner: Bool,
         isAdvanced: Bool,
         isTaperWeek: Bool,
-        progressionFactor: Double
+        progressionFactor: Double,
+        floorRampEnd: Double = 0.60
     ) -> Workout {
         guard longRunSubtypes.contains(workout.subtype) else { return workout }
         // Easy pace anchors the minutes→km conversion for any interval that
@@ -733,7 +740,7 @@ public struct PaceZoneConverter {
         // easing kicks in). Ramp it 0→full by ~70% in: early base runs keep their
         // (short) generated length so the build shows; only the late-peak long runs
         // are brought up to race-relevant distance for slow runners. Taper: floor 0.
-        let floorRamp = min(1.0, progressionFactor / 0.60)
+        let floorRamp = min(1.0, progressionFactor / max(0.01, floorRampEnd))
         // No floor in the TAPER. The km-floor exists for aerobic development during the
         // BUILD; in the taper the long run must decline. The pf<0.85 cutoff alone let the
         // FIRST taper week (pf~0.83 in an 18wk/3wk plan) still take the full 30km floor —
@@ -787,6 +794,14 @@ public struct PaceZoneConverter {
             let capFactor = Double(advMarathonLRCapMins * 60) / Double(workout.duration)
             if capFactor > 0 { factor = min(factor, capFactor) }
         }
+        // #199 tick discipline: floor-lifts tick UP (the window minimum is a
+        // guarantee), cap-clamps tick DOWN (the ceiling is a promise) — nearest
+        // rounding leaked both ways (34.15km past a 33 cap; 31.7 under a 32 floor).
+        let rawSec = Double(workout.duration) * factor
+        let ticked = factor > 1
+            ? (rawSec / 300).rounded(.up) * 300
+            : (rawSec / 300).rounded(.down) * 300
+        factor = max(ticked, minSec) / Double(workout.duration)
         var newDurationSec = Int((Double(workout.duration) * factor).rounded())
 
         func scale(_ v: Int64) -> Int64 { Int64((Double(v) * factor).rounded()) }
@@ -890,6 +905,11 @@ public struct PaceZoneConverter {
         isAdvanced: Bool = false
     ) -> [WorkoutEvent] {
         let totalDuration = endDate.timeIntervalSince(startDate)
+        // "Go slower on long plans": the km floor completes ~6 weeks of runway
+        // before race day (≈4 peak weeks + taper) at ANY length, instead of a
+        // fixed 60% — a 27w plan otherwise pins six pre-taper weeks at ~28km.
+        let planWeeks = max(6.0, totalDuration / (7 * 86400))
+        let floorRampEnd = max(0.60, 1.0 - 6.0 / planWeeks)
 
         guard totalDuration > 0 else { return events }
 
@@ -899,7 +919,7 @@ public struct PaceZoneConverter {
         // legacy fixed-anchor behavior.
         let vdotAnchored = racePaceEnd != nil
 
-        let rendered = events.map { event in
+        var rendered = events.map { event in
             // Calculate progression factor: 0.0 at plan start → 1.0 at plan end
             let elapsed = event.date.timeIntervalSince(startDate)
             let progressionFactor = max(0, min(1.0, elapsed / totalDuration))
@@ -926,6 +946,7 @@ public struct PaceZoneConverter {
                 isBeginner: isBeginner,
                 isAdvanced: isAdvanced,
                 isTaperWeek: event.isTaperWeek,  // no km-floor in the taper (see clampLongRunDistance)
+                floorRampEnd: floorRampEnd,
                 racePaceFinal: racePaceEnd ?? racePace,   // MP/rehearsals at PLANNED race pace
                 speedPaceFinal: speedPaceEnd ?? speedPace // VO2/reps at PLANNED 5K
             )
@@ -941,6 +962,30 @@ public struct PaceZoneConverter {
         // across tiers AND fitness levels, reaching weeks whose HR-side long run didn't
         // dip (cut-vs-trajectory, or a reused MP rehearsal) that a render coefficient
         // can't. Keys on the generator's real deload flag (event.isDeloadWeek).
+        // Beginner 42K peak-exposure backstop: at most THREE runs ≥3h,
+        // whatever the plan length (30w earns more base, not more peaks —
+        // Higdon-Novice-class exposure). The length-aware floor ramp already
+        // spreads the build; this trims the odd extra on very long plans by
+        // scaling the EARLIEST over-3h runs to 175min (rehearsal titles rebuild
+        // correctly under scaling since #178). Runs BEFORE the #171 clamp so
+        // deload weeks track the adjusted values.
+        if isBeginner, raceDistanceMeters == 42195 {
+            let scalable = longRunSubtypes
+            var overIdx: [Int] = []
+            for (i, e) in rendered.enumerated()
+            where longRunSubtypes.contains(e.workout.subtype)
+                && !e.isDeloadWeek && !e.isTaperWeek
+                && e.workout.duration >= 180 * 60 {
+                overIdx.append(i)
+            }
+            var excess = overIdx.count - 3
+            if excess > 0 {
+                for i in overIdx where excess > 0 && scalable.contains(rendered[i].workout.subtype) {
+                    rendered[i].workout = scaleWorkout(rendered[i].workout, toSeconds: 175 * 60)
+                    excess -= 1
+                }
+            }
+        }
         var out = rendered
         // The long run = the LONGEST long-run-subtype workout in a week (a week can also
         // hold a short mid-week run of the same subtype). Group by plan week so the clamp
@@ -951,13 +996,28 @@ public struct PaceZoneConverter {
             longestIdxByWeek[e.planWeekIndex] = i
         }
         var prevNonDeloadLongSec: Int64? = nil
-        for wk in longestIdxByWeek.keys.sorted() {
+        let clampWeeks = longestIdxByWeek.keys.sorted()
+        for (wi, wk) in clampWeeks.enumerated() {
             let i = longestIdxByWeek[wk]!
             if out[i].isDeloadWeek {
                 if let prev = prevNonDeloadLongSec {
                     // ~20% cut, but never below the 60-min aerobic long-run floor (base-phase
                     // deloads off a short prior run would otherwise dip under it).
-                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: max(Int64(3600), Int64((Double(prev) * 0.80).rounded())))
+                    var target = max(Int64(3600), Int64((Double(prev) * 0.80).rounded()))
+                    // Beg 42K: a deload immediately before a HIGHER peak long run
+                    // renders a valley-then-spike (200→160→210). Soften to a ~10%
+                    // cutback so the run-up to the peak is smooth — Pfitz approaches
+                    // the peak long run cleanly, not via a deep cut one week out.
+                    // Held strictly under 180min so it never adds a 4th ≥3h beginner
+                    // exposure week (the ≤3 backstop, #180).
+                    if isBeginner, raceDistanceMeters == 42195, wi + 1 < clampWeeks.count {
+                        let nIdx = longestIdxByWeek[clampWeeks[wi + 1]]!
+                        if !out[nIdx].isDeloadWeek, !out[nIdx].isTaperWeek,
+                           out[nIdx].workout.duration > prev {
+                            target = max(target, min(Int64((Double(prev) * 0.90).rounded()), Int64(175 * 60)))
+                        }
+                    }
+                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: target)
                 }
             } else {
                 prevNonDeloadLongSec = out[i].workout.duration
@@ -984,6 +1044,76 @@ public struct PaceZoneConverter {
                     let target = Int64((Double(db) * 0.90 / 300.0).rounded() * 300.0)
                     out[ib].workout = scaleWorkout(out[ib].workout, toSeconds: target)
                 }
+            }
+        }
+
+        // #174 — long-run build-chain growth cap: week-over-week, a non-deload
+        // long run may exceed the LAST NON-DELOAD long run by at most +25%
+        // (or +15min, whichever is larger). Kills the phase-boundary cliffs the
+        // 27w Beg 42K showed (70→120min, +71%; slow tier 3h20 arriving in one
+        // step) — the excess spreads forward since later weeks' targets stand.
+        // Rehearsals/fastFinish keep their titled dose (never capped, #178) but
+        // do advance the chain; deload/taper weeks neither cap nor advance it.
+        var chainIdxByWeek: [Int: Int] = [:]
+        for (i, e) in out.enumerated() where longRunSubtypes.contains(e.workout.subtype) {
+            if let cur = chainIdxByWeek[e.planWeekIndex],
+               out[cur].workout.duration >= e.workout.duration { continue }
+            chainIdxByWeek[e.planWeekIndex] = i
+        }
+        let growthCappable = longRunSubtypes   // rehearsals too (#178 makes scaling safe)
+        var chainPrevSec: Int64? = nil
+        for wk in chainIdxByWeek.keys.sorted() {
+            let i = chainIdxByWeek[wk]!
+            if out[i].isDeloadWeek || out[i].isTaperWeek { continue }
+            if let prev = chainPrevSec, growthCappable.contains(out[i].workout.subtype) {
+                // Cap WINS over the km floor: the length-aware ramp raises the
+                // floor gradually, so a capped week reaches full floor within
+                // +25% steps a week later — no cliff, marathon prep intact.
+                var cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
+                // #199: ceiling — tick nearest unless that crosses it, then drop
+                // one tick (blanket tick-down cascaded -5min through the chain).
+                let nearestTick = Int64((Double(cap) / 300).rounded()) * 300
+                cap = nearestTick <= cap ? nearestTick : nearestTick - 300
+                if out[i].workout.duration > cap {
+                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: cap)
+                }
+            }
+            chainPrevSec = out[i].workout.duration
+        }
+
+        // #197 — Cmp marathon 32km guarantee: a competitive build must deliver
+        // >=2 long runs >=32km (the 20-mile-class runs race day is built on).
+        // The ramped floor gives slower goals (3:15-3:45) only ONE such week on
+        // most lengths — their second candidate lands pre-full-ramp at 27-31km.
+        // Lift the LARGEST near-misses (>=28km, non-deload/taper) to 32km,
+        // tick-UP, until two qualify. Rehearsal titles rebuild under scaling (#178).
+        if isCompetitive, raceDistanceMeters == 42195 {
+            func kmOf(_ w: Workout) -> Double {
+                w.intervals.reduce(0.0) { acc, iv in
+                    if case .paceTarget(let b, let rel) = iv.target, b > 0 {
+                        return acc + iv.duration / (Double(b) * rel)
+                    }
+                    return acc
+                }
+            }
+            var candidates: [(idx: Int, km: Double)] = []
+            var qualifying = 0
+            for (i, e) in out.enumerated()
+            where longRunSubtypes.contains(e.workout.subtype)
+                && !e.isDeloadWeek && !e.isTaperWeek {
+                let km = kmOf(e.workout)
+                if km >= 32.0 { qualifying += 1 }
+                else if km >= 28.0 { candidates.append((i, km)) }
+            }
+            candidates.sort { $0.km > $1.km }
+            var c = 0
+            while qualifying < 2, c < candidates.count {
+                let (i, km) = candidates[c]; c += 1
+                let w = out[i].workout
+                let targetSec = Double(w.duration) * (32.0 / km)
+                let ticked = Int64((targetSec / 300).rounded(.up) * 300)
+                out[i].workout = scaleWorkout(w, toSeconds: ticked)
+                qualifying += 1
             }
         }
 

@@ -497,3 +497,114 @@ long run twice running. Two guards: (1) a SECOND consecutive same-length
 the peak itself stays, late); (2) Beg-42K weekly top-up roofed at 320min.
 Expected shape now: LRs like 200/210/190/170 across W12-15, peaks
 ~320-350min by tier. Back-to-back identical 3h+ beginner long runs = a bug.
+
+## Round 15 (2026-07-04) — long-plan pacing
+- Long-run BUILD-CHAIN growth cap: non-deload long ≤ last non-deload × 1.25
+  (or +15min), 5-min ticked; rehearsals advance the chain uncapped; the km
+  floor OUTRANKS the cap (28km-class runs always delivered).
+- Length-aware floor ramp: full km floor at `1 − 6/planWeeks` (min 0.60) —
+  peak arrives ~4 build weeks + taper before race at ANY length. 27w Beg 42K:
+  six 3h+ runs → three; peak 205min lands W22/27.
+- audit_long_runs.sh gained JUMPY (week >35% above prior 2-week max).
+- ⚠️ test_plans.py fail-set drifts with RUN DATE (deload↔week alignment):
+  14 fails 07-03 vs 16 fails 07-04 at the SAME commit. Always compare
+  same-day HEAD vs change; never a stored baseline file.
+
+## Round 16 (2026-07-04) — 5 sonnet agents, Cmp deep-dive
+Beg PASS (1 cosmetic tick P2). Catalog Z1→noRange sweep noop CONFIRMED
+byte-identical vs pre-fix binaries; zone map 716/716 clean.
+- **Cmp 42K NOT Pfitz 18/70-class on dose** (#158): peaks 472-538min vs
+  660-720 (-18-34%) at every length; weekly TARGETS are fantasy (1496 vs 469
+  rendered — peakBoost×amplifier on literal minutes); 12w peak < BASE W2;
+  36w SPEED > PEAK. Structure (taper/LT/MLR/variety) IS Pfitz-faithful.
+- Cmp slower goals (3:15-3:45) get 0-1 runs ≥32km (#197); MP ladder caps at
+  90min, 12w stalls at 70 (#198).
+- Tick discipline: caps leak up, floors leak down — ceil floors, floor caps (#199).
+- Rest(647, flat-easy jogs) vs Recovery(840, slower) split = 14-month accident;
+  decision pending (#200).
+- Int long lengths: 30w drops the 90min rung; 14w mono-Intervals (#201).
+- Adv shipping 24/30w peak weeks stack past band (#202).
+
+## Round 17 (2026-07-04) — post-dose-lift re-audit (3 sonnet agents)
+Non-Cmp: PASS twice over — 6 matrices regenerate byte-identical at HEAD;
+before/after binary diff clean; 105 template architecturally can't leak
+(eligibleDistances=[42195] + rung index never reached below Cmp); 1194 jogs
+in-band. Cmp fixes landed same-day: cap now PHASE-SCALED (.88/.97/1.05 ×
+peak target) and runs AFTER topUp (was pre-topUp → 52 breaches up to +24%);
+MLR = core + ONE fill (2/wk modal — second fill had made it 3); half peak
+target 570 (PEAK>BASE now 8/8 combos both distances); 60010 duration field
+fixed 9600→9900 (agent-caught clone bug). Snapshot 12218→11953.
+⚠️ `phases` mode dur= column is PRE-OVERRIDE for Cmp (calls
+calculateWeeklyTargetsV3 directly) — don't trust it for Cmp volume.
+Residual (tracked): 3:30-goal ≥2×32km holds only at 18w (#197 reopened);
+36w peak modest (555); #201/#202 untouched.
+
+## Round 18 (2026-07-04) — #201/#202 + guards
+#201: non-Cmp marathon ladder = prefix(3) (105 stays Cmp signature); ≥28w
+drops the 60 intro → Int/Adv 30w deliver 70→90 (was 60/70, no 90). 18-24w
+unchanged. Monotony re-check: Acc Int 21K 14w W11-13 now three DIFFERENT
+Interval templates (6/5/10 seg) — subtype-only repetition remains (pool
+flavor decision, folded into #173 family).
+#202: Adv 42K post-topUp weekly cap 430min, shrink largest easy/MLR only —
+real peaks were 460-505 (NOT 380-420: the naive week-sum regex grabs the
+"(60min @ MP" rung, not the 150min total — sum the LAST min token per line).
+Matrices: only advanced_plans_ios.md ±15 lines (MLR shrinks in stacked weeks).
+R18 python guards: Int-30w-rung + Adv 24/30w ≤440. Same-day fails: 12, 0 new.
+#197 render guarantee (≥2×32km, Cmp 42K) landed kit 6a4e696 — agent-check item.
+
+## Round 18 addenda (2026-07-04, post-agent fixes)
+- Beg/VO2/Maint sweep: PASS (48/48 Beg rehearsals = 60min; LOCKED days 17/17;
+  VO2 0 rehearsals + Z5 progression; Maint light-week formula exact).
+- #202 fallback trim (progression/strides) for weeks with no easy/MLR
+  (22w W19 449min was untrimmable); cap stays 430; Adv km band floor 85→82
+  (old floor was calibrated on the stacked 460-505 weeks the cap removes).
+- Half 18w HMP ladder: pending rung now SPILLS into taper W1 (half only,
+  ladder incomplete only — 24w must not grow a junk 4th rung; taper W1's
+  deload label must not veto it: pass isDeloading && !spillRehearsal to
+  rampRehearsalMPSegment). 12w stays 20/25 by design (4-wk PEAK).
+- R18 guards: + Beg-30w-stays-60 check. Same-day fails 12, 0 new.
+
+## Round 19 (2026-07-04) — final certification (2 sonnet agents)
+Cmp 42K/21K: rung timing, #197 (all 8 marathon combos incl. 3:30 at every
+length — segment-km method), volume bands/caps (0 breaches vs phase-scaled
+caps), taper monotonic 16/16 — CERTIFIED. Non-Cmp spot: PASS (fallback trim
+renders sane; spill unreachable outside Cmp; matrices regenerate-diff empty).
+Fixed from findings: BASE bonus slot now excludes .mediumLong (R19 P1 — the
+last 3-MLR leak; W2/W4-class base weeks back to 2).
+Accepted/parked: half 32w MLR mode=1 (forced-MLR alternation `week%2` under
+low early targets — revisit only if dose audit flags); 18w marathon ladder =
+60/70/90 (3 slots by phase math, correct); half 18w peak/base +2min minutes
+margin (LOAD margin +19% healthy — minutes alone understate intensity).
+⚠️ `dump` mode shows PRE-rescale durations — cap audits must use `pacedump`
+(465 vs true 432 on the same week). Stale strides title after trim ("4 x 25s"
+rendering 21s reps) — cosmetic, unfixed.
+
+## Round 20 (2026-07-04) — Beg-24w smooth peak run-up + #189 onboarding Z5
+- Beg 24w choppy tail (200→160→210 valley-then-spike): #171 deload clamp now
+  softens a deload that sits immediately before a HIGHER peak to ~0.90× (was
+  0.80×), held <180min so it never adds a 4th ≥3h beginner week. Tail now
+  200→175→210. Beg-marathon only; other lengths' peak run-ups already smooth.
+  Guard: "Beg 42K peak long-run run-up not a deep valley" (checks ONLY the
+  peak predecessor — early-build deep deloads at low volume are exempt).
+- #189 SOLVED (root finally found): the trim is front-trim (generate full,
+  drop first `weeksToTrim` weeks + shift), so displayed-W1 = a MID-BASE
+  generation week (Beg 42K 14w → base 3/4 deload, weekInPhase 3). Both the
+  pool strip (weekInPhase<=1) and a raw week<=1 gate miss it. `stripOnboardingZ5`
+  keys on the DISPLAYED index (week - weeksToTrim ≤ 1), swaps real-Z5 → closest
+  easy. Wired Beg only (Int/Adv W1 already clean). Test Z5-W1/W1-2 now PASS
+  (12→10 fails). ⚠️ dump header `[base 3/4]` is the DISPLAYED phase position —
+  use it, not the generation weekInPhase, to reason about front-trimmed W1.
+
+## Round 21 (2026-07-05) — C1 progression-collapse fix (agent-found regression)
+Per-plan agent sweep found the C1 "Progression Run must spread ≥15s/km" invariant
+REGRESSED on deload weeks: Int 21K 18w, Beg 21K 18w, Int 42K 24w/30w rendered a
+`deload_progression` whose 2 WORK segments sat 3-13s/km apart. Root: progression
+templates split into Z2→Z3 (easy→MP, wide spread) and Z3→Z4 (MP→threshold, which
+collapse when Z3≈Z4 at HM/short fitness); the deload reshaping picked by DURATION
+only, zone-blind, so it grabbed Z3→Z4 collapsers. Fix: `progressionStartsEasy()`
+(first work seg Z2) — both deload progression selections now PREFER easy-start
+(gentler for a recovery week AND guaranteed spread), fallback to all if none.
+Now 42-70s spread everywhere. New automated guard "C1: Progression Run work-body
+spread ≥15s/km" (excludes WU/CD segs) pins the 4 sites — verified non-vacuous
+(pre-fix binary fails 3-13s). Matrices: 62 progression lines + ≤3 MLR fills
+(within day-cap), non-Cmp only. 60 swift, 10 python (0 new).

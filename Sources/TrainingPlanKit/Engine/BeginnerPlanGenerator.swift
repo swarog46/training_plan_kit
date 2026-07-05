@@ -144,9 +144,11 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                 // specific sharpening tools yet; PEAK sharpens — race-specific
                 // work leads when the pool has it. SPEED keeps the full mix.
                 if phase == .base, !config.isVO2Max {
-                    // Onboarding weeks (1-2) additionally stay Z5-free — the
-                    // flavor filter must not promote reps into week 1.
-                    if weekInPhase <= 1 {
+                    // Onboarding weeks + any BASE deload stay Z5-free — the flavor
+                    // filter must not promote reps into week 1, and a deload
+                    // (recovery) week must never carry hard VO2 (was: first
+                    // Intervals landing on the W3 base deload, z5=6, spiking it).
+                    if weekInPhase <= 1 || isDeloading {
                         let noZ5 = result.filter { !isRealZ5($0) }
                         if !noZ5.isEmpty { result = noZ5 }
                     }
@@ -230,13 +232,17 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             if config.profile.startsIntervalsInBase && phase == .base {
                 shouldAddIntervals = true // fitter tiers start intervals in Base
             }
-            // R8: quality must appear by W3, not after a 5-week aerobic-only
-            // opening — from the 3rd BASE week a beginner takes one light quality
-            // session (the base-phase minute floor keeps it a ~25min dose).
-            // Half/marathon only: the 2-day 5K/10K beginner weeks have no room
-            // (quality would crowd out the easy runs entirely).
-            if phase == .base && weekInPhase >= 2 && week >= 2 && config.distance >= 21000
-                && config.trainingDays.count >= 3 {
+            // Quality appears from BASE W2 (was W3): one week of pure onboarding
+            // is enough for the 3-4 day half/marathon beginner. The W2 pool is
+            // still Z5-stripped (weekInPhase<=1 below), so this first quality is a
+            // gentle Z4 threshold/hills, not VO2 — and it lands BEFORE the W3 base
+            // deload instead of spiking it (was: first Intervals on the deload).
+            // Half/marathon only: 2-day 5K/10K weeks have no room for it.
+            // Gate on the DISPLAYED week (week - weeksToTrim), not generation week:
+            // a front-trimmed plan's displayed W1 maps to a mid-base generation
+            // week, and must stay pure onboarding (else quality lands on W1).
+            if phase == .base && weekInPhase >= 1 && (week - weeksToTrim) >= 1
+                && config.distance >= 21000 && config.trainingDays.count >= 3 {
                 shouldAddIntervals = true
             }
             // VO2 block: VO2 IS the point — carry the Z5 dose into BASE too, but skip
@@ -661,9 +667,37 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     .min(by: { weekWorkouts[$0].workout.duration < weekWorkouts[$1].workout.duration })
                 if let i = easySlot {
                     let targetMin = Int(weekWorkouts[i].workout.duration / 60)
-                    if let strides = begStridesPool.min(by: {
-                        abs(Int($0.duration / 60) - targetMin) < abs(Int($1.duration / 60) - targetMin)
-                    }) {
+                    // Rotate the strides variant by plan week so consecutive weeks
+                    // never render identical — Acc tiers with a flat early duration
+                    // target used to pick the same 3×15s W1-W3 (B, 2026-07-05).
+                    // Rotate only WITHIN ±8min of the target so the week's volume is
+                    // preserved (different rep scheme, same duration band); fall back
+                    // to closest-duration when the band has no real choice.
+                    // Per rep-scheme title, keep the instance closest to the slot
+                    // duration (the catalog has each scheme at several durations),
+                    // THEN rotate titles by week — so variety never drifts volume.
+                    let target: Int64 = weekWorkouts[i].workout.duration
+                    let eligible: [Workout] = begStridesPool.filter { stridesRepCount($0) >= 4 }
+                    let grouped: [String: [Workout]] = Dictionary(grouping: eligible, by: { $0.title })
+                    var perTitle: [Workout] = []
+                    for (_, insts) in grouped {
+                        if let best = insts.min(by: { abs($0.duration - target) < abs($1.duration - target) }) {
+                            perTitle.append(best)
+                        }
+                    }
+                    let near: [Workout] = perTitle
+                        .filter { abs(Int($0.duration / 60) - targetMin) <= 8 }
+                        // Title tiebreaker → DETERMINISTIC order: equal-load strides
+                        // (same duration, different pickup length) otherwise sort
+                        // unstably (Dictionary.values order is random), flaking the
+                        // week % variants pick and the generated plan run-to-run.
+                        .sorted { ($0.trainingLoad, $0.title) < ($1.trainingLoad, $1.title) }
+                    let strides = near.count >= 2
+                        ? near[week % near.count]
+                        : begStridesPool.min(by: {
+                            abs(Int($0.duration / 60) - targetMin) < abs(Int($1.duration / 60) - targetMin)
+                          })
+                    if let strides = strides {
                         weekWorkouts[i] = ("strides", strides)
                     }
                 }
@@ -732,6 +766,7 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
             topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
                                  isDeloading: isDeloading, phase: phase,
                                  weeklyCapMins: config.distance == 42195 ? 320 : nil)
+            stripOnboardingZ5(&weekWorkouts, week: week, phase: phase)
             workoutsByWeek[week] = weekWorkouts
         } while false
     }
