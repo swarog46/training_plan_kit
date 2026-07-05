@@ -667,10 +667,21 @@ final class BeginnerPlanGenerator: PlanGeneratorV3 {
                     // Rotate only WITHIN ±8min of the target so the week's volume is
                     // preserved (different rep scheme, same duration band); fall back
                     // to closest-duration when the band has no real choice.
-                    let near = begStridesPool
-                        .filter { abs(Int($0.duration / 60) - targetMin) <= 8 && stridesRepCount($0) >= 4 }
-                        .reduce(into: [String: Workout]()) { d, w in if d[w.title] == nil { d[w.title] = w } }
-                        .values.sorted { $0.trainingLoad < $1.trainingLoad }
+                    // Per rep-scheme title, keep the instance closest to the slot
+                    // duration (the catalog has each scheme at several durations),
+                    // THEN rotate titles by week — so variety never drifts volume.
+                    let target: Int64 = weekWorkouts[i].workout.duration
+                    let eligible: [Workout] = begStridesPool.filter { stridesRepCount($0) >= 4 }
+                    let grouped: [String: [Workout]] = Dictionary(grouping: eligible, by: { $0.title })
+                    var perTitle: [Workout] = []
+                    for (_, insts) in grouped {
+                        if let best = insts.min(by: { abs($0.duration - target) < abs($1.duration - target) }) {
+                            perTitle.append(best)
+                        }
+                    }
+                    let near: [Workout] = perTitle
+                        .filter { abs(Int($0.duration / 60) - targetMin) <= 8 }
+                        .sorted { $0.trainingLoad < $1.trainingLoad }
                     let strides = near.count >= 2
                         ? near[week % near.count]
                         : begStridesPool.min(by: {
