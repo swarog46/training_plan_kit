@@ -91,6 +91,10 @@ public struct PlanConfiguration {
     // as 5000 (5K-style workout selection) but skips race-day creation,
     // and Plan storage uses the .vo2max sentinel for disambiguation.
     public var isVO2Max: Bool = false
+    // True for Couch-to-5K — routes to the fixed-protocol generator (c25k_*
+    // templates by week, no selector) and suppresses deload tagging: the
+    // protocol's own progression IS the recovery structure.
+    public var isCouchTo5K: Bool = false
 
     // Phase duration ratios (will be used to calculate actual duration)
     public let basePhaseRatio: Double  // e.g., 0.25 = 25% of total training period
@@ -163,7 +167,7 @@ public struct PlanConfiguration {
         // peaks at the last PEAK week and only steps down in taper, so a 2-week
         // taper lands the peak long run too close (2 weeks out) to absorb.
         // Half/shorter keep shorter tapers (less volume to shed).
-        if distance >= 30000 {
+        if isMarathonClass {
             taperWeeks = max(taperWeeks, 3)
         }
 

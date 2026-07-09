@@ -261,7 +261,12 @@ extension VDOT {
             case 42195: return cand.marathonPaceSecondsPerKm
             case 21097: return cand.halfMarathonPaceSecondsPerKm
             case 10000: return cand.tenKPaceSecondsPerKm
-            default:    return cand.fiveKPaceSecondsPerKm
+            case 5000:  return cand.fiveKPaceSecondsPerKm
+            default:
+                // Any other distance (15K, 10mi, 30K, 50K…): invert the
+                // Daniels formula instead of borrowing a classic's pace.
+                guard let t = cand.predictedTime(forDistanceMeters: distanceMeters) else { return .max }
+                return Int((Double(t) / Double(distanceMeters) * 1000).rounded())
             }
         }
         var lo = 15.0, hi = 85.0

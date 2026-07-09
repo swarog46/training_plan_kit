@@ -77,7 +77,7 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
             let peakWeekIndex = week - baseDur - speedDur
             let competitiveRehearsalWeek = config.runnerLevel == .competitive && peakDur >= 3
                 && (peakWeekIndex % 2 == 0 || peakWeekIndex == peakDur - 1)
-            let peakTTWeek = config.distance >= 21000 && phase == .peak
+            let peakTTWeek = config.isLongRaceClass && phase == .peak
                 && (weekInPhase % milestoneCadence) == milestoneCadence / 2
                 && !competitiveRehearsalWeek
             let ttWeek = recalibTTWeek || peakTTWeek
@@ -110,7 +110,7 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                 // 5K/10K: the lead VO2 session must be true Z5. Drop Z4-only VO2-family
                 // templates when true-Z5 ones exist (on 5K/10K a Z4 "VO2" renders
                 // slower than race); see BeginnerPlanGenerator.
-                if config.distance < 21000 {
+                if !config.isLongRaceClass {
                     for vsub in [WorkoutSubtype.intervals, .ladderIntervals, .pyramidIntervals] {
                         if result.contains(where: { $0.subtype == vsub && isRealZ5($0) }) {
                             result = result.filter { !($0.subtype == vsub && !isRealZ5($0)) }

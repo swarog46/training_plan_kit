@@ -47,7 +47,14 @@ private let buildBandMaxGap: Double = 4.0
 /// - Returns: The gate state to surface in the UI.
 public func competitiveGateState(vdot: VDOT?, distanceMeters: Int) -> CompetitiveGateState {
     guard let vdot = vdot else { return .clear }
-    let goalTime: Int = (distanceMeters == 42195) ? 10800 : 5400
+    // Tier class anchors: sub-3:00 M / sub-1:30 HM / sub-40 10K / sub-19 5K.
+    let goalTime: Int
+    switch distanceMeters {
+    case 42195: goalTime = 10800
+    case 21097: goalTime = 5400
+    case 10000: goalTime = 2400
+    default:    goalTime = 1140
+    }
     guard let requiredVDOT = VDOT.from(distanceMeters: distanceMeters, timeSeconds: goalTime) else {
         return .clear  // Pathological — degrade open.
     }

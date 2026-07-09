@@ -164,16 +164,16 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .timeTrial:
             // Race-effort fitness check — useful at every distance.
-            return [5000, 10000, 21097, 42195]
+            return [5000, 10000, 15000, 16093, 21097, 30000, 42195, 50000]
         case .mileRepeats:
             // 1mi @ T-pace — signature mid-distance workout, irrelevant for 5K.
-            return [10000, 21097, 42195]
+            return [10000, 15000, 16093, 21097, 30000, 42195, 50000]
         case .raceRehearsalM:
-            // Marathon-pace race rehearsal — marathon plans only.
-            return [42195]
+            // Marathon-pace race rehearsal — marathon-class plans (30K/50K race near MP).
+            return [30000, 42195, 50000]
         case .raceRehearsalHM:
-            // Half-marathon-pace race rehearsal — 21K plans only.
-            return [21097]
+            // HMP rehearsal — 21K plus the 15K/10mi band (HMP ≈ their race pace).
+            return [15000, 16093, 21097]
         case .raceRehearsal10K:
             // 10K-pace fast-finish rehearsal — 10K plans only.
             return [10000]
@@ -182,22 +182,26 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
             return [5000]
         case .tenkPace:
             // Sustained intervals at 10K race pace — 10K plans (could
-            // optionally extend to 5000 for 10K-pace tempo work).
-            return [10000]
+            // optionally extend to 5000 for 10K-pace tempo work). 15K/10mi
+            // use it as their sharpening gear.
+            return [10000, 15000, 16093]
         case .fastFinish:
             // Long-ish easy run with brief race-pace tail. Conceptually a
             // long run with a fast tail — 5K plans don't have long runs
-            // so fastFinish doesn't fit. 10K+ only.
-            return [10000, 21097, 42195]
+            // so fastFinish doesn't fit. 10K+ only. 15K/10mi excluded: the
+            // catalog's MP-tail variants title as "@ MP", which reads wrong
+            // mid-band (R23 finding); their fast-tail need is covered by
+            // progressiveLong.
+            return [10000, 21097, 30000, 42195, 50000]
         case .yasso800:
             // Marathon-prediction folklore — marathon only.
             return [42195]
         case .marathonPace:
-            // Goal MP work — marathon only (could extend to 21K if needed).
-            return [42195]
+            // Goal MP work — marathon-class (30K/50K are raced near MP).
+            return [30000, 42195, 50000]
         default:
             // Standard (free) subtypes — all distances + maintenance (0).
-            return [0, 5000, 10000, 21097, 42195]
+            return [0, 5000, 10000, 15000, 16093, 21097, 30000, 42195, 50000]
         }
     }
 }

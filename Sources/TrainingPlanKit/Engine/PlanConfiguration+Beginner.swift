@@ -135,6 +135,62 @@ extension PlanConfiguration {
             baseLoad: 4500
         )
     )
+
+    // 15K — HM-lite (Daniels 15K-to-half band): 21K shape at ~0.85 volume.
+    public static let beginner15Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .beginner,
+        distance: 15000,
+        basePhaseRatio: 0.3,
+        speedPhaseRatio: 0.3,
+        peakPhaseRatio: 0.3,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 3,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 18...26,
+            phaseFinishDeloadPercent: 14...16,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 105,
+            initialLongRunDuration: 30...35,
+            maxLongRunMinutes: 85,
+            longRunProgression: (base: 55, speed: 80, peak: 100, taper: 55),
+            baseLoad: 4500
+        )
+    )
+
+    // 10 mile — a hair over 15K; same band, slightly longer LR ladder.
+    public static let beginner10MiDefault = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .beginner,
+        distance: 16093,
+        basePhaseRatio: 0.3,
+        speedPhaseRatio: 0.3,
+        peakPhaseRatio: 0.3,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 3,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 18...26,
+            phaseFinishDeloadPercent: 14...16,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 110,
+            initialLongRunDuration: 32...38,
+            maxLongRunMinutes: 90,
+            longRunProgression: (base: 55, speed: 85, peak: 105, taper: 60),
+            baseLoad: 4500
+        )
+    )
 }
 
 
@@ -184,4 +240,5 @@ public struct BeginnerProfile: PlanProfile {
                     + filterWorkoutsBySubtypeV3(workouts: allWorkouts, subtypes: [.strides]),
                 thresholds.filter { !hasZone5($0) && thr.contains($0.subtype) })
     }
+
 }

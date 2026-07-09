@@ -731,6 +731,14 @@ public struct PaceZoneConverter {
                                      : isBeginner ? (16, 18) : (16, 21)
         case 10000: (floorKm, capKm) = (0, 16)
         case 5000:  (floorKm, capKm) = (0, 12)
+        // 15K / 10-mile: race-relevant peak ≈ 12-19km (Daniels 15K-to-half band).
+        case 15000: (floorKm, capKm) = isBeginner ? (12, 15) : (12, 18)
+        case 16093: (floorKm, capKm) = isBeginner ? (13, 16) : (13, 19)
+        // 30K: marathon-lite — near-race-distance exposure without full 32km peaks.
+        case 30000: (floorKm, capKm) = (22, 27)
+        // 50K: time-on-feet capped at ~34km — ultra prep peaks around marathon
+        // distance, never the full 50 (Koop/Krissy Moehl convention).
+        case 50000: (floorKm, capKm) = (28, 34)
         default:    (floorKm, capKm) = (0, 34)
         }
 

@@ -127,6 +127,118 @@ extension PlanConfiguration {
             baseLoad: 10000
         )
     )
+
+    // 15K — HM-lite: intermediate 21K shape at ~0.85 volume.
+    public static let intermediate15Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 15000,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.3,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 17...26,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 170,
+            initialLongRunDuration: 50...60,
+            maxLongRunMinutes: 85,
+            longRunProgression: (base: 85, speed: 95, peak: 115, taper: 70),
+            baseLoad: 8000
+        )
+    )
+
+    // 10 mile — same band as 15K, slightly longer.
+    public static let intermediate10MiDefault = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 16093,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.3,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 17...26,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 180,
+            initialLongRunDuration: 55...65,
+            maxLongRunMinutes: 90,
+            longRunProgression: (base: 85, speed: 95, peak: 120, taper: 70),
+            baseLoad: 8000
+        )
+    )
+
+    // 30K — marathon-lite: 42K shape at ~0.88 volume; render window peaks LR 22-27km.
+    public static let intermediate30Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 30000,
+        basePhaseRatio: 0.15,
+        speedPhaseRatio: 0.3,
+        peakPhaseRatio: 0.45,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 3,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 5,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 17...26,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 280,
+            initialLongRunDuration: 85...95,
+            maxLongRunMinutes: 175,
+            longRunProgression: (base: 80, speed: 115, peak: 165, taper: 85),
+            baseLoad: 10000
+        )
+    )
+
+    // 50K — ultra entry: 42K + time-on-feet (LR render-capped 28-34km), gentler ramp, 3-week taper.
+    public static let intermediate50Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .intermediate,
+        distance: 50000,
+        basePhaseRatio: 0.2,
+        speedPhaseRatio: 0.25,
+        peakPhaseRatio: 0.45,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 6,
+        minTaperPhaseWeeks: 3,
+        trainingDays: [1, 3, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 15...24,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 340,
+            initialLongRunDuration: 100...115,
+            maxLongRunMinutes: 215,
+            longRunProgression: (base: 95, speed: 140, peak: 200, taper: 105),
+            baseLoad: 10000
+        )
+    )
 }
 
 

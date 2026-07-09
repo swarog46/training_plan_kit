@@ -127,6 +127,118 @@ extension PlanConfiguration {
             baseLoad: 17500
         )
     )
+
+    // 15K — HM-lite: advanced 21K shape at ~0.85 volume.
+    public static let advanced15Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 15000,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.3,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 4, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 15...25,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 170,
+            initialLongRunDuration: 65...70,
+            maxLongRunMinutes: 90,
+            longRunProgression: (base: 70, speed: 95, peak: 125, taper: 70),
+            baseLoad: 21000
+        )
+    )
+
+    // 10 mile — same band as 15K, slightly longer.
+    public static let advanced10MiDefault = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 16093,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.35,
+        peakPhaseRatio: 0.3,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 4, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 15...25,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 180,
+            initialLongRunDuration: 70...75,
+            maxLongRunMinutes: 95,
+            longRunProgression: (base: 70, speed: 100, peak: 130, taper: 70),
+            baseLoad: 21000
+        )
+    )
+
+    // 30K — marathon-lite: 42K shape at ~0.88 volume.
+    public static let advanced30Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 30000,
+        basePhaseRatio: 0.23,
+        speedPhaseRatio: 0.27,
+        peakPhaseRatio: 0.4,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 5,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 3, 4, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 15...25,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 370,
+            initialLongRunDuration: 85...95,
+            maxLongRunMinutes: 185,
+            longRunProgression: (base: 85, speed: 125, peak: 175, taper: 95),
+            baseLoad: 17500
+        )
+    )
+
+    // 50K — ultra entry: 42K + time-on-feet, gentler ramp, 3-week taper.
+    public static let advanced50Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .advanced,
+        distance: 50000,
+        basePhaseRatio: 0.25,
+        speedPhaseRatio: 0.25,
+        peakPhaseRatio: 0.4,
+        taperPhaseRatio: 0.1,
+        minBasePhaseWeeks: 4,
+        minSpeedPhaseWeeks: 4,
+        minPeakPhaseWeeks: 6,
+        minTaperPhaseWeeks: 3,
+        trainingDays: [1, 3, 4, 5, 6],
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 14...23,
+            phaseFinishDeloadPercent: 15...17,
+            taperDeloadPercent: 35,
+            initialWeeklyDuration: 440,
+            initialLongRunDuration: 100...110,
+            maxLongRunMinutes: 225,
+            longRunProgression: (base: 95, speed: 150, peak: 210, taper: 110),
+            baseLoad: 17500
+        )
+    )
 }
 
 

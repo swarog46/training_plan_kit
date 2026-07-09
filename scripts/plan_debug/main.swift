@@ -150,7 +150,7 @@ func dumpPlan(_ config: PlanConfiguration, weeks: Int, label: String, workouts: 
         // aligns with the delivered loads above — `phases` mode is un-trimmed).
         let targets = calculateWeeklyTargetsV3(weekInPlan: week + weeksTrimmed, weekInPhase: weekInPhase,
                                                phase: phase, phaseDurations: phaseDurations, config: config)
-        let deloadTag = targets.isDeloading ? " [deload]" : ""
+        let deloadTag = (targets.isDeloading && !config.isCouchTo5K) ? " [deload]" : ""
         print(String(format: "W%2d [%@ %d/%d] %dwkts load=%5d %3dmin%@",
                      week + 1, phaseLabel, weekInPhase + 1, phaseLen,
                      ws.count, totalLoad, totalMin, deloadTag))
@@ -288,6 +288,14 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("Adv 21K (rec, 14w)",   .advanced21Default,     14),
     ("Adv 21K (long, 18w)",  .advanced21Default,    18),
 
+    // 5K/10K Competitive — Pro tier short distances
+    ("Cmp 5K (short, 10w)",  .competitive5Default,  10),
+    ("Cmp 5K (rec, 12w)",    .competitive5Default,  12),
+    ("Cmp 5K (long, 16w)",   .competitive5Default,  16),
+    ("Cmp 10K (short, 10w)", .competitive10Default, 10),
+    ("Cmp 10K (rec, 12w)",   .competitive10Default, 12),
+    ("Cmp 10K (long, 16w)",  .competitive10Default, 16),
+
     // 21K Competitive — sub-1:30 target
     // Min (12w) and max (32w) cover the gate's build-band recommended
     // weeks at VDOT 54 (30w) which now fits under the bumped max cap.
@@ -322,6 +330,23 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("VO2 Beg (8w)",         .vo2maxBeginner,         8),
     ("VO2 Int (8w)",         .vo2maxIntermediate,     8),
     ("VO2 Adv (8w)",         .vo2maxAdvanced,         8),
+
+    // Couch-to-5K — fixed 9-week protocol
+    ("C25K (9w)",            .couchTo5K,              9),
+
+    // 15K / 10 mile — HM-lite band (rec 12w)
+    ("Beg 15K (rec, 12w)",   .beginner15Default,     12),
+    ("Int 15K (rec, 12w)",   .intermediate15Default, 12),
+    ("Adv 15K (rec, 12w)",   .advanced15Default,     12),
+    ("Beg 10mi (rec, 12w)",  .beginner10MiDefault,   12),
+    ("Int 10mi (rec, 12w)",  .intermediate10MiDefault, 12),
+    ("Adv 10mi (rec, 12w)",  .advanced10MiDefault,   12),
+
+    // 30K / 50K — marathon-class (rec 16/18w)
+    ("Int 30K (rec, 16w)",   .intermediate30Default, 16),
+    ("Adv 30K (rec, 16w)",   .advanced30Default,     16),
+    ("Int 50K (rec, 18w)",   .intermediate50Default, 18),
+    ("Adv 50K (rec, 18w)",   .advanced50Default,     18),
 
     // Accessible ("real life") tier — lighter variants, same structure
     ("Acc Beg 5K (rec, 7w)",  .accessibleBeginner5Default,      7),

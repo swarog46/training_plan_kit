@@ -2852,14 +2852,17 @@ for pname, weeks in z5plans.items():
         wd = weeks[wn]; c = wd['z5']
         # R8: half/marathon carry a light Z5 session from BASE week 3;
         # only the first two base weeks + taper/race stay Z5-free.
-        base_ok = wd['phase'] == 'base' and wn >= 3 and ('21K' in pname or '42K' in pname)
+        # Long-race CLASS plans (15K and up — mirrors isLongRaceClass) carry
+        # light base quality from W3; short races stay clean all base.
+        long_class = any(t in pname for t in ('15K', '10mi', '21K', '30K', '42K', '50K'))
+        base_ok = wd['phase'] == 'base' and wn >= 3 and long_class
         if c and not isvo2 and wd['phase'] in ('base', 'taper', 'race') and not base_ok:
             bad_phase.append(f"{pname} W{wn}[{wd['phase']}]")
         if c and wn == 1 and not isvo2:
             bad_w1.append(pname)
         if c > 1 and not (isvo2 and 'Adv' in pname):
             bad_double.append(f"{pname} W{wn}")
-        if c and prev and ('21K' in pname or '42K' in pname):
+        if c and prev and long_class:
             bad_consec.append(f"{pname} W{wn}")
         prev = c > 0
 check("No Z5 in BASE W1-2 / TAPER / RACE weeks (non-VO2; R8 allows light Z5 from base W3)",
@@ -4359,6 +4362,203 @@ for _wk in [18, 24]:
     _big = sorted(round(k, 1) for k in _kms if k >= 31.9)
     check(f"Cmp 42K {_wk}w @3:30: >=2 long runs >=32km (#197)",
           len(_big) >= 2, f"qualifying={_big}", full=True)
+
+
+# --- Pro 5K/10K presets (R21): structural sanity for the new competitive
+# short-distance plans. Volume certification happens when they thread into
+# the app; these lock the SHAPE (deload rhythm, LR policy, taper, race week).
+
+section("Pro 5K/10K competitive presets (R21)")
+
+_wk_hdr = re.compile(r"^W\s*(\d+) \[(\w+) (\d+)/(\d+)\] (\d+)wkts load=\s*(\d+)\s+(\d+)min( \[deload\])?")
+
+def _pro_weeks(label):
+    """[(week, phase, sessions, load, mins, deload, [subtypes])] from dump."""
+    txt = run_dump(label.split(" (")[0] + " (" + label.split(" (")[1])
+    out, cur = [], None
+    active = False
+    for line in txt.splitlines():
+        if line.startswith(f"=== {label}"):
+            active = True; continue
+        if active and line.startswith("=== "):
+            break
+        if not active: continue
+        m = _wk_hdr.match(line)
+        if m:
+            cur = dict(week=int(m.group(1)), phase=m.group(2), n=int(m.group(5)),
+                       load=int(m.group(6)), mins=int(m.group(7)),
+                       deload=bool(m.group(8)), subtypes=[])
+            out.append(cur)
+        elif cur is not None:
+            sm = re.search(r"\[(\w+)/", line)
+            if sm: cur["subtypes"].append(sm.group(1))
+    return out
+
+for _label, _dist in [("Cmp 5K (rec, 12w)", "5K"), ("Cmp 10K (rec, 12w)", "10K")]:
+    _ws = _pro_weeks(_label)
+    check(f"{_label}: parsed 12 weeks", len(_ws) == 12, f"got {len(_ws)}")
+    if len(_ws) != 12: continue
+    _build = [w for w in _ws if w["phase"] in ("base", "speed", "peak")]
+    _mid = any(w["deload"] for w in _ws if 4 <= w["week"] <= 9)
+    check(f"{_label}: mid-plan deload in W4-W9", _mid,
+          f"deloads at {[w['week'] for w in _ws if w['deload']]}")
+    _peak_mins = max(w["mins"] for w in _build)
+    _taper = [w for w in _ws if w["phase"] == "taper"]
+    # Pfitz taper: first taper week cuts 30-50% of peak volume. 35% floor —
+    # the 6-session week has a ~280min render floor that a 40% bar undercuts.
+    check(f"{_label}: taper cuts >=35% from peak week",
+          bool(_taper) and _taper[0]["mins"] <= 0.65 * _peak_mins,
+          f"taper={_taper[0]['mins'] if _taper else '?'} peak={_peak_mins}")
+    _race = [w for w in _ws if w["phase"] == "race"]
+    check(f"{_label}: race week light (<=160min) with shakeout (>=3 sessions)",
+          bool(_race) and _race[0]["mins"] <= 160 and _race[0]["n"] >= 3,
+          f"race={_race[0] if _race else '?'}")
+    _long_subs = {"long", "steadyLong", "progressiveLong", "fastFinish"}
+    _longs = [st for w in _ws for st in w["subtypes"] if st in _long_subs]
+    if _dist == "5K":
+        check(f"{_label}: no long-run slot (5K branch)", not _longs, f"found {_longs}")
+    else:
+        check(f"{_label}: has long runs", bool(_longs), "none found")
+    _q = {"intervals","hillRepeats","threshold","mileRepeats","ladderIntervals",
+          "timeTrial","fivekPace","tenkPace","fartlek"}
+    _no_q = [w["week"] for w in _build if w["phase"] in ("speed","peak")
+             and not w["deload"] and not any(st in _q for st in w["subtypes"])]
+    check(f"{_label}: every non-deload SPEED/PEAK week has quality", not _no_q,
+          f"quality-free weeks: {_no_q}", full=True)
+
+
+section("Pro 5K/10K R22 certification: volume bands + crescendo @ rec length")
+
+def _km_per_week(filter_str, race_pace, easy_pace, speed_pace):
+    # Full anchor set — without SPEED_PACE the Z4/Z5 render falls back to
+    # defaults and quality paces read nonsense (R22 lesson).
+    env = os.environ.copy()
+    env.update({"RACE_PACE": str(race_pace), "EASY_PACE": str(easy_pace),
+                "SPEED_PACE": str(speed_pace)})
+    txt = subprocess.run([PLAN_DEBUG, "pacedump", filter_str],
+                         capture_output=True, text=True, env=env).stdout
+    weeks, cur = {}, None
+    lines = txt.splitlines()
+    i = 0
+    while i < len(lines):
+        l = lines[i]
+        wm = re.match(r"^W\s*(\d+):", l)
+        if wm: cur = int(wm.group(1)); weeks[cur] = 0.0; i += 1; continue
+        m = re.match(r"^  \S.*?(\d+)min\s+(.*?)\s+\[", l)
+        if m and cur is not None:
+            dur, km = int(m.group(1)), 0.0
+            if i + 1 < len(lines) and "↳" in lines[i + 1]:
+                for a, b, c, d in re.findall(r"(\d+):(\d\d) @ (\d+):(\d\d)/km", lines[i + 1]):
+                    km += (int(a)*60+int(b)) / (int(c)*60+int(d))
+                i += 1
+            else:
+                pmc = re.search(r"(\d+):(\d\d)/km", m.group(2))
+                if pmc: km = dur * 60 / (int(pmc.group(1))*60+int(pmc.group(2)))
+            weeks[cur] += km
+        i += 1
+    return weeks
+
+# Class anchors: sub-19 5K (3:48/km, easy 4:55), sub-40 10K (4:00, easy 5:05).
+for _label, _rp, _ep, _sp, _lo, _hi in [("Cmp 5K (rec", 228, 286, 228, 80, 105),
+                                        ("Cmp 10K (rec", 240, 291, 231, 65, 95)]:
+    _w = _km_per_week(_label, _rp, _ep, _sp)
+    if not _w:
+        check(f"{_label}) R22: pacedump parsed", False, "no weeks parsed", full=True)
+        continue
+    _peak_w = max(_w, key=_w.get)
+    _peak = _w[_peak_w]
+    check(f"{_label}) R22: peak km in class band [{_lo},{_hi}]",
+          _lo <= _peak <= _hi, f"peak={_peak:.0f}km @W{_peak_w}", full=True)
+    check(f"{_label}) R22: crescendo — peak lands in the plan's back half (W6+)",
+          _peak_w >= 6, f"peak @W{_peak_w}", full=True)
+    check(f"{_label}) R22: W1 arrival volume sane (45-70km)",
+          45 <= _w[1] <= 70, f"W1={_w[1]:.0f}km", full=True)
+
+section("New distances (R23): 15K/10mi/30K/50K structural sanity")
+
+for _label, _wks, _has_lr, _mclass in [
+    ("Beg 15K (rec, 12w)", 12, True, False), ("Int 15K (rec, 12w)", 12, True, False),
+    ("Adv 15K (rec, 12w)", 12, True, False), ("Beg 10mi (rec, 12w)", 12, True, False),
+    ("Int 10mi (rec, 12w)", 12, True, False), ("Adv 10mi (rec, 12w)", 12, True, False),
+    ("Int 30K (rec, 16w)", 16, True, True), ("Adv 30K (rec, 16w)", 16, True, True),
+    ("Int 50K (rec, 18w)", 18, True, True), ("Adv 50K (rec, 18w)", 18, True, True),
+]:
+    _ws = _pro_weeks(_label)
+    check(f"{_label}: parsed {_wks} weeks", len(_ws) == _wks, f"got {len(_ws)}")
+    if len(_ws) != _wks: continue
+    # Beg mid-distance keeps the base-heavy split (4/3/3) → one mid deload;
+    # Int/Adv run the R22 2/4/4 split → two (W5+W9).
+    _need = 1 if _label.startswith("Beg") else 2
+    check(f"{_label}: has deload rhythm (>={_need} build deloads)",
+          sum(1 for w in _ws if w["deload"] and w["phase"] in ("base", "speed", "peak")) >= _need,
+          f"deloads at {[w['week'] for w in _ws if w['deload']]}")
+    _long_subs = {"long", "steadyLong", "progressiveLong", "fastFinish",
+                  "raceRehearsalM", "raceRehearsalHM", "raceRehearsal10K"}
+    _longs = [st for w in _ws for st in w["subtypes"] if st in _long_subs]
+    check(f"{_label}: long-run slot present", bool(_longs), "none")
+    if _mclass:
+        _mp = [st for w in _ws for st in w["subtypes"] if st in ("raceRehearsalM", "marathonPace")]
+        check(f"{_label}: marathon-class specificity (MP rehearsal/work present)",
+              bool(_mp), "no MP work found")
+    _race = [w for w in _ws if w["phase"] == "race"]
+    check(f"{_label}: race week light (<=170min)",
+          bool(_race) and _race[0]["mins"] <= 170, f"{_race[0]['mins'] if _race else '?'}min")
+
+section("New distances R23 certification: km bands + crescendo @ rec length")
+
+# Class anchors per tier (race/easy/5K-flat, sec/km) + peak-km bands.
+for _label, _rp, _ep, _spd, _lo, _hi in [
+    ("Beg 15K (rec", 335, 410, 305, 25, 45),
+    ("Int 15K (rec", 275, 345, 255, 45, 70),
+    ("Adv 15K (rec", 247, 300, 228, 60, 85),
+    ("Beg 10mi (rec", 332, 410, 305, 25, 45),
+    ("Int 10mi (rec", 272, 345, 255, 45, 70),
+    ("Adv 10mi (rec", 245, 300, 228, 60, 85),
+    ("Int 30K (rec", 305, 365, 270, 55, 80),
+    ("Adv 30K (rec", 273, 315, 237, 70, 95),
+    ("Int 50K (rec", 345, 375, 270, 60, 85),
+    ("Adv 50K (rec", 310, 320, 237, 75, 100),
+]:
+    _w = _km_per_week(_label, _rp, _ep, _spd)
+    if not _w:
+        check(f"{_label}) R23: pacedump parsed", False, "no weeks", full=True)
+        continue
+    _peak = max(_w.values())
+    check(f"{_label}) R23: peak km in band [{_lo},{_hi}]",
+          _lo <= _peak <= _hi, f"peak={_peak:.0f}km", full=True)
+    # Crescendo with plateau tolerance: the LAST week within 4% of the peak
+    # must sit in the back half (Int tiers flat-top by volume cap — that's
+    # fine as long as the plateau reaches the back half).
+    _late = max(k for k, v in _w.items() if v >= _peak * 0.96)
+    check(f"{_label}) R23: peak/plateau reaches the back half",
+          _late >= len(_w) * 0.5, f"last near-peak @W{_late}/{len(_w)}", full=True)
+
+section("Couch-to-5K protocol (R21)")
+
+_c25k = run_dump("C25K")
+_c25k_weeks = []
+_cur = None
+for _l in _c25k.splitlines():
+    _m = _wk_hdr.match(_l)
+    if _m:
+        _cur = dict(week=int(_m.group(1)), n=int(_m.group(5)), mins=int(_m.group(7)),
+                    deload=bool(_m.group(8)), titles=[])
+        _c25k_weeks.append(_cur)
+    elif _cur is not None and re.search(r"\d+min l=\d+", _l):
+        _cur["titles"].append(_l.strip().split("  ")[0])
+check("C25K: 9 weeks, 3 sessions each",
+      len(_c25k_weeks) == 9 and all(w["n"] == 3 for w in _c25k_weeks),
+      f"{[(w['week'], w['n']) for w in _c25k_weeks]}")
+check("C25K: no deload tags (protocol is its own ramp)",
+      not any(w["deload"] for w in _c25k_weeks))
+check("C25K: W1 is run/walk, W9 is continuous 30min",
+      bool(_c25k_weeks) and "Run/Walk" in (_c25k_weeks[0]["titles"] or [""])[0]
+      and "Run 30 min" in (_c25k_weeks[-1]["titles"] or [""])[0],
+      f"W1={_c25k_weeks[0]['titles'][:1]} W9={_c25k_weeks[-1]['titles'][:1]}")
+check("C25K: weekly minutes never regress by >15% (gentle onboarding)",
+      all(_c25k_weeks[i]["mins"] >= _c25k_weeks[i-1]["mins"] * 0.85
+          for i in range(1, len(_c25k_weeks))),
+      f"{[w['mins'] for w in _c25k_weeks]}")
 
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")

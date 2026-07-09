@@ -281,3 +281,76 @@ WORKOUTS_PATH=$PROD ADAPTIVE=1 ./scripts/plan_debug/plan_debug daydump > /tmp/pl
 python3 /tmp/plan_reaudit/reaudit.py        # 5-criteria pass on reshaped
 python3 /tmp/plan_reaudit/diff_reshaping.py # per-deload-week baseline→reshaped diff
 ```
+
+## R22 — Cmp 5K/10K certification (2026-07-09)
+
+**Status: CERTIFIED** at rec length (12w), sub-19 / sub-40 class anchors.
+
+Shape: exact 2/4/4/2 phase split at 12w (ratios 0.2/0.4/0.4 normalize clean
+over the 10 non-taper weeks) → mid-phase deloads W5+W9, crescendo peaking at
+peak-end. Volumes (pacedump km/wk): 5K 52→98 peak@W10; 10K 63→81. Gate
+anchors extended (sub-19/sub-40); recommendedPlanWeeks already generic.
+Suite: +6 R22 band/crescendo/arrival checks (MUST pass SPEED_PACE — without
+it Z4/Z5 render defaults and paces read inverted; that artifact produced a
+false P0 in both sonnet eyeballs).
+
+Adversarial eyeball (2 sonnet agents): all P0/P1 dissolved on verification —
+anchor artifact, the dump-vs-pacedump render trap (deload-LR clamp #171 and
+km-caps apply at RENDER; pre-render dumps show uncapped minutes), or traits
+shared with certified tiers (threshold=5K×1.03 by R8 design, ladder flat
+jogs, cross-phase session reuse, easy-pace improvement drift).
+
+Surviving polish (R23 candidates, all P2-class):
+- 5K 12w W6 (speed-end): hills+threshold+ML week carries zero Z5 touch
+  (strides evicted by fill); neighbors carry 20+ z5-min. Variety-defensible.
+- 5K 16w PEAK z5 dose (~6-12min/wk) never re-reaches SPEED's 20min sessions;
+  16w is the damped variant by tier design, but peak-phase 5K-pace volume
+  could hold rather than halve.
+- 10w floor variant has no mid-plan deload (no phase ≥4w) and out-peaks 12w
+  — same class as the blessed Int-5K long-vs-short known-fail; gate steers
+  to 12w+.
+
+## R23 — new distances certification: 15K / 10mi / 30K / 50K (2026-07-09)
+
+**Status: CERTIFIED** at rec lengths (12w mid / 16w 30K / 18w 50K).
+
+Quantitative: km/wk at per-tier class anchors, all 10 plans in band with
+back-half peaks/plateaus (Beg mid ~30km → Adv 50K 83km peak @W13); 20
+permanent band+crescendo checks. 50K peak LRs render 28-30km (window 28-34),
+MP rehearsals escalate 60→70→90min as the peak block's only quality anchor.
+
+Sonnet eyeball ×2 → fixed:
+- fastFinish "@ MP" templates leaked into the mid band via subtype-wide
+  eligibility → 15K/10mi removed from fastFinish (progressiveLong covers).
+- Int 15K/10mi W1→W2 LR inversion (-29%, monotonic fallback firing) →
+  base rungs raised to 85; residual -12% W2 dip accepted.
+- Adv/Int 30K+50K peak tune-up TT stacked with MP rehearsals (worst: TT
+  l=14545 beside a 170min rehearsal) → #156 extended: NEW marathon-class
+  skips the peak TT (mid-plan recalib TTs stay); first guard attempt
+  (dropping the rehearsal) backfired into a 49911-load week — dropping the
+  TT is the correct direction.
+
+Accepted as tier conventions (not defects): 50K W12-14 3:1 escalating
+rehearsal block; W15 deload's 40min MP touch (Pfitz final race-pace touch
+10-14 days out); Int flat-top volume curves; Int 30K first deload at W6.
+
+R24 candidates (P2): back-to-back long days for 50K (real ultra-prep gap,
+engine doesn't model B2B); Adv mid-band deload weeks keep 2 quality
+sessions; one Int session shape recycled across 4 phases (feeds the
+variety audit); LR==ML render tie (km-cap coincidence, one week).
+
+## R24 — disposition of the R23 P2s (2026-07-09)
+
+- **50K back-to-back long days: BUILT.** Ultra-class plans place the week's
+  medium-long on the day before the long run (tired-legs stacking) via a
+  third placement pass; never displaces a hard day back next to the LR.
+  Kit test locks adjacency for 50K and spread placement for 42K.
+- **Adv deload weeks keep 2 quality: DISSOLVED** — dump census shows
+  quality=2 deloads are the certified Adv/Cmp signature everywhere
+  (Adv 21K/42K, Cmp 21K/42K, Acc Adv). New plans match their siblings.
+  (Also honors the reverted total-load-anchor decision.)
+- **LR==ML render tie: DISSOLVED** — same km-cap coincidence occurs in
+  certified Cmp weeks (110/110). Tier-wide render trait, one-week cosmetic.
+- **Session-shape recycling: DEFERRED to the #8 variety audit** — same
+  class as the pending Adv-10K repeat (#173); fixing it means touching
+  cross-plan variety scoring, which is that audit's job, not R23's.

@@ -98,7 +98,7 @@ public func calculatePhaseDurations(config: PlanConfiguration, totalWeeks: Int) 
     var taper = config.minTaperPhaseWeeks
     // Marathon: floor the taper at 3 weeks. The long run peaks at the last PEAK
     // week, so a 2-week taper lands it only ~2 weeks out — too close to absorb.
-    if config.distance >= 30000 {
+    if config.isMarathonClass {
         taper = max(taper, 3)
     }
     let trainingWeeks = totalWeeks - taper
@@ -526,6 +526,9 @@ class PlanGeneratorV3 {
         if config.distance == 0 {
             return MaintenancePlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
         }
+        if config.isCouchTo5K {
+            return C25KPlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
+        }
         switch config.runnerLevel {
         case .beginner:     return BeginnerPlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
         case .intermediate: return IntermediatePlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
@@ -616,9 +619,22 @@ class PlanGeneratorV3 {
     // dose (~75% of the ramp, floored at the VO2 minimum) — a recovery cut that
     // keeps the stimulus rather than stripping it.
     func vo2Z5DoseTarget(week: Int, isDeloading: Bool = false) -> Int {
-        let span = max(1, actualWeeksToGenerate - 1)
-        let frac = Double(min(week, span)) / Double(span)   // 0…1 across the block
-        let lo = 12.0, hi = 32.0
+        // Ramp across the DISPLAYED block, not the generation window: Adv
+        // front-trims 4 weeks, and a generation-index ramp started ~40% in —
+        // its first visible dose equalled the plateau (25→25, no progression).
+        let w = max(0, week - weeksToTrim)
+        let span = max(1, actualWeeksToGenerate - weeksToTrim - 1)
+        let frac = Double(min(w, span)) / Double(span)   // 0…1 across the block
+        // Tier curves (§4 redesign): rep-length ramp rides the dose — low
+        // targets early match the new 30/30-style templates (8-12min z5),
+        // mid picks 60/60s + 4x4s, late lands the 300s reps + ladder. Beg
+        // starts far gentler than the old flat 12 (its W2 used to jump to 15).
+        let lo: Double, hi: Double
+        switch config.runnerLevel {
+        case .beginner:     (lo, hi) = (8, 25)
+        case .intermediate: (lo, hi) = (12, 26)
+        default:            (lo, hi) = (18, 32)
+        }
         let target = lo + (hi - lo) * frac
         return Int((isDeloading ? max(lo, target * 0.75) : target).rounded())
     }
@@ -627,14 +643,27 @@ class PlanGeneratorV3 {
     // to `targetMinutes` (ties → larger total = more variety). Used by VO2 blocks
     // so the lead quality lands a week-indexed dose instead of whatever total-
     // duration scoring happens to pick (which parked on the fixed-20min fivekPace).
-    func vo2DoseMatched(_ pool: [Workout], targetMinutes: Int) -> [Workout] {
-        let z5 = pool.filter { isRealZ5($0) }
+    func vo2DoseMatched(_ pool: [Workout], targetMinutes: Int,
+                        preferShortReps: Bool = false) -> [Workout] {
+        var z5 = pool.filter { isRealZ5($0) }
         guard !z5.isEmpty else { return [] }
+        // Early block: prefer the 30/30-60/60 style (§4 — high time-at-VO2max,
+        // low mechanical cost) when such templates exist near the target dose.
+        // Only when the target itself is small — short-rep style at a 20min+
+        // dose would under-deliver (the filter capped everything at 12min).
+        if preferShortReps, targetMinutes <= 13 {
+            let short = z5.filter { $0.key.hasPrefix("vo2_3030") || $0.key.hasPrefix("vo2_6060") }
+            if !short.isEmpty { z5 = short }
+        }
         let bestDose = z5.map { z5DoseMinutes($0) }
             .min(by: { abs($0 - targetMinutes) < abs($1 - targetMinutes) })!
         // Keep every template at the chosen dose (all durations/segment counts)
         // so the week-to-week variety + same-workout penalties still operate.
-        return z5.filter { z5DoseMinutes($0) == bestDose }
+        let atDose = z5.filter { z5DoseMinutes($0) == bestDose }
+        // Dose tie: the modern vo2_ sessions (30/30s, 4x4s) win over legacy
+        // same-dose templates — otherwise they never got selected at all.
+        let modern = atDose.filter { $0.key.hasPrefix("vo2_") }
+        return modern.isEmpty ? atDose : modern
     }
 
     // Stride rep count = number of Z5 work intervals (the fast finishers) in an
@@ -1120,6 +1149,15 @@ class PlanGeneratorV3 {
         workoutPool = isMaintenance ? stridesFiltered : stridesFiltered.filter {
             !($0.subtype == .progression && $0.duration < 40 * 60)
         }
+        // vo2_-prefixed templates (30/30s, 60/60s, 4x4s) are the VO2 block's
+        // own toolbox — race plans must never pick them up (§4 containment;
+        // the shared-catalog lesson from the 105min rehearsal template).
+        if !config.isVO2Max {
+            workoutPool = workoutPool.filter { !$0.key.hasPrefix("vo2_") }
+        }
+        // Same containment for the C25K protocol templates — their easy/
+        // intervals subtypes would otherwise leak into every selector pool.
+        workoutPool = workoutPool.filter { !$0.key.hasPrefix("c25k_") }
         let intervals = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: intervalSubtypes)
         let thresholds = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: thresholdSubtypes)
         longRuns = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: longRunSubtypes)
@@ -1153,7 +1191,7 @@ class PlanGeneratorV3 {
         // re-indexed to the trimmed plan below.
         var rawDeloads = Set<Int>()
         var rawTaper = Set<Int>()
-        for week in 0..<actualWeeksToGenerate {
+        for week in 0..<actualWeeksToGenerate where !config.isCouchTo5K {
             let pi = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
             if pi.phase == .taper || pi.phase == .race { rawTaper.insert(week); continue }
             guard pi.phase == .base || pi.phase == .speed || pi.phase == .peak else { continue }
@@ -1374,6 +1412,26 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
             }
         }
 
+        // R24 (ultra): back-to-back long days — the 50K staple. The render
+        // caps the long run at ~34km, so ultra prep bridges the gap with a
+        // medium-long on tired legs the day BEFORE the long run. Only moves
+        // the ML onto an easy (or empty) slot — never displaces a hard day
+        // back next to the long run.
+        if config.isUltraClass {
+            let dayBefore = longRunDay - 1
+            if config.trainingDays.contains(dayBefore),
+               let mlDay = dayToWorkout.first(where: { $0.value.workout.subtype == .mediumLong })?.key,
+               mlDay != dayBefore {
+                let occupant = dayToWorkout[dayBefore]
+                if occupant == nil || (!isHardWorkout(occupant!) && occupant!.workout.subtype != .mediumLong) {
+                    let ml = dayToWorkout[mlDay]!
+                    dayToWorkout[mlDay] = occupant
+                    if dayToWorkout[mlDay] == nil { dayToWorkout.removeValue(forKey: mlDay) }
+                    dayToWorkout[dayBefore] = ml
+                }
+            }
+        }
+
         // Convert to assigned workouts list
         for (day, workoutTuple) in dayToWorkout {
             assignedWorkouts.append((workout: workoutTuple.workout, dayOfWeek: day))
@@ -1397,7 +1455,7 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
     // Race day workout only for real race plans. distance == 0 is maintenance,
     // and VO2 max plans use distance == 5000 internally (5K routing) but
     // shouldn't end with a race — gated by isVO2Max.
-    let actualRaceDistances: Set<Int64> = [5000, 10000, 21097, 42195]
+    let actualRaceDistances: Set<Int64> = [5000, 10000, 15000, 16093, 21097, 30000, 42195, 50000]
     if !config.isVO2Max,
        actualRaceDistances.contains(config.distance),
        let raceWorkout = createRaceWorkout(level: config.runnerLevel, distance: config.distance) {

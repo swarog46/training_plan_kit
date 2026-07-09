@@ -34,12 +34,107 @@ final class TrainingPlanKitTests: XCTestCase {
             (.intermediate42Default, 18),
             (.beginner5Default, 10),
             (.competitive42Default, 24),
+            (.competitive5Default, 12),
+            (.competitive10Default, 12),
+            (.beginner15Default, 12),
+            (.intermediate10MiDefault, 12),
+            (.advanced15Default, 12),
+            (.intermediate30Default, 16),
+            (.advanced50Default, 18),
         ]
         for (config, weeks) in cases {
             let d = calculatePhaseDurations(config: config, totalWeeks: weeks)
             let sum = (d["base"] ?? 0) + (d["speed"] ?? 0) + (d["peak"] ?? 0) + (d["taper"] ?? 0)
             XCTAssertEqual(sum, weeks, "phase weeks must sum to plan length")
         }
+    }
+
+    /// Pro 5K/10K (R21): a 12-week competitive short-distance plan must
+    /// carry at least one build-phase deload in its middle (W4-W9) — the
+    /// first ratio draft gave 10K a W3 deload then 7 unbroken build weeks.
+    func testCompetitiveShortDistanceMidPlanRecovery() {
+        for (config, name) in [(PlanConfiguration.competitive5Default, "Cmp 5K"),
+                               (PlanConfiguration.competitive10Default, "Cmp 10K")] {
+            let flags = weeklyDeloadFlags(config, 12)
+            let mid = flags[3...8].contains { $0.deload }
+            XCTAssertTrue(mid, "\(name) 12w: no deload between W4 and W9")
+        }
+    }
+
+    /// C25K (R21): fixed 9-week protocol — 3 sessions/week from the c25k_*
+    /// templates, W5/W6 vary by day, shorter plans front-trim into the
+    /// protocol, and no week carries a deload tag (the protocol IS the ramp).
+    func testCouchTo5KProtocolShape() {
+        let catalog = loadSampleCatalog()
+        let gen = PlanGeneratorV3.make(config: .couchTo5K, totalWeeks: 9,
+                                       allWorkouts: catalog, adaptive: true)
+        let plan = gen.generate()
+        XCTAssertEqual(plan.count, 9)
+        XCTAssertEqual(plan[0]?.count, 3, "3 sessions per week")
+        XCTAssertEqual(plan[0]?.first?.workout.key, "c25k_w1")
+        XCTAssertEqual(plan[4]?.map { $0.workout.key }, ["c25k_w5d1", "c25k_w5d2", "c25k_w5d3"])
+        XCTAssertEqual(plan[8]?.first?.workout.key, "c25k_w9", "graduation week")
+        XCTAssertTrue(gen.deloadWeeks.isEmpty, "protocol weeks are not deloads")
+
+        // 7-week variant front-trims: starts at protocol W3.
+        let short = PlanGeneratorV3.make(config: .couchTo5K, totalWeeks: 7,
+                                         allWorkouts: catalog, adaptive: true)
+        let shortPlan = short.generate()
+        XCTAssertEqual(shortPlan[0]?.first?.workout.key, "c25k_w3")
+        XCTAssertEqual(shortPlan[6]?.first?.workout.key, "c25k_w9")
+    }
+
+    /// New distances (R23): each preset fills every week and appends its
+    /// race day; 50K carries MP rehearsals via the marathon-class pools.
+    func testNewDistancePresetsGenerate() {
+        let catalog = loadSampleCatalog()
+        let cases: [(PlanConfiguration, Int, String)] = [
+            (.beginner15Default, 12, "Beg 15K"),
+            (.intermediate10MiDefault, 12, "Int 10mi"),
+            (.advanced30Default, 16, "Adv 30K"),
+            (.intermediate50Default, 18, "Int 50K"),
+        ]
+        for (config, weeks, name) in cases {
+            let plan = generatePlan(config: config, totalWeeks: weeks, catalog: catalog)
+            XCTAssertEqual(plan.keys.count, weeks, "\(name): fills every week")
+            for (week, sessions) in plan {
+                XCTAssertFalse(sessions.isEmpty, "\(name): week \(week) empty")
+            }
+        }
+    }
+
+    /// R24: ultra plans stack the medium-long on the day before the long
+    /// run (B2B tired-legs); marathon plans keep their spread placement.
+    func testUltraBackToBackLongDays() {
+        let catalog = loadSampleCatalog()
+        func mlBeforeLRWeeks(_ config: PlanConfiguration, _ weeks: Int) -> (b2b: Int, mlWeeks: Int) {
+            let start = Calendar.current.date(from: DateComponents(year: 2026, month: 1, day: 5))!
+            let race = Calendar.current.date(byAdding: .day, value: weeks * 7, to: start)!
+            let events = createMarathonPlanV3(startDate: start, raceDate: race,
+                                              from: catalog, planId: UUID(), config: config)
+            let cal = Calendar.current
+            var byWeek: [Int: [WorkoutEvent]] = [:]
+            guard let start = events.map(\.date).min() else { return (0, 0) }
+            for e in events {
+                let w = cal.dateComponents([.day], from: start, to: e.date).day! / 7
+                byWeek[w, default: []].append(e)
+            }
+            var b2b = 0, mlWeeks = 0
+            for (_, ws) in byWeek {
+                guard let lr = ws.filter({ [.long, .steadyLong, .progressiveLong, .raceRehearsalM].contains($0.workout.subtype) })
+                        .max(by: { $0.workout.duration < $1.workout.duration }),
+                      let ml = ws.first(where: { $0.workout.subtype == .mediumLong }) else { continue }
+                mlWeeks += 1
+                if let gap = cal.dateComponents([.day], from: ml.date, to: lr.date).day, gap == 1 { b2b += 1 }
+            }
+            return (b2b, mlWeeks)
+        }
+        let ultra = mlBeforeLRWeeks(.intermediate50Default, 18)
+        XCTAssertGreaterThan(ultra.mlWeeks, 0, "50K plan should schedule medium-longs")
+        XCTAssertEqual(ultra.b2b, ultra.mlWeeks, "every 50K ML sits the day before the LR")
+        let marathon = mlBeforeLRWeeks(.intermediate42Default, 18)
+        XCTAssertLessThan(marathon.b2b, max(marathon.mlWeeks, 1),
+                          "42K keeps spread placement (containment)")
     }
 
     func testCompetitivePeakCappedAtEightWeeks() {
@@ -84,6 +179,10 @@ final class TrainingPlanKitTests: XCTestCase {
             (.competitive42Default, 28, "Cmp 42K build"),
             (.competitive42Default, 36, "Cmp 42K max"),
             (.competitive21Default, 32, "Cmp 21K max"),
+            (.competitive5Default, 12, "Cmp 5K rec"),
+            (.competitive5Default, 16, "Cmp 5K long"),
+            (.competitive10Default, 12, "Cmp 10K rec"),
+            (.competitive10Default, 16, "Cmp 10K long"),
             (.accessibleAdvanced42Default, 18, "Acc Adv 42K rec"),
             (.accessibleBeginner5Default, 7, "Acc Beg 5K rec"),
         ]

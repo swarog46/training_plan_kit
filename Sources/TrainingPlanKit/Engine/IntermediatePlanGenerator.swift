@@ -67,7 +67,12 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 : (phase == .base && weekInPhase == baseDur - 1)
             // Late PEAK tune-up TT only for the longer plans (half+); short 5K/10K
             // blocks keep just the mid-plan recalib. See BeginnerPlanGenerator.
-            let peakTTWeek = config.distance >= 21000 && phase == .peak
+            // R23 (#156 extended): the NEW marathon-class distances (30K/50K)
+            // skip the peak tune-up TT — their MP rehearsals are the peak
+            // tune-ups, and TT+rehearsal stacked into one brutal week.
+            // Mid-plan recalibration TTs stay. 21K/42K byte-identical.
+            let skipPeakTT = config.isMarathonClass && config.distance != 42195
+            let peakTTWeek = config.isLongRaceClass && phase == .peak && !skipPeakTT
                 && (weekInPhase % milestoneCadence) == milestoneCadence / 2
             let ttWeek = recalibTTWeek || peakTTWeek
 
@@ -107,7 +112,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 // 5K/10K: the lead VO2 session must be true Z5. Drop Z4-only VO2-family
                 // templates when true-Z5 ones exist (on 5K/10K a Z4 "VO2" renders
                 // slower than race); see BeginnerPlanGenerator.
-                if config.distance < 21000 {
+                if !config.isLongRaceClass {
                     for vsub in [WorkoutSubtype.intervals, .ladderIntervals, .pyramidIntervals] {
                         if result.contains(where: { $0.subtype == vsub && isRealZ5($0) }) {
                             result = result.filter { !($0.subtype == vsub && !isRealZ5($0)) }
@@ -229,7 +234,8 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     let isVO2Onboarding = config.isVO2Max && phase == .base && weekInPhase == 0
                     let preferredPool: [Workout] = {
                         if config.isVO2Max && !isVO2Onboarding {
-                            let dose = vo2DoseMatched(intervalPool, targetMinutes: vo2Z5DoseTarget(week: week, isDeloading: isDeloading))
+                            let dose = vo2DoseMatched(intervalPool, targetMinutes: vo2Z5DoseTarget(week: week, isDeloading: isDeloading),
+                                                      preferShortReps: Double(week) < Double(actualWeeksToGenerate) * 0.45)
                             if !dose.isEmpty { return dose }
                         }
                         // PEAK milestone weeks: prefer the milestone subtype (Yasso /
@@ -278,7 +284,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     let z5Blocked = !config.isVO2Max && (
                         phase == .base || phase == .taper
                         || week == weeksToTrim
-                        || (config.distance >= 21000 && lastWeekHadZ5))
+                        || (config.isLongRaceClass && lastWeekHadZ5))
                     if z5Blocked {
                         let noZ5 = preferredPool.filter { !isRealZ5($0) }
                         if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
@@ -308,7 +314,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
-                        if weekVariation == 3 && !intervalPool.isEmpty && config.distance < 21097 {
+                        if weekVariation == 3 && !intervalPool.isEmpty && !config.isLongRaceClass {
                             // Every 5th week: double intervals instead of threshold —
                             // 5K/10K ONLY (half/marathon are LT/MP-dominant, no VO2-doubling).
                             // The second slot excludes milestones (standalone benchmarks)
@@ -380,7 +386,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                 // routes to BeginnerPlanGenerator, never here).
                 longRunTypes = [.long, .steadyLong]
                 if phase == .base { shouldAddLong = true }
-            } else if config.distance >= 21000 {
+            } else if config.isLongRaceClass {
                 // 21K+ Int/Adv/Cmp: keep the default long-run config (the
                 // beginner-only override is handled in BeginnerPlanGenerator).
             }
@@ -515,7 +521,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                     // See BeginnerPlanGenerator.
                     let snapLoadMult = config.profile.longRunSnapLoadFraction
                     let snapMinLoad = pool.map { Double($0.trainingLoad) }.min() ?? 0
-                    if config.distance < 21000,
+                    if !config.isLongRaceClass,
                        Double(targetLoad) * snapLoadMult < snapMinLoad {
                         let aerobic = pool.filter {
                             $0.subtype == .steadyLong || $0.subtype == .long || $0.subtype == .progressiveLong
@@ -591,7 +597,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
                         // else the selector picks generic `easy` (60-80min) over
                         // `mediumLong` (85-110min), and Pfitz prescribes a weekday MLR.
                         // 10K/5K excluded (the 85+min pool is too long for their targets).
-                        let isMarathonOrHM = (config.distance == 42195 || config.distance == 21097)
+                        let isMarathonOrHM = config.isLongRaceClass
                         let prefersMediumLong = isMarathonOrHM
                             && phase != .taper && phase != .race
                             && week % 2 == 0
@@ -624,7 +630,7 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             while weekWorkouts.count < maxWorkoutsPerWeek {
                 // Fill remaining trainingDays with easy runs. For 21K+ prefer a longer
                 // "medium-long" (Pfitz-style) first fill so weekly volume grows at 4+ days.
-                let isLongRace = config.distance >= 21000
+                let isLongRace = config.isLongRaceClass
                 let isFirstFill = !weekWorkouts.contains { $0.type.contains("fill") }
                 let easyTargetMin: Int = {
                     if isLongRace && isFirstFill {

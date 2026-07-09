@@ -11,6 +11,76 @@ import Foundation
 
 extension PlanConfiguration {
 
+    // 5K Competitive — sub-19 class. 6 days/wk, speed-forward phase split
+    // (5K fitness lives in SPEED/PEAK, not aerobic bulk). No Sunday long run —
+    // the generator's 5K branch drops the LR slot; endurance comes from easy
+    // frequency. Volume ~70-90 km/wk peak, per Daniels Phase III-IV 5K.
+    public static let competitive5Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .competitive,
+        distance: 5000,
+        // 0.2/0.4/0.4 over the non-taper weeks → exact 2/4/4 split at 12w
+        // (floors land clean), so SPEED and PEAK both carry a mid-phase
+        // deload and the crescendo tops out at peak-end. Taper = minTaper.
+        basePhaseRatio: 0.20,
+        speedPhaseRatio: 0.40,
+        peakPhaseRatio: 0.40,
+        taperPhaseRatio: 0.12,
+        // Mins sum to 10 so a sharp runner can race off a 10-week cycle;
+        // 2-week taper is plenty at 5K fatigue depth.
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 2, 3, 4, 5, 6], // 6 days/wk (Mon rest)
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: false,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 13...22,
+            phaseFinishDeloadPercent: 18...20,
+            taperDeloadPercent: 30,
+            // R22-calibrated: peak lands ~90km at sub-19 anchors (pacedump).
+            initialWeeklyDuration: 190,
+            initialLongRunDuration: 55...65, // seeds the longest easy day cap
+            maxLongRunMinutes: 80,
+            longRunProgression: nil,         // no LR slot at 5K
+            baseLoad: 11400, loadScaleBaselineWeeks: 14
+        )
+    )
+
+    // 10K Competitive — sub-40 class. 6 days/wk, keeps real long runs
+    // (unlike 5K) but shorter than half: peak LR ~105min ≈ 22-24km.
+    // Daniels Adv 10K sits 70-90 km/wk; competitive lands just above.
+    public static let competitive10Default = PlanConfiguration(
+        raceDate: Date(),
+        runnerLevel: .competitive,
+        distance: 10000,
+        // 0.2/0.4/0.4 over the non-taper weeks → exact 2/4/4 split at 12w
+        // (floors land clean), so SPEED and PEAK both carry a mid-phase
+        // deload and the crescendo tops out at peak-end. Taper = minTaper.
+        basePhaseRatio: 0.20,
+        speedPhaseRatio: 0.40,
+        peakPhaseRatio: 0.40,
+        taperPhaseRatio: 0.12,
+        minBasePhaseWeeks: 2,
+        minSpeedPhaseWeeks: 3,
+        minPeakPhaseWeeks: 3,
+        minTaperPhaseWeeks: 2,
+        trainingDays: [1, 2, 3, 4, 5, 6], // 6 days/wk (Mon rest)
+        longestWorkoutDay: 6,
+        useSeparateDayForLongRun: true,
+        volume: VolumeProfile(
+            weeklyLoadIncreasePercent: 13...22,
+            phaseFinishDeloadPercent: 18...20,
+            taperDeloadPercent: 30,
+            initialWeeklyDuration: 235,
+            initialLongRunDuration: 70...85,
+            maxLongRunMinutes: 100,
+            longRunProgression: (base: 75, speed: 90, peak: 115, taper: 75),
+            baseLoad: 13300, loadScaleBaselineWeeks: 14
+        )
+    )
+
     // 21K Competitive — sub-1:30 target. 6 days/wk, longer LRs
     // (80-95min initial, peak ~120-135min ≈ 25-28km), more 5K-pace
     // intervals for speed reserve since HMP is close to threshold.
