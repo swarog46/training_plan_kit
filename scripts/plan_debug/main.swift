@@ -957,3 +957,86 @@ if mode == "phases" {
         }
     }
 }
+
+// json mode: machine-readable plan export for integrators and the website's
+// precomputed plan pages. Writes a JSON array of the filtered cases to the
+// path in JSON_OUT (default plans.json) — file output keeps stdout's summary
+// noise out of the payload.
+if mode == "json" {
+    var out: [[String: Any]] = []
+    for c in filtered {
+        let plan = generatePlanV3(config: c.config, totalWeeks: c.weeks, allWorkouts: workouts, adaptive: adaptive)
+        let minRequired = c.config.minBasePhaseWeeks + c.config.minSpeedPhaseWeeks
+            + c.config.minPeakPhaseWeeks + c.config.minTaperPhaseWeeks
+        let genWeeks = max(c.weeks, minRequired)
+        let weeksTrimmed = genWeeks - c.weeks
+        let phaseDurations = calculatePhaseDurations(config: c.config, totalWeeks: genWeeks)
+        let baseDur = phaseDurations["base"] ?? 0
+        let speedDur = phaseDurations["speed"] ?? 0
+        let peakDur = phaseDurations["peak"] ?? 0
+        let taperDur = phaseDurations["taper"] ?? 0
+
+        var weeksData: [[String: Any]] = []
+        for week in 0..<c.weeks {
+            let (phase, weekInPhase) = determinePhaseV3(weekIndex: week + weeksTrimmed, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
+            let ws = plan[week] ?? []
+            let targets = calculateWeeklyTargetsV3(weekInPlan: week + weeksTrimmed, weekInPhase: weekInPhase,
+                                                   phase: phase, phaseDurations: phaseDurations, config: c.config)
+            var workoutsData: [[String: Any]] = []
+            for w in ws {
+                var entry: [String: Any] = [
+                    "title": w.workout.title,
+                    "minutes": Int(w.workout.duration) / 60,
+                    "load": Int(w.workout.trainingLoad),
+                    "subtype": w.workout.subtype.rawValue,
+                    "slot": w.type,
+                ]
+                if let detail = intervalDetail(w.workout) {
+                    entry["structure"] = detail
+                }
+                // Machine-readable interval segments (flat, in execution order)
+                // so integrators can build structured workouts (e.g. Garmin FIT).
+                var segs: [[String: Any]] = []
+                for iv in w.workout.intervals {
+                    var seg: [String: Any] = [
+                        "role": iv.type.rawValue.lowercased(),
+                        "seconds": Int(iv.duration.rounded()),
+                    ]
+                    switch iv.target {
+                    case .heartRateZone(let z): seg["zone"] = z
+                    case .paceTarget(_, let rel): seg["paceRel"] = rel
+                    case .secondsRange(let mn, let mx):
+                        seg["paceMinSec"] = Int(mn)
+                        seg["paceMaxSec"] = Int(mx)
+                    case .noRange: break
+                    }
+                    segs.append(seg)
+                }
+                entry["segments"] = segs
+                workoutsData.append(entry)
+            }
+            weeksData.append([
+                "index": week + 1,
+                "phase": phase.displayName(isMaintenance: c.config.distance == 0),
+                "weekInPhase": weekInPhase + 1,
+                "phaseLength": phaseLength(phase, base: baseDur, speed: speedDur, peak: peakDur, taper: taperDur),
+                "deload": targets.isDeloading,
+                "totalLoad": ws.reduce(0) { $0 + Int($1.workout.trainingLoad) },
+                "totalMinutes": ws.reduce(0) { $0 + Int($1.workout.duration) } / 60,
+                "workouts": workoutsData,
+            ])
+        }
+        out.append([
+            "label": c.label,
+            "weeks": c.weeks,
+            "daysPerWeek": c.config.trainingDays.count,
+            "distanceMeters": c.config.distance,
+            "phases": ["base": baseDur, "speed": speedDur, "peak": peakDur, "taper": taperDur],
+            "weeksData": weeksData,
+        ])
+    }
+    let jsonPath = ProcessInfo.processInfo.environment["JSON_OUT"] ?? "plans.json"
+    let data = try! JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])
+    try! data.write(to: URL(fileURLWithPath: jsonPath))
+    print("json → \(jsonPath) (\(out.count) plans)")
+}
