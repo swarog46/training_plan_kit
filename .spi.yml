@@ -1,0 +1,6 @@
+# Swift Package Index build config — builds & hosts DocC docs for the library.
+# Schema: https://swiftpackageindex.com/swiftpackageindex/spimanifest
+version: 1
+builder:
+  configs:
+    - documentation_targets: [TrainingPlanKit]
