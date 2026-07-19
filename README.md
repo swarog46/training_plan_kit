@@ -95,6 +95,13 @@ against a complete catalog:
 WORKOUTS_PATH=/path/to/full_catalog.json python3 scripts/plan_debug/test_plans.py
 ```
 
+Run both from the repo root — the CLI resolves the bundled sample catalog
+relative to the working directory.
+
+A few checks track known-open issues (marked in the inline comments). They
+print `KNOWN-FAIL` and are listed in the summary, but don't fail the build —
+so CI flags real regressions, not documented gaps.
+
 ## The catalog
 
 The engine takes the catalog as an argument — it doesn't ship the catalog. A
