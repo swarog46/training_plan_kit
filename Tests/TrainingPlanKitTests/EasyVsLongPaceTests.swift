@@ -92,4 +92,46 @@ final class EasyVsLongPaceTests: XCTestCase {
         }
         XCTAssertGreaterThan(totalCompared, 20, "suite compared too few easy/long pairs")
     }
+
+    /// Competitive (goal-locked) plans: easy is truly conversational (~goal+18%,
+    /// Pfitz GA band), flat all plan (no erosion), and long-family sits between
+    /// easy and goal pace (~goal+14.5%).
+    func testCompetitiveEasyIsConversationalAndFlat() {
+        let catalog = loadSampleCatalog()
+        let start = cal.startOfDay(for: Date())
+        let vdot = VDOT(value: 52)
+
+        for (distance, weeks) in [(42195, 18), (21097, 12)] {
+            let race = cal.date(byAdding: .weekOfYear, value: weeks, to: start)!
+            let goal = distance == 42195 ? vdot.marathonPaceSecondsPerKm
+                                         : vdot.halfMarathonPaceSecondsPerKm
+            let planConfig = PlanConfiguration.raceConfig(level: .competitive, distanceMeters: distance)
+            let hr = createMarathonPlanV3(startDate: start, raceDate: race,
+                                          from: catalog, planId: UUID(), config: planConfig)
+            let events = PaceZoneConverter.applyPaceProgression(
+                to: hr, racePace: goal,
+                conversationalPace: vdot.easyPaceSecondsPerKm,
+                speedPace: vdot.fiveKPaceSecondsPerKm,
+                config: .competitive, startDate: start, endDate: race,
+                raceDistanceMeters: distance, isCompetitive: true)
+
+            var easyPaces: Set<Int> = []
+            var longPaces: [Int] = []
+            for e in events {
+                guard let p = workPace(e.workout), p > 0 else { continue }
+                if e.workout.subtype == .easy { easyPaces.insert(p) }
+                if [.long, .mediumLong, .steadyLong].contains(e.workout.subtype) { longPaces.append(p) }
+            }
+            let floor = Int(Double(goal) * 1.18)
+            for p in easyPaces {
+                XCTAssertTrue(abs(p - floor) <= 5,
+                    "\(distance)m cmp easy \(p) should be ≈ goal+18% (\(floor))")
+            }
+            XCTAssertEqual(easyPaces.count, 1, "\(distance)m cmp easy must be FLAT (no erosion), got \(easyPaces)")
+            for p in longPaces {
+                XCTAssertGreaterThan(easyPaces.first ?? 0, p, "\(distance)m cmp: easy slower than long")
+                XCTAssertGreaterThan(p, goal + 20, "\(distance)m cmp long \(p) too close to goal \(goal)")
+            }
+        }
+    }
 }

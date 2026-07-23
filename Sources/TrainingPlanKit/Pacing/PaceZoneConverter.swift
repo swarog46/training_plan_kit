@@ -165,7 +165,8 @@ public struct PaceZoneConverter {
         conversationalPace: Int?,
         progressionFactor: Double,
         config: PaceProgressionConfig,
-        vdotAnchored: Bool = false
+        vdotAnchored: Bool = false,
+        goalLocked: Bool = false
     ) -> Double {
         let base = baseMultiplier(for: zone)
 
@@ -198,6 +199,11 @@ public struct PaceZoneConverter {
             // VDOT mode: the easy anchor (conversationalPace) is already interpolated
             // current→projected VDOT upstream, so the fitness progression lives in the
             // anchor — return the flat gap and let the moving anchor carry it.
+            // Goal-locked (competitive): fitness is at goal from day 1 — no gain to
+            // model, no easing (it eroded Pro easy to ~MP+5% by taper). And Pro easy
+            // must be truly conversational: floor at Pfitz's GA band, ~MP+18%
+            // (VDOT-easy at elite fitness sits only ~MP+11%). Z1 scales via base.
+            if goalLocked { return max(flat, 1.18 * (base / 1.15)) }
             if vdotAnchored { return flat }
             // Legacy mode: ~6.5% easing over the WHOLE plan as a modeled slice of the
             // projected fitness gain (same effort, pace drifts down as the runner
@@ -294,7 +300,8 @@ public struct PaceZoneConverter {
         vdotAnchored: Bool = false,
         racePaceFinal: Int? = nil,
         speedPaceFinal: Int? = nil,
-        raceDistanceMeters: Int? = nil
+        raceDistanceMeters: Int? = nil,
+        isCompetitive: Bool = false
     ) -> WorkoutInterval {
         // Race-pace work is prescribed at the PLANNED race-day pace — Daniels/
         // Pfitz: you practice THE pace; the progression is dose (60→70→90min
@@ -378,11 +385,14 @@ public struct PaceZoneConverter {
                     conversationalPace: conversationalPace,
                     progressionFactor: progressionFactor,
                     config: config,
-                    vdotAnchored: vdotAnchored
+                    vdotAnchored: vdotAnchored,
+                    goalLocked: isCompetitive
                 )
                 // Long-family Z2 WORK runs a touch quicker than plain easy
                 // (Pfitz: GA 15-25% off MP, long/ML 10-20%) — easy is the
                 // slowest non-recovery run. Warmups/recoveries stay true easy.
+                // Competitive included: with Pro easy floored at MP+18%, the
+                // bump lands Pro longs at ~MP+14.5% — inside the Pfitz band.
                 if zone == 2, interval.type == .work,
                    subtype == .long || subtype == .mediumLong || subtype == .steadyLong {
                     relative *= 0.97
@@ -402,7 +412,8 @@ public struct PaceZoneConverter {
                 conversationalPace: conversationalPace,
                 progressionFactor: progressionFactor,
                 config: config,
-                vdotAnchored: vdotAnchored
+                vdotAnchored: vdotAnchored,
+                goalLocked: isCompetitive
             )
             newTarget = .paceTarget(basePace: racePace, relative: easyRelative)
         default:
@@ -541,7 +552,8 @@ public struct PaceZoneConverter {
                 vdotAnchored: vdotAnchored,
                 racePaceFinal: racePaceFinal,
                 speedPaceFinal: speedPaceFinal,
-                raceDistanceMeters: raceDistanceMeters
+                raceDistanceMeters: raceDistanceMeters,
+                isCompetitive: isCompetitive
             )
         }
 
