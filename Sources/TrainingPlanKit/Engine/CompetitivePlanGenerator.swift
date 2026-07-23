@@ -79,9 +79,24 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // lives in the long-run lane (rehearsals / progressive finishes),
             // Pfitz-style. Kills the z5Blocked-fallback leak that stacked a 110-min
             // MP session on top of a progressive-finish week (155 MP-min weeks).
-            let filteredThresholds = config.distance >= 30000
-                ? self.filteredThresholds.filter { $0.subtype != .marathonPace }
-                : self.filteredThresholds
+            // ONE exception: taper week 2 (~10 days out) admits the SHORT dress
+            // rehearsal (≤45min, ~20min at race pace) — Pfitz's final MP touch.
+            let taperWk = week - baseDur - speedDur - peakDur
+            let dressRehearsalWeek = phase == .taper && taperWk == 1 && config.distance >= 21097
+            let filteredThresholds: [Workout] = {
+                guard config.distance >= 30000 else { return self.filteredThresholds }
+                if dressRehearsalWeek {
+                    return self.filteredThresholds.filter {
+                        $0.subtype != .marathonPace || $0.duration <= 45 * 60
+                    }
+                }
+                return self.filteredThresholds.filter { $0.subtype != .marathonPace }
+            }()
+
+            // Dress-rehearsal week: restrict the threshold family to the short MP
+            // tune-up so the selector can't prefer a bigger LT session instead.
+            let dressPool = filteredThresholds.filter { $0.subtype == .marathonPace && $0.duration <= 45 * 60 }
+            let weekThresholds = (dressRehearsalWeek && !dressPool.isEmpty) ? dressPool : filteredThresholds
 
             var weekWorkouts: [(type: String, workout: Workout)] = []
             var z5UsedThisWeek = false
@@ -279,13 +294,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                         // collapsing to all-ladders. See AdvancedPlanGenerator.
                         let baseLTWeek = phase == .base && weekInPhase % 4 == 2
                         if baseLTWeek,
-                           let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                           let threshold = selectWorkoutByTargetV3(workouts: weekThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("threshold", threshold))
                             prevThreshold = threshold
                         } else if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("interval", interval))
                             prevInterval = interval
-                        } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                        } else if let threshold = selectWorkoutByTargetV3(workouts: weekThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             // No sub-Z5 interval exists (5K pools are mostly I-pace);
                             // use a threshold as the quality. See IntermediatePlanGenerator.
                             weekWorkouts.append(("threshold", threshold))
@@ -327,10 +342,10 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                                 weekWorkouts.append(("interval2", interval2))
                                 if isRealZ5(interval2) { z5UsedThisWeek = true }
                             }
-                        } else if !filteredThresholds.isEmpty {
+                        } else if !weekThresholds.isEmpty {
                             // Normal week: Add threshold
-                            let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
-                            var thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
+                            let progressedThresholds = filterThresholdsByProgression(weekThresholds, week: week, totalWeeks: actualWeeksToGenerate)
+                            var thresholdPool = progressedThresholds.isEmpty ? weekThresholds : progressedThresholds
 
                             // Competitive marathon PEAK already carries MP via the
                             // MP-segment LR alternation. `.marathonPace` is also in
@@ -359,7 +374,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                                 && (phase == .speed || phase == .peak)
                                 && (week % 2 == 0)
                             if preferMileRepeats {
-                                let mileRepsOnly = filteredThresholds.filter { $0.subtype == .mileRepeats }
+                                let mileRepsOnly = weekThresholds.filter { $0.subtype == .mileRepeats }
                                 if !mileRepsOnly.isEmpty { thresholdPool = mileRepsOnly }
                             }
 
