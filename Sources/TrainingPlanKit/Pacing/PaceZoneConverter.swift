@@ -372,7 +372,7 @@ public struct PaceZoneConverter {
                 // Easy/recovery only — Z4/Z5 without a speed anchor run FASTER than
                 // race (0.93/0.85×) and must never be floored up to race pace.
                 if zone <= 2 { floorAtBasePace = true }
-                let relative = progressiveMultiplier(
+                var relative = progressiveMultiplier(
                     for: zone,
                     racePace: racePace,
                     conversationalPace: conversationalPace,
@@ -380,6 +380,13 @@ public struct PaceZoneConverter {
                     config: config,
                     vdotAnchored: vdotAnchored
                 )
+                // Long-family Z2 WORK runs a touch quicker than plain easy
+                // (Pfitz: GA 15-25% off MP, long/ML 10-20%) — easy is the
+                // slowest non-recovery run. Warmups/recoveries stay true easy.
+                if zone == 2, interval.type == .work,
+                   subtype == .long || subtype == .mediumLong || subtype == .steadyLong {
+                    relative *= 0.97
+                }
                 newTarget = .paceTarget(basePace: racePace, relative: relative)
             }
         case .noRange:

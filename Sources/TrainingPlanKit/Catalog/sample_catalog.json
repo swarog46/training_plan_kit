@@ -2637,7 +2637,7 @@
   {
     "id": 8105,
     "title": "Medium-Long Run",
-    "type": "Easy Run",
+    "type": "Long Run",
     "subtype": "mediumLong",
     "trainingType": "Time-based",
     "targetType": "HRZone",
@@ -2667,7 +2667,7 @@
   {
     "id": 5083,
     "title": "Medium-Long Run",
-    "type": "Easy Run",
+    "type": "Long Run",
     "subtype": "mediumLong",
     "trainingType": "Time-based",
     "targetType": "HRZone",
@@ -2697,7 +2697,7 @@
   {
     "id": 5692,
     "title": "Medium-Long Run",
-    "type": "Easy Run",
+    "type": "Long Run",
     "subtype": "mediumLong",
     "trainingType": "Time-based",
     "targetType": "HRZone",
