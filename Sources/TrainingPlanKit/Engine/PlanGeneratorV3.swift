@@ -922,7 +922,10 @@ class PlanGeneratorV3 {
         // STEP 1 — differentiated initial reshape (unchanged behavior).
         // High-frequency: drop the largest-duration aerobic fill (never the long
         // run, never quality), keeping the week at >= 4 sessions — a real rest day.
-        if week.count >= 5 {
+        // Competitive keeps the day and lightens instead (Pfitz recovery: same
+        // frequency, easier content) — dropping a session plus the un-topped
+        // aerobics compounded to -40%+ weeks.
+        if week.count >= 5 && config.runnerLevel != .competitive {
             let cands = week.enumerated().filter { aerobicFill.contains($0.element.workout.subtype) }
             if let victim = cands.max(by: { $0.element.workout.duration < $1.element.workout.duration }) {
                 week.remove(at: victim.offset)
@@ -948,7 +951,10 @@ class PlanGeneratorV3 {
                         $0.offset != heaviest.offset
                             && $0.element.workout.subtype == .progression
                     }
-                    if hasProgShape {
+                    // Competitive: a goal-locked progression renders its main block
+                    // AT MP — swapping quality→progression smuggled 20-33 MP-min
+                    // back into the down week. Cmp lightens to plain easy.
+                    if hasProgShape || (config.runnerLevel == .competitive && !soleQuality) {
                         // R13: never a second progression-shaped run — deload
                         // swaps to plain easy instead.
                         if let easy = filterWorkoutsBySubtypeV3(workouts: workoutPool, subtypes: [.easy]).min(by: {
@@ -1461,10 +1467,19 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
                           targetDurationMins: Double, isDeloading: Bool,
                           phase: TrainingPhase, weeklyCapMins: Double? = nil,
                           isCompetitive: Bool = false) {
-    guard !isDeloading, phase == .base || phase == .speed || phase == .peak else { return }
+    guard phase == .base || phase == .speed || phase == .peak else { return }
     // R14: beginner-marathon roof — never top a week past the cap (the Slow
     // tier was stacking to 5.9h peak weeks purely from added easy time).
-    let targetDurationMins = min(targetDurationMins, weeklyCapMins ?? .infinity)
+    var targetDurationMins = min(targetDurationMins, weeklyCapMins ?? .infinity)
+    if isDeloading {
+        // Cmp deloads top up toward 85% of their (already cut) target: build
+        // weeks stretch to target (×2.0) while raw deloads sat at ~60% delivery,
+        // compounding the intended -20% into a -40-47% crash. Pfitz recovery is
+        // -20-25%: volume mostly kept, intensity cut. Non-Cmp deloads already
+        // land in that band un-topped — leave them.
+        guard isCompetitive else { return }
+        targetDurationMins *= 0.85
+    }
     let aeroSubs: Set<WorkoutSubtype> = [.easy, .mediumLong, .recovery]
     let delivered = weekWorkouts.reduce(0.0) { $0 + Double($1.workout.duration) }
     let targetSec = targetDurationMins * 60.0

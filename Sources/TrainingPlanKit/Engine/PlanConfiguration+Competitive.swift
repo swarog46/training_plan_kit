@@ -97,6 +97,6 @@ extension PlanConfiguration {
 /// Competitive-tier behavioural profile. See PlanProfile.
 public struct CompetitiveProfile: PlanProfile {
     public init() {}
-    public var recoveryWeekLoadMultiplier: Double { 0.75 }  // cuts recovery weeks harder
+    public var recoveryWeekLoadMultiplier: Double { 0.80 }  // Pfitz-band recovery: real depth comes from the deload top-up ceiling (85% of target)
     public var longRunSnapLoadFraction: Double { 0.50 }
 }

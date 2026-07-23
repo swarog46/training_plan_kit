@@ -52,7 +52,10 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 case .race:  frac = 0.40
                 }
                 var dur = peakMin * frac
-                if rawTargets.isDeloading { dur *= 0.85 }
+                // Deload duration factor tuned so the COMPOUNDED weekly cut
+                // (load mult x fill undershoot x LR cut) lands at Pfitz's -20-25%,
+                // not the -40% the 0.85 factor produced.
+                if rawTargets.isDeloading { dur *= 0.95 }
                 rawTargets = WeeklyTargets(load: rawTargets.load, duration: dur,
                                            isDeloading: rawTargets.isDeloading,
                                            phaseProgression: p)
@@ -72,6 +75,14 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             recentDur.append(targets.duration); if recentDur.count > 3 { recentDur.removeFirst() }
             let isDeloading = targets.isDeloading
             
+            // Cmp marathon: midweek quality NEVER carries .marathonPace — MP volume
+            // lives in the long-run lane (rehearsals / progressive finishes),
+            // Pfitz-style. Kills the z5Blocked-fallback leak that stacked a 110-min
+            // MP session on top of a progressive-finish week (155 MP-min weeks).
+            let filteredThresholds = config.distance >= 30000
+                ? self.filteredThresholds.filter { $0.subtype != .marathonPace }
+                : self.filteredThresholds
+
             var weekWorkouts: [(type: String, workout: Workout)] = []
             var z5UsedThisWeek = false
             let targetLoad = targets.load
@@ -534,7 +545,11 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                         let peakProgress = Double(peakWeekIndex) / Double(max(peakDur - 1, 1))
                         targetLongRunMins = p.speed + Int(Double(p.peak - p.speed) * peakProgress)
                     case .taper, .race:
-                        targetLongRunMins = p.taper
+                        // Step down across the taper: wk1 (3 out) keeps the Pfitz
+                        // final medium-long; wk2+ drops toward a race-week jog.
+                        let taperWeekIndex = week - baseDur - speedDur - peakDur
+                        targetLongRunMins = taperWeekIndex <= 0 ? p.taper
+                            : Int(Double(p.taper) * 0.8)
                     }
                     // Recovery/deload BUILD weeks: cut the LR target ~20%. See Beginner.
                     longRunTargetMins = recoveryLongRunTarget(targetLongRunMins, isDeloading: isDeloading, phase: phase)
@@ -542,6 +557,12 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - longRunTargetMins) <= toleranceMins }
                     if !filteredByTarget.isEmpty {
                         pool = filteredByTarget
+                    } else if phase == .taper, week - baseDur - speedDur - peakDur >= 1 {
+                        // No template near the stepped-down target: cap at the
+                        // target rather than bouncing back up to a 140-min long
+                        // two weeks from the race (the ±15 filter found nothing).
+                        let capped = pool.filter { Int($0.duration) / 60 <= longRunTargetMins + 15 }
+                        if !capped.isEmpty { pool = capped }
                     }
                     // Low-mileage short races: load budget sits below the shortest run,
                     // so snap to the nearest-target aerobic run (half/marathon untouched).
