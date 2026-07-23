@@ -38,6 +38,12 @@ public enum PlanRecalculator {
         /// projection re-earns the offset over the remaining weeks and only
         /// current-anchored (easy) paces move. Rail still applies.
         public var plannedRacePaceOverride: Int? = nil
+        /// Set when `currentVDOT` was DERIVED from the stored planned (race-day)
+        /// pace rather than measured (the pace-offset door). The planned pace is
+        /// END-of-plan fitness, so anchoring "current" at it renders easy/speed
+        /// paces at race-week fitness — an "easier" request came out FASTER.
+        /// With this flag the remaining projected gain is backed out first.
+        public var currentVDOTDerivedFromPlannedPace: Bool = false
         /// Regenerates the HR-side plan for this config/date window. Injected:
         /// production passes `createMarathonPlanV3` + the live catalog; tests
         /// pass a deterministic fake. Generation is deterministic, so this
@@ -99,7 +105,22 @@ public enum PlanRecalculator {
         let remainingWeeks = max(1, cal.dateComponents(
             [.weekOfYear], from: input.asOf, to: plan.endDate).weekOfYear ?? 1)
 
-        var projected = input.currentVDOT.projected(
+        // Honest current fitness: when currentVDOT came from the planned pace
+        // (offset door), subtract the REMAINING share of the plan's projected
+        // gain — otherwise the current anchors sit at race-day fitness (see
+        // Input doc). Shaped like the render's linear anchor lerp: total
+        // ceiling-capped gain × remaining fraction of the plan.
+        var current = input.currentVDOT
+        if input.currentVDOTDerivedFromPlannedPace {
+            let totalWeeks = max(remainingWeeks, cal.dateComponents(
+                [.weekOfYear], from: plan.startDate, to: plan.endDate).weekOfYear ?? remainingWeeks)
+            let totalGain = min(input.adaptationCeiling,
+                                input.perWeek * Double(totalWeeks))
+            let remainingGain = totalGain * Double(remainingWeeks) / Double(totalWeeks)
+            current = VDOT(value: max(20, current.value - remainingGain))
+        }
+
+        var projected = current.projected(
             afterWeeks: remainingWeeks,
             perWeek: input.perWeek,
             adaptationCeiling: input.adaptationCeiling)
@@ -142,11 +163,25 @@ public enum PlanRecalculator {
             return max(1, Int(s.rounded()))
         }
 
-        let curRace  = racePace(input.currentVDOT, distance: plan.raceDistance)
-        let curEasy  = input.currentVDOT.easyPaceSecondsPerKm
-        let curSpeed = input.currentVDOT.fiveKPaceSecondsPerKm
-        let endEasy  = projected.easyPaceSecondsPerKm
+        let curRace  = racePace(current, distance: plan.raceDistance)
+        var curEasy  = current.easyPaceSecondsPerKm
+        let curSpeed = current.fiveKPaceSecondsPerKm
+        var endEasy  = projected.easyPaceSecondsPerKm
         let endSpeed = projected.fiveKPaceSecondsPerKm
+
+        // Offset door: Z2 easy renders exactly at the conversational anchor, so
+        // the plan's own events carry the rendered anchor at asOf and at race.
+        // Shift THOSE by the (railed) offset — the easy family then moves by
+        // exactly what the user asked, instead of a VDOT-space approximation.
+        if input.currentVDOTDerivedFromPlannedPace, let old = oldPlanned {
+            let off = newPlanned - old
+            if let rCur = renderedEasyPace(plan, asOf: input.asOf, last: false) {
+                curEasy = rCur + off
+            }
+            if let rEnd = renderedEasyPace(plan, asOf: input.asOf, last: true) {
+                endEasy = rEnd + off
+            }
+        }
 
         // Regenerate HR-side, render with the new anchors over the ORIGINAL window.
         let hrEvents = input.regenerate(plan.id, plan.startDate, plan.endDate)
@@ -252,6 +287,20 @@ public enum PlanRecalculator {
                     return base
                 }
             }
+        }
+        return nil
+    }
+
+    /// Rendered easy pace at the splice (first) or race end (last): the work
+    /// pace of the nearest/farthest future easy run — i.e. the conversational
+    /// anchor as the plan actually rendered it (5s-quantized).
+    private static func renderedEasyPace(_ plan: Plan, asOf: Date, last: Bool) -> Int? {
+        let evs = plan.events
+            .filter { !$0.isCompleted && $0.date >= asOf && $0.workout.subtype == .easy }
+            .sorted { $0.date < $1.date }
+        guard let e = last ? evs.last : evs.first else { return nil }
+        for iv in e.workout.intervals where iv.type == .work {
+            if case .paceTarget(let b, let rel) = iv.target { return Int(Double(b) * rel) }
         }
         return nil
     }

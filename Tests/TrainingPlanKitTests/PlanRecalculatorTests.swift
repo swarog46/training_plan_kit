@@ -303,11 +303,60 @@ extension PlanRecalculatorTests {
         }
         var input = self.input(plan, vdot: implied, asOf: asOf)
         input.plannedRacePaceOverride = oldPlanned + 10
+        input.currentVDOTDerivedFromPlannedPace = true   // as the offset door passes it
         let r = PlanRecalculator.recalculate(input)
         XCTAssertEqual(r.newPlannedRacePace, oldPlanned + 10, "override pins race-day pace")
         for e in r.events where !e.isCompleted && e.date >= asOf {
             if let mp = mpPaceForTest(e) {
                 XCTAssertEqual(mp, oldPlanned + 10, "MP blocks shift by the offset")
+            }
+        }
+    }
+
+    // 14. Offset door, easy side: "easier" must make easy runs SLOWER by ≈ the
+    //     offset (and "harder" faster). Regression for the wrong-direction bug:
+    //     currentVDOT derived from the PLANNED (race-day) pace anchored easy
+    //     paces at race-week fitness, so +easier rendered FASTER easy runs.
+    func testOffsetDoorMovesEasyPacesTheRightWay() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 6)
+        let asOf = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        let oldPlanned = PlanRecalculator.storedPlannedRacePace(plan)!
+
+        func easyPace(_ events: [WorkoutEvent], after: Date) -> (id: UUID, pace: Int)? {
+            for e in events.sorted(by: { $0.date < $1.date })
+            where !e.isCompleted && e.date >= after && e.workout.subtype == .easy {
+                for iv in e.workout.intervals where iv.type == .work {
+                    if case .paceTarget(let b, let rel) = iv.target {
+                        return (e.id, Int(Double(b) * rel))
+                    }
+                }
+            }
+            return nil
+        }
+        guard let oldEasy = easyPace(plan.events, after: asOf) else {
+            return XCTFail("fixture has no future easy run")
+        }
+
+        for off in [10, -10] {
+            guard let implied = VDOT.fromRacePace(secondsPerKm: oldPlanned + off,
+                                                  distanceMeters: 42195) else {
+                return XCTFail("inversion failed")
+            }
+            var input = self.input(plan, vdot: implied, asOf: asOf)
+            input.plannedRacePaceOverride = oldPlanned + off
+            input.currentVDOTDerivedFromPlannedPace = true
+            let r = PlanRecalculator.recalculate(input)
+            guard let newEasy = easyPace(r.events, after: asOf) else {
+                return XCTFail("recalced plan has no future easy run")
+            }
+            XCTAssertEqual(newEasy.id, oldEasy.id, "identity survives the splice")
+            let shift = newEasy.pace - oldEasy.pace
+            if off > 0 {
+                XCTAssertTrue((off - 5...off + 5).contains(shift),
+                              "easier +\(off) must slow easy by ≈\(off), got \(shift)")
+            } else {
+                XCTAssertTrue((off - 5...off + 5).contains(shift),
+                              "harder \(off) must speed easy by ≈\(off), got \(shift)")
             }
         }
     }
