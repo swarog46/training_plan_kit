@@ -105,7 +105,9 @@ final class EasyVsLongPaceTests: XCTestCase {
             let race = cal.date(byAdding: .weekOfYear, value: weeks, to: start)!
             let goal = distance == 42195 ? vdot.marathonPaceSecondsPerKm
                                          : vdot.halfMarathonPaceSecondsPerKm
-            let planConfig = PlanConfiguration.raceConfig(level: .competitive, distanceMeters: distance)
+            // The REAL competitive configs (raceConfig() only covers non-cmp levels).
+            let planConfig: PlanConfiguration = distance == 42195 ? .competitive42Default
+                                                                  : .competitive21Default
             let hr = createMarathonPlanV3(startDate: start, raceDate: race,
                                           from: catalog, planId: UUID(), config: planConfig)
             let events = PaceZoneConverter.applyPaceProgression(

@@ -344,9 +344,18 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             let preferMP = config.distance == 42195
                                 && phase == .peak
                                 && (week % 2 == 0)
+                                && !isDeloading
                             if preferMP {
                                 let mpOnly = filteredThresholds.filter { $0.subtype == .marathonPace }
                                 if !mpOnly.isEmpty { thresholdPool = mpOnly }
+                            }
+                            // Deload: no MP session — cut the stressor (R18 keeps
+                            // the deload long plain-aerobic; a 90min-MP session
+                            // here would defeat the down week). Skip the slot if
+                            // MP is all that's left.
+                            if isDeloading {
+                                let withoutMP = thresholdPool.filter { $0.subtype != .marathonPace }
+                                thresholdPool = withoutMP.isEmpty ? [] : withoutMP
                             }
 
                             if let threshold = selectWorkoutByTargetV3(workouts: thresholdPool, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.3), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
@@ -389,7 +398,9 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 // week flavor; plain steady long runs carry the rest.
                 if week % 2 == 0 {
                     longRunTypes.append(.progressiveLong)
-                    if phase == .speed {
+                    // Not on deloads: forcing progressiveLong would put an MP
+                    // finish on the down week (cut the stressor).
+                    if phase == .speed && !isDeloading {
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
                     }
                 }
@@ -434,6 +445,13 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 // Duration cap per (distance, level) — see PlanConfiguration.maxLongRunMinutes.
                 let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
+
+                // Deload: plain aerobic long only — a progressiveLong carries an
+                // MP finish, which is the stressor the down week exists to cut.
+                if isDeloading {
+                    let plain = pool.filter { $0.subtype != .progressiveLong }
+                    if !plain.isEmpty { pool = plain }
+                }
 
                 // Filter: ALL long runs (including progressive) must be >= 60 minutes
                 let minLongRunMins = 60

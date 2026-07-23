@@ -329,9 +329,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                             let mpQualitySlotWillFire = phase == .peak
                                 && config.distance >= 30000
                                 && !isDeloading
-                            if mpQualitySlotWillFire {
+                            // Also drop MP on DELOAD weeks: the deload long is
+                            // already plain aerobic (R18) — letting this slot pick
+                            // a 90min-MP session instead defeats the down week.
+                            if mpQualitySlotWillFire || isDeloading {
                                 let withoutMP = thresholdPool.filter { $0.subtype != .marathonPace }
                                 if !withoutMP.isEmpty { thresholdPool = withoutMP }
+                                else if isDeloading { thresholdPool = [] }  // skip the slot on a down week
                             }
 
                             // Cmp 21K Pfitz LT-interval preference: on alternating
@@ -385,7 +389,9 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 longRunTypes.append(.progressiveLong)
                 if phase == .speed {
                     let speedWeekIndex = week - baseDur
-                    if speedWeekIndex % 2 == 0 {
+                    // Not on deloads: forcing progressiveLong would put an MP
+                    // finish on the down week (cut the stressor).
+                    if speedWeekIndex % 2 == 0 && !isDeloading {
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
                     }
                 }
@@ -457,6 +463,14 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 // Duration cap per (distance, level) — see PlanConfiguration.maxLongRunMinutes.
                 let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
+
+                // Deload: plain aerobic long only — a progressiveLong here would
+                // carry a ≥25%-MP finish (the filter below guarantees it), which
+                // is exactly the stressor the down week exists to cut.
+                if isDeloading {
+                    let plain = pool.filter { $0.subtype != .progressiveLong }
+                    if !plain.isEmpty { pool = plain }
+                }
 
                 // Competitive: drop the lightest progressives (< 25% Z3 work). The
                 // selector otherwise picks the 12-18% Z3 variants, leaving long-run
