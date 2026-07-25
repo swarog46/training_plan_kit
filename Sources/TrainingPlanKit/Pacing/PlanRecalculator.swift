@@ -202,13 +202,22 @@ public enum PlanRecalculator {
             isAdvanced: plan.difficultyLevel == .advanced)
 
         // Splice: keep everything past or completed; adopt regenerated futures.
-        // A user-moved date survives via (planWeekIndex, workout.id) matching.
+        // A user-moved date survives via (week, workout.id) matching. Week is
+        // derived from the DATE, never from planWeekIndex: consumers that
+        // round-trip events through a store (the app's CoreData) don't persist
+        // that field, so stored events all carry 0 and identity never matched.
+        let weekKey: (WorkoutEvent) -> String = { e in
+            let days = cal.dateComponents([.day],
+                                          from: cal.startOfDay(for: plan.startDate),
+                                          to: cal.startOfDay(for: e.date)).day ?? 0
+            return "\(max(0, days / 7))|\(e.workout.id)"
+        }
         let keep = plan.events.filter { $0.isCompleted || $0.date < input.asOf }
-        let keptKeys = Set(keep.map { eventKey($0) })
-        var future = rendered.filter { $0.date >= input.asOf && !keptKeys.contains(eventKey($0)) }
+        let keptKeys = Set(keep.map { weekKey($0) })
+        var future = rendered.filter { $0.date >= input.asOf && !keptKeys.contains(weekKey($0)) }
         let oldFuture = plan.events.filter { !$0.isCompleted && $0.date >= input.asOf }
         for i in future.indices {
-            if let old = oldFuture.first(where: { eventKey($0) == eventKey(future[i]) }) {
+            if let old = oldFuture.first(where: { weekKey($0) == weekKey(future[i]) }) {
                 // Carry the OLD event's identity + (possibly user-moved) date;
                 // only the workout payload changes. WorkoutEvent.id is immutable,
                 // so rebuild the event around the old shell.
@@ -262,10 +271,6 @@ public enum PlanRecalculator {
     }
 
     // MARK: - Helpers
-
-    private static func eventKey(_ e: WorkoutEvent) -> String {
-        "\(e.planWeekIndex)|\(e.workout.id)"
-    }
 
     private static func racePace(_ v: VDOT, distance: Int) -> Int {
         switch distance {

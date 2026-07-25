@@ -176,3 +176,92 @@ extension LateOffsetTests {
         XCTAssertGreaterThanOrEqual(checked, 3, "tail must contain comparable rows")
     }
 }
+
+extension LateOffsetTests {
+
+    /// Cross-launch reproduction: stored plan generated from the catalog in
+    /// one order, recalc regenerates from a SHUFFLED copy (same templates —
+    /// mimics Swift's per-process hash seeds flipping Dictionary/Set picks).
+    /// Prints, per future slot, whether (weekIdx|workoutId) and (day|ordinal)
+    /// still pair — the app's diff view depends on one of them holding.
+    func testCrossLaunchPairingDrift() {
+        let catalog = loadSampleCatalog()
+        let start = cal.startOfDay(for: Date())
+        let weeks = 19
+        let raceDay = cal.date(byAdding: .weekOfYear, value: weeks, to: start)!
+        let planConfig = PlanConfiguration.raceConfig(level: .intermediate,
+                                                      distanceMeters: 21097)
+        let planId = UUID()
+        let hr = createMarathonPlanV3(startDate: start, raceDate: raceDay,
+                                      from: catalog, planId: planId, config: planConfig)
+        let vdot = VDOT(value: 43)
+        let projected = vdot.projected(afterWeeks: weeks, perWeek: 0.25, adaptationCeiling: 6)
+        var stored = PaceZoneConverter.applyPaceProgression(
+            to: hr,
+            racePace: vdot.halfMarathonPaceSecondsPerKm,
+            conversationalPace: vdot.easyPaceSecondsPerKm,
+            speedPace: vdot.fiveKPaceSecondsPerKm,
+            config: .intermediate, startDate: start, endDate: raceDay,
+            racePaceEnd: projected.halfMarathonPaceSecondsPerKm,
+            conversationalPaceEnd: projected.easyPaceSecondsPerKm,
+            speedPaceEnd: projected.fiveKPaceSecondsPerKm,
+            raceDistanceMeters: 21097, isBeginner: false)
+        // Door pressed at week 1 (fresh plan, like Q's test): everything future.
+        let asOf = cal.date(byAdding: .day, value: 3, to: start)!
+        for i in stored.indices where stored[i].date < asOf { stored[i].isCompleted = true }
+        // Emulate the app's CoreData round-trip: planWeekIndex is not persisted,
+        // every loaded event carries 0. Identity carry must not depend on it.
+        for i in stored.indices { stored[i].planWeekIndex = 0 }
+        let plan = Plan(id: planId, name: "Q", startDate: start, endDate: raceDay,
+                        events: stored, difficultyLevel: .intermediate, raceDistance: 21097)
+
+        var shuffled = catalog
+        // Deterministic derangement: reverse — any consistent reorder works.
+        shuffled.reverse()
+
+        let oldPlanned = PlanRecalculator.storedPlannedRacePace(plan)!
+        let off = -15
+        let implied = VDOT.fromRacePace(secondsPerKm: oldPlanned + off, distanceMeters: 21097)!
+        var input = PlanRecalculator.Input(
+            plan: plan, currentVDOT: implied, asOf: asOf,
+            perWeek: 0.25, adaptationCeiling: 6, config: .intermediate,
+            regenerate: { id, s, e in
+                createMarathonPlanV3(startDate: s, raceDate: e, from: shuffled,
+                                     planId: id, config: planConfig)
+            })
+        input.plannedRacePaceOverride = oldPlanned + off
+        input.currentVDOTDerivedFromPlannedPace = true
+        let r = PlanRecalculator.recalculate(input)
+
+        func dayKeys(_ events: [WorkoutEvent]) -> [UUID: String] {
+            var perDay: [Int: Int] = [:]
+            var out: [UUID: String] = [:]
+            for e in events.sorted(by: { $0.date < $1.date }) {
+                let day = cal.dateComponents([.day], from: start,
+                                             to: cal.startOfDay(for: e.date)).day ?? 0
+                let ord = perDay[day, default: 0]; perDay[day] = ord + 1
+                out[e.id] = "\(day)|\(ord)"
+            }
+            return out
+        }
+        let oldIds = Set(plan.events.map { $0.id })
+        let oldSlotByKey = Dictionary(dayKeys(plan.events).map { ($0.value, $0.key) },
+                                      uniquingKeysWith: { a, _ in a })
+        let newSlots = dayKeys(r.events)
+        var idHit = 0, slotHit = 0, unpaired = 0
+        var total = 0
+        for e in r.events.filter({ !$0.isCompleted && $0.date >= asOf })
+            .sorted(by: { $0.date < $1.date }) {
+            total += 1
+            if oldIds.contains(e.id) { idHit += 1; continue }
+            if let slot = newSlots[e.id], oldSlotByKey[slot] != nil { slotHit += 1; continue }
+            unpaired += 1
+        }
+        print("DRIFT summary: byId=\(idHit) bySlot=\(slotHit) unpaired=\(unpaired) of \(total) future")
+        // Date-derived carry: identity must survive the store round-trip for
+        // the bulk of untouched slots even when the catalog order flips.
+        XCTAssertGreaterThanOrEqual(Double(idHit), Double(total) * 0.7,
+            "identity carry must not depend on planWeekIndex (byId \(idHit)/\(total))")
+        XCTAssertEqual(unpaired, 0, "every future row must pair by id or slot")
+    }
+}
