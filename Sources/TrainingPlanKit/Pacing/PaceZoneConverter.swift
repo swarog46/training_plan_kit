@@ -388,14 +388,15 @@ public struct PaceZoneConverter {
                     vdotAnchored: vdotAnchored,
                     goalLocked: isCompetitive
                 )
-                // Long-family Z2 WORK runs a touch quicker than plain easy
+                // Long-family Z2 WORK runs quicker than plain easy
                 // (Pfitz: GA 15-25% off MP, long/ML 10-20%) — easy is the
                 // slowest non-recovery run. Warmups/recoveries stay true easy.
+                // 5% ≈ the mid-band Pfitz gap (was 3%, read as too subtle).
                 // Competitive included: with Pro easy floored at MP+18%, the
-                // bump lands Pro longs at ~MP+14.5% — inside the Pfitz band.
+                // bump lands Pro longs at ~MP+12.1% — inside the Pfitz band.
                 if zone == 2, interval.type == .work,
                    subtype == .long || subtype == .mediumLong || subtype == .steadyLong {
-                    relative *= 0.97
+                    relative *= 0.95
                 }
                 newTarget = .paceTarget(basePace: racePace, relative: relative)
             }
