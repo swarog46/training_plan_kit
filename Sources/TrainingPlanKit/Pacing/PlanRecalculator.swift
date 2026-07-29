@@ -170,16 +170,18 @@ public enum PlanRecalculator {
         let endSpeed = projected.fiveKPaceSecondsPerKm
 
         // Offset door: Z2 easy renders exactly at the conversational anchor, so
-        // the plan's own events carry the rendered anchor at asOf and at race.
-        // Shift THOSE by the (railed) offset — the easy family then moves by
-        // exactly what the user asked, instead of a VDOT-space approximation.
+        // the plan's own events carry the rendered anchor line. Shift THAT by
+        // the (railed) offset — the easy family then moves by exactly what the
+        // user asked, instead of a VDOT-space approximation. The anchor must be
+        // evaluated AT asOf: sampling the nearest future easy run alone skews
+        // fast by however far that run sits past asOf (real catalogs space easy
+        // runs weeks apart), and a ±5s offset then cancels against the skew —
+        // the first stepper tap rendered a frozen preview (Q, 2026-07-29).
         if input.currentVDOTDerivedFromPlannedPace, let old = oldPlanned {
             let off = newPlanned - old
-            if let rCur = renderedEasyPace(plan, asOf: input.asOf, last: false) {
-                curEasy = rCur + off
-            }
-            if let rEnd = renderedEasyPace(plan, asOf: input.asOf, last: true) {
-                endEasy = rEnd + off
+            if let a = renderedEasyAnchor(plan, asOf: input.asOf) {
+                curEasy = a.atAsOf + off
+                endEasy = a.atEnd + off
             }
         }
 
@@ -299,15 +301,41 @@ public enum PlanRecalculator {
     /// Rendered easy pace at the splice (first) or race end (last): the work
     /// pace of the nearest/farthest future easy run — i.e. the conversational
     /// anchor as the plan actually rendered it (5s-quantized).
-    private static func renderedEasyPace(_ plan: Plan, asOf: Date, last: Bool) -> Int? {
-        let evs = plan.events
-            .filter { !$0.isCompleted && $0.date >= asOf && $0.workout.subtype == .easy }
-            .sorted { $0.date < $1.date }
-        guard let e = last ? evs.last : evs.first else { return nil }
-        for iv in e.workout.intervals where iv.type == .work {
-            if case .paceTarget(let b, let rel) = iv.target { return Int(Double(b) * rel) }
+    /// The rendered conversational-anchor line, evaluated at `asOf` and at the
+    /// plan end, extended linearly by date — the same shape the render's own
+    /// lerp draws. Sampled from future plain-easy WORK blocks (which render
+    /// exactly at the anchor); plans whose remaining window has no plain easy
+    /// run (real catalogs render easy slots as strides/progression subtypes)
+    /// fall back to WARMUP intervals — also rendered at the anchor, and present
+    /// in nearly every workout. The two sample kinds are never mixed: a single
+    /// consistent family keeps the fitted line's slope honest.
+    private static func renderedEasyAnchor(_ plan: Plan, asOf: Date)
+        -> (atAsOf: Int, atEnd: Int)? {
+        func pace(_ e: WorkoutEvent, _ type: IntervalType) -> Int? {
+            for iv in e.workout.intervals where iv.type == type {
+                if case .paceTarget(let b, let rel) = iv.target { return Int(Double(b) * rel) }
+            }
+            return nil
         }
-        return nil
+        let future = plan.events
+            .filter { !$0.isCompleted && $0.date >= asOf }
+            .sorted { $0.date < $1.date }
+        var pts: [(date: Date, pace: Int)] = future
+            .filter { $0.workout.subtype == .easy }
+            .compactMap { e in pace(e, .work).map { (e.date, $0) } }
+        if pts.isEmpty {
+            pts = future.compactMap { e in pace(e, .warmup).map { (e.date, $0) } }
+        }
+        guard let first = pts.first else { return nil }
+        guard let last = pts.last, last.date > first.date else {
+            return (first.pace, first.pace)
+        }
+        func value(at date: Date) -> Int {
+            let t = date.timeIntervalSince(first.date)
+                / last.date.timeIntervalSince(first.date)
+            return Int((Double(first.pace) + (Double(last.pace) - Double(first.pace)) * t).rounded())
+        }
+        return (value(at: asOf), value(at: plan.endDate))
     }
 
     /// Invert race pace → VDOT near a seed (±3), 0.05 steps — small search
