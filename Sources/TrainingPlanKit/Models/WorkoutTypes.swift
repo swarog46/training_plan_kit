@@ -113,6 +113,7 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
     case tenkPace        // sustained intervals at 10K race pace (10K-specific)
     case fastFinish      // long-ish easy run with race-pace tail (universal)
     case mediumLong      // Pfitz/Daniels signature 80-110min easy run (Wed ML slot)
+    case race            // race day itself — the event the plan builds toward
 
     public var id: String { self.rawValue }
 
@@ -139,6 +140,8 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
             return .speedRun
         case .fartlek:
             return .fartlekRun
+        case .race:
+            return .race
         }
     }
 
