@@ -111,6 +111,7 @@ public enum PlanRecalculator {
         // Input doc). Shaped like the render's linear anchor lerp: total
         // ceiling-capped gain × remaining fraction of the plan.
         var current = input.currentVDOT
+        var projected: VDOT
         if input.currentVDOTDerivedFromPlannedPace {
             let totalWeeks = max(remainingWeeks, cal.dateComponents(
                 [.weekOfYear], from: plan.startDate, to: plan.endDate).weekOfYear ?? remainingWeeks)
@@ -118,12 +119,19 @@ public enum PlanRecalculator {
                                 input.perWeek * Double(totalWeeks))
             let remainingGain = totalGain * Double(remainingWeeks) / Double(totalWeeks)
             current = VDOT(value: max(20, current.value - remainingGain))
+            // Project back up along the SAME linear-capped schedule that was
+            // just backed out (and that the plan render itself uses). Mixing
+            // this with the exponential projected() made the two curves
+            // disagree per-week: head rows eased while tail rows got FASTER —
+            // a missed-week "easing" could speed up race pace. Invariant:
+            // zero detraining ⇒ exact no-op.
+            projected = VDOT(value: current.value + remainingGain)
+        } else {
+            projected = current.projected(
+                afterWeeks: remainingWeeks,
+                perWeek: input.perWeek,
+                adaptationCeiling: input.adaptationCeiling)
         }
-
-        var projected = current.projected(
-            afterWeeks: remainingWeeks,
-            perWeek: input.perWeek,
-            adaptationCeiling: input.adaptationCeiling)
 
         // Rail: clamp the planned race pace shift vs the stored plan.
         let oldPlanned = storedPlannedRacePace(plan)
@@ -132,6 +140,14 @@ public enum PlanRecalculator {
         if input.plannedRacePaceOverride != nil {
             projected = vdotFor(racePaceSecondsPerKm: newPlanned,
                                 distance: plan.raceDistance, near: projected)
+        }
+        // ≤1s shift = pace→VDOT→pace rounding noise, not a fitness change.
+        // Snap to the stored pace so a near-zero recalibration is a true no-op
+        // instead of re-rendering every row one second apart.
+        if input.currentVDOTDerivedFromPlannedPace,
+           input.plannedRacePaceOverride == nil,
+           let old = oldPlanned, abs(newPlanned - old) <= 1 {
+            newPlanned = old
         }
         var clamped = false
         if let old = oldPlanned, old > 0 {
