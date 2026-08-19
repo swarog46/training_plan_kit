@@ -311,6 +311,19 @@ public enum PlanRecalculator {
                 }
             }
         }
+        // Taper tail: the remaining weeks may render nothing at race pace
+        // (easy/long runs + a race-day placeholder). Fall back to the most
+        // recent COMPLETED race-pace rendering — same pace the remaining plan
+        // was generated with, so the stepper and recalibration keep working
+        // through the final weeks.
+        for e in plan.events.sorted(by: { $0.date > $1.date }) where e.isCompleted {
+            for iv in e.workout.intervals {
+                if case .paceTarget(let base, let rel) = iv.target,
+                   abs(rel - 1.0) < 0.001, base > 150 {
+                    return base
+                }
+            }
+        }
         return nil
     }
 
