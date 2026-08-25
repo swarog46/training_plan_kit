@@ -234,6 +234,19 @@ public enum PlanRecalculator {
         let keptKeys = Set(keep.map { weekKey($0) })
         var future = rendered.filter { $0.date >= input.asOf && !keptKeys.contains(weekKey($0)) }
         let oldFuture = plan.events.filter { !$0.isCompleted && $0.date >= input.asOf }
+
+        // DIRECTION RAIL. Recalibration re-renders with TODAY's pace model, so
+        // any change to that model since the plan was generated lands in the
+        // diff as if it were a fitness change — pointing whichever way the
+        // model moved. The easy-vs-long gap widening 3%→5% made long runs ~2%
+        // faster, which swamped a small easing: "ease your paces" showed a long
+        // run 5:20 → 5:15 (Q, 2026-08-23). Whichever way the RACE pace moved,
+        // no individual workout may move the other way.
+        //   nil = no stored anchor, no rail · 1 = easing · -1 = gain · 0 = no-op
+        let railDir: Int? = oldPlanned.map {
+            newPlanned > $0 ? 1 : (newPlanned < $0 ? -1 : 0)
+        }
+
         for i in future.indices {
             if let old = oldFuture.first(where: { weekKey($0) == weekKey(future[i]) }) {
                 // Carry the OLD event's identity + (possibly user-moved) date;
@@ -241,6 +254,10 @@ public enum PlanRecalculator {
                 // so rebuild the event around the old shell.
                 var carried = old
                 carried.workout = future[i].workout
+                if let dir = railDir {
+                    carried.workout = railed(new: future[i].workout,
+                                             old: old.workout, direction: dir)
+                }
                 carried.planWeekIndex = future[i].planWeekIndex
                 carried.isDeloadWeek = future[i].isDeloadWeek
                 carried.isTaperWeek = future[i].isTaperWeek
@@ -289,6 +306,42 @@ public enum PlanRecalculator {
     }
 
     // MARK: - Helpers
+
+    /// Clamps `new`'s pace targets so none crosses `old` against `direction`
+    /// (1 = easing, nothing may get faster; -1 = fitness gain, nothing may get
+    /// slower; 0 = no change, nothing moves). Keeps the NEW base anchor and
+    /// re-derives `relative`, so anything reading basePace still sees the
+    /// recalibrated anchor. Structure must match — a different template means
+    /// the workout genuinely changed and there is nothing to compare.
+    private static func railed(new: Workout, old: Workout, direction: Int) -> Workout {
+        guard new.intervals.count == old.intervals.count else { return new }
+        var changed = false
+        let intervals = zip(new.intervals, old.intervals).map { n, o -> WorkoutInterval in
+            guard case .paceTarget(let nb, let nr) = n.target, nb > 0,
+                  case .paceTarget(let ob, let or) = o.target else { return n }
+            let np = Double(nb) * nr, op = Double(ob) * or
+            let crosses: Bool
+            switch direction {
+            case 1:  crosses = np < op - 0.5
+            case -1: crosses = np > op + 0.5
+            default: crosses = abs(np - op) > 0.5
+            }
+            guard crosses else { return n }
+            changed = true
+            return WorkoutInterval(id: n.id, type: n.type, duration: n.duration,
+                                   distance: n.distance, targetType: n.targetType,
+                                   target: .paceTarget(basePace: nb,
+                                                       relative: op / Double(nb)))
+        }
+        guard changed else { return new }
+        return Workout(id: new.id, title: new.title, type: new.type, subtype: new.subtype,
+                       trainingType: new.trainingType, targetType: new.targetType,
+                       duration: new.duration, distance: new.distance, key: new.key,
+                       trainingLoad: new.trainingLoad, intervals: intervals,
+                       workRestRatio: new.workRestRatio, workDuration: new.workDuration,
+                       restDuration: new.restDuration, workDistance: new.workDistance,
+                       restDistance: new.restDistance)
+    }
 
     private static func racePace(_ v: VDOT, distance: Int) -> Int {
         switch distance {
