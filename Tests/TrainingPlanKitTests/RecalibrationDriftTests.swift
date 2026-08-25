@@ -190,4 +190,81 @@ final class RecalibrationDriftTests: XCTestCase {
                 "\(e.workout.key): improvement rendered SLOWER (\(op) → \(np) s/km)")
         }
     }
+
+    // MARK: - Time-trial door (the OTHER branch: measured today-fitness,
+    // projected forward exponentially — `currentVDOTDerivedFromPlannedPace`
+    // is false here, so none of the missed-training tests exercise it.)
+
+    /// Runs the TT door: `currentVDOT` is TODAY's measured fitness.
+    private func runTimeTrial(vdotToday: Double, completedWeeks: Int,
+                              stored: Plan) -> (PlanRecalculator.Result, Date) {
+        let asOf = cal.date(byAdding: .weekOfYear, value: completedWeeks, to: start)!
+        let input = PlanRecalculator.Input(
+            plan: stored, currentVDOT: VDOT(value: vdotToday), asOf: asOf,
+            perWeek: perWeek, adaptationCeiling: ceiling, config: .intermediate,
+            regenerate: { id, s, e in self.fakeGenerate(planId: id, start: s, end: e) })
+        // NOT derived from planned pace — a time trial measures today directly.
+        return (PlanRecalculator.recalculate(input), asOf)
+    }
+
+    private func assertRows(_ r: PlanRecalculator.Result, vs stored: Plan, asOf: Date,
+                            noSlower: Bool = false, noFaster: Bool = false,
+                            minRows: Int = 5, _ label: String) {
+        let oldByKey = Dictionary(uniqueKeysWithValues:
+            stored.events.map { ("\($0.planWeekIndex)|\($0.workout.id)", $0) })
+        var checked = 0
+        for e in r.events.filter({ !$0.isCompleted && $0.date >= asOf }) {
+            guard let o = oldByKey["\(e.planWeekIndex)|\(e.workout.id)"],
+                  let op = workPace(o), let np = workPace(e) else { continue }
+            checked += 1
+            if noSlower {
+                XCTAssertLessThanOrEqual(np, op + 1,
+                    "\(label) \(e.workout.key): rendered SLOWER (\(op) → \(np) s/km)")
+            }
+            if noFaster {
+                XCTAssertGreaterThanOrEqual(np, op - 1,
+                    "\(label) \(e.workout.key): rendered FASTER (\(op) → \(np) s/km)")
+            }
+        }
+        XCTAssertGreaterThan(checked, minRows, "\(label): compared too few rows")
+    }
+
+    /// A time trial showing real improvement: race pace gets FASTER and no
+    /// remaining workout gets slower.
+    func testTimeTrialGainSpeedsUpThePlan() {
+        let stored = makePlan(vdot: VDOT(value: 46), completedWeeks: 9)
+        let planned = PlanRecalculator.storedPlannedRacePace(stored)!
+        let (r, asOf) = runTimeTrial(vdotToday: 48.6, completedWeeks: 9, stored: stored)
+        XCTAssertLessThan(r.newPlannedRacePace, planned,
+                          "a fitter time trial must speed the race pace up")
+        assertRows(r, vs: stored, asOf: asOf, noSlower: true, "TT gain")
+    }
+
+    /// A time trial showing the runner is BEHIND plan eases everything, through
+    /// the very same door.
+    func testTimeTrialDeclineEasesThePlan() {
+        let stored = makePlan(vdot: VDOT(value: 46), completedWeeks: 9)
+        let planned = PlanRecalculator.storedPlannedRacePace(stored)!
+        let (r, asOf) = runTimeTrial(vdotToday: 45.0, completedWeeks: 9, stored: stored)
+        XCTAssertGreaterThan(r.newPlannedRacePace, planned,
+                             "a slower time trial must ease the race pace")
+        assertRows(r, vs: stored, asOf: asOf, noFaster: true, "TT decline")
+    }
+
+    /// The mirror of Q's bug on the TT door: a plan stored by an older pace
+    /// model whose long runs were FASTER than today's renderer produces. An
+    /// improvement must still never render a row slower.
+    ///
+    /// The gain is deliberately SMALL (47.5 vs ~47.25 expected at this point,
+    /// ~0.8% on pace) — smaller than the ~2.1% model drift. A large gain
+    /// swamps the drift and the test passes even with the rail removed, i.e.
+    /// proves nothing; verified by disabling the rail and watching this fail.
+    func testTimeTrialGainUnderModelDriftNeverSlowsARow() {
+        let fresh = makePlan(vdot: VDOT(value: 46), completedWeeks: 9)
+        let stored = rescaleLongFamily(fresh, factor: 0.93 / 0.95)
+        let planned = PlanRecalculator.storedPlannedRacePace(stored)!
+        let (r, asOf) = runTimeTrial(vdotToday: 47.5, completedWeeks: 9, stored: stored)
+        XCTAssertLessThan(r.newPlannedRacePace, planned, "should still be an improvement")
+        assertRows(r, vs: stored, asOf: asOf, noSlower: true, "TT gain + drift")
+    }
 }
