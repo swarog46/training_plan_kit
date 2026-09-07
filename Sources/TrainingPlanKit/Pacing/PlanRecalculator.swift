@@ -246,6 +246,18 @@ public enum PlanRecalculator {
         let railDir: Int? = oldPlanned.map {
             newPlanned > $0 ? 1 : (newPlanned < $0 ? -1 : 0)
         }
+        // The OFFSET door asks for something stronger than a direction: every
+        // remaining row moves by exactly this many seconds. Railing those rows
+        // to the OLD pace swallowed the request whenever model drift had made
+        // the regenerated row faster than stored — the stepper looked frozen
+        // (Q, 2026-09-07). Shift the rail's baseline by the offset so the ask
+        // is delivered AND the wrong direction is still blocked.
+        let railBaselineShift: Double = {
+            guard input.plannedRacePaceOverride != nil,
+                  input.currentVDOTDerivedFromPlannedPace,
+                  let old = oldPlanned else { return 0 }
+            return Double(newPlanned - old)
+        }()
 
         for i in future.indices {
             if let old = oldFuture.first(where: { weekKey($0) == weekKey(future[i]) }) {
@@ -256,7 +268,8 @@ public enum PlanRecalculator {
                 carried.workout = future[i].workout
                 if let dir = railDir {
                     carried.workout = railed(new: future[i].workout,
-                                             old: old.workout, direction: dir)
+                                             old: old.workout, direction: dir,
+                                             baselineShift: railBaselineShift)
                 }
                 carried.planWeekIndex = future[i].planWeekIndex
                 carried.isDeloadWeek = future[i].isDeloadWeek
@@ -313,13 +326,14 @@ public enum PlanRecalculator {
     /// re-derives `relative`, so anything reading basePace still sees the
     /// recalibrated anchor. Structure must match — a different template means
     /// the workout genuinely changed and there is nothing to compare.
-    private static func railed(new: Workout, old: Workout, direction: Int) -> Workout {
+    private static func railed(new: Workout, old: Workout, direction: Int,
+                              baselineShift: Double = 0) -> Workout {
         guard new.intervals.count == old.intervals.count else { return new }
         var changed = false
         let intervals = zip(new.intervals, old.intervals).map { n, o -> WorkoutInterval in
             guard case .paceTarget(let nb, let nr) = n.target, nb > 0,
                   case .paceTarget(let ob, let or) = o.target else { return n }
-            let np = Double(nb) * nr, op = Double(ob) * or
+            let np = Double(nb) * nr, op = Double(ob) * or + baselineShift
             let crosses: Bool
             switch direction {
             case 1:  crosses = np < op - 0.5
