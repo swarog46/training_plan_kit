@@ -14,7 +14,7 @@ public func createRaceWorkout(level: RunnerLevel, distance: Int64) -> Workout? {
         id: -1, // Special ID for race workout
         title: "Race Day",
         type: WorkoutType.race,
-        subtype: .easy, // Default subtype
+        subtype: .race,
         trainingType: .distanceBased,
         targetType: .noTarget,
         duration: 0, // Open-ended duration
