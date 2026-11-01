@@ -4,6 +4,19 @@ Versions are tags on `main`. Pre-1.0: minor versions may break API;
 the determinism contract (same inputs → same plan) holds across all of
 them, and refactors are verified by diffing rendered plan catalogs.
 
+## Unreleased
+
+- Pace: long runs render 5% faster than easy (Pfitz general-aerobic vs
+  long); Pro easy runs stay conversational at goal +18%.
+- Recovery: deloads carry no marathon-pace work in any tier. Competitive
+  half/marathon recovery keeps the days and cuts ~20-25% (was -40%+),
+  with a stepped-down taper long run. 30K/50K Advanced and Competitive
+  5K/10K deloads now dip below the build week they follow.
+- `WorkoutSubtype.race` for race day (was `.easy`).
+- Recalibration: the pace-offset door anchors to the plan's rendered
+  paces; a direction rail keeps a recalibration from moving workouts
+  against the race-pace direction; taper-tail and missed-training fixes.
+
 ## 0.7.0
 
 - Distance-class refactor: distances are a first-class axis instead of
