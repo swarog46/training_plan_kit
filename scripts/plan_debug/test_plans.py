@@ -178,11 +178,18 @@ section("Z3 (MP) workouts hit racePace from day 1, all tiers")
 text = run_pacedump("Cmp 42K (long", race_pace=256, easy_pace=300)
 w = parse_plan(text, "Cmp 42K (long, 22w)")
 mp_paces_w1 = [(s, p) for s,_,p in (w[1] if w else []) if s == 'steadyLong']
-# Cmp 42K W1 steadyLong (Z2): at-goal competitive easy anchors to the runner's
-# stated easy (300 = 5:00) and eases from there — NOT frozen at 1.15×race (was 4:55).
+easy_w1 = [(s, p) for s,_,p in (w[1] if w else []) if s == 'easy']
+# Cmp 42K W1 (Z2): at-goal competitive anchors to the runner's STATED easy
+# (300 = 5:00) — NOT frozen at 1.15×race. Plain easy renders at the anchor;
+# long-family runs 5% quicker (×0.95 → 4:45) since b91ec64.
 check(
-    "Cmp 42K W1 steadyLong @ 5:00/km",
-    any('5:00/km' in p for _, p in mp_paces_w1),
+    "Cmp 42K W1 easy @ 5:00/km (stated-easy anchor)",
+    any('5:00/km' in p for _, p in easy_w1),
+    f"got {easy_w1}"
+)
+check(
+    "Cmp 42K W1 steadyLong @ 4:45/km (easy ×0.95)",
+    any('4:45/km' in p for _, p in mp_paces_w1),
     f"got {mp_paces_w1}"
 )
 
