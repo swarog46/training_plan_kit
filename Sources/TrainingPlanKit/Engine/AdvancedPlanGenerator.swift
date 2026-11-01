@@ -289,14 +289,19 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         // Rotate an LT (threshold) session into every other off-week so
                         // BASE carries 3 quality types (hill/ladder/LT). %4==2 → 2,6,10,…
                         let baseLTWeek = phase == .base && weekInPhase % 4 == 2
+                        // 30K/50K deloads never fall back onto MP (the 42K keeps its
+                        // shipped output).
+                        let fallbackThresholds = isDeloading && config.isMarathonClass && config.distance != 42195
+                            ? filteredThresholds.filter { $0.subtype != .marathonPace }
+                            : filteredThresholds
                         if baseLTWeek,
-                           let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                           let threshold = selectWorkoutByTargetV3(workouts: fallbackThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("threshold", threshold))
                             prevThreshold = threshold
                         } else if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("interval", interval))
                             prevInterval = interval
-                        } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                        } else if let threshold = selectWorkoutByTargetV3(workouts: fallbackThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             // No sub-Z5 interval exists (5K pools are mostly I-pace);
                             // use a threshold as the quality. See IntermediatePlanGenerator.
                             weekWorkouts.append(("threshold", threshold))
@@ -312,7 +317,10 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     
                     // Threshold in SPEED/PEAK only, gated to 4+ day plans (a 2nd quality
                     // would zero out a 3-day week's easy days). See IntermediatePlanGenerator.
-                    if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 {
+                    // 30K/50K: a deload's TT is the week's quality (Pfitz tune-up in a
+                    // recovery week), no threshold beside it.
+                    let ttDeload = skipPeakTT && isDeloading && ttWeek
+                    if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 && !ttDeload {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
@@ -350,9 +358,18 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                             let preferMP = config.distance == 42195
                                 && phase == .peak
                                 && (week % 2 == 0)
+                                && !isDeloading
                             if preferMP {
                                 let mpOnly = filteredThresholds.filter { $0.subtype == .marathonPace }
                                 if !mpOnly.isEmpty { thresholdPool = mpOnly }
+                            }
+                            // Deload: no MP session — cut the stressor (R18 keeps
+                            // the deload long plain-aerobic; a 90min-MP session
+                            // here would defeat the down week). Skip the slot if
+                            // MP is all that's left.
+                            if isDeloading {
+                                let withoutMP = thresholdPool.filter { $0.subtype != .marathonPace }
+                                thresholdPool = withoutMP.isEmpty ? [] : withoutMP
                             }
 
                             if let threshold = selectWorkoutByTargetV3(workouts: thresholdPool, targetLoad: targetLoad * 0.25, targetDuration: Int(targetDuration * 0.3), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
@@ -395,7 +412,9 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 // week flavor; plain steady long runs carry the rest.
                 if week % 2 == 0 {
                     longRunTypes.append(.progressiveLong)
-                    if phase == .speed {
+                    // Not on deloads: forcing progressiveLong would put an MP
+                    // finish on the down week (cut the stressor).
+                    if phase == .speed && !isDeloading {
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
                     }
                 }
@@ -440,6 +459,13 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                 // Duration cap per (distance, level) — see PlanConfiguration.maxLongRunMinutes.
                 let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
+
+                // Deload: plain aerobic long only — a progressiveLong carries an
+                // MP finish, which is the stressor the down week exists to cut.
+                if isDeloading {
+                    let plain = pool.filter { $0.subtype != .progressiveLong }
+                    if !plain.isEmpty { pool = plain }
+                }
 
                 // Filter: ALL long runs (including progressive) must be >= 60 minutes
                 let minLongRunMins = 60
@@ -581,13 +607,15 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     // Non-5K Advanced: easy by default; progression every 3rd week.
                     // R10: never a SECOND progression-shaped run in one week — if
                     // the long run is already progressive (or a progression is
-                    // placed), this slot stays plain easy.
+                    // placed), this slot stays plain easy. 30K/50K deloads stay easy
+                    // too (a Z3/Z4 progression beside the threshold out-hit the build week).
                     let hasProgressionShape = weekWorkouts.contains {
                         $0.workout.subtype == .progression || $0.workout.subtype == .progressiveLong
                             || $0.workout.subtype == .raceRehearsalM
                             || $0.workout.subtype == .raceRehearsalHM
                     }
-                    if !progressionWeek || hasProgressionShape {
+                    let easyDeload = isDeloading && config.isMarathonClass && config.distance != 42195
+                    if !progressionWeek || hasProgressionShape || easyDeload {
                         if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("easy", easy))
                         }

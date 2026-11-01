@@ -52,7 +52,11 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 case .race:  frac = 0.40
                 }
                 var dur = peakMin * frac
-                if rawTargets.isDeloading { dur *= 0.85 }
+                // Deload duration factor tuned so the COMPOUNDED weekly cut
+                // (load mult x fill undershoot x LR cut) lands at Pfitz's -20-25%,
+                // not the -40% the 0.85 factor produced. 5K/10K keep 0.85 (their
+                // deloads also drop a session; 0.95 left them at -7..+12%).
+                if rawTargets.isDeloading { dur *= config.isLongRaceClass ? 0.95 : 0.85 }
                 rawTargets = WeeklyTargets(load: rawTargets.load, duration: dur,
                                            isDeloading: rawTargets.isDeloading,
                                            phaseProgression: p)
@@ -72,6 +76,29 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             recentDur.append(targets.duration); if recentDur.count > 3 { recentDur.removeFirst() }
             let isDeloading = targets.isDeloading
             
+            // Cmp marathon: midweek quality NEVER carries .marathonPace — MP volume
+            // lives in the long-run lane (rehearsals / progressive finishes),
+            // Pfitz-style. Kills the z5Blocked-fallback leak that stacked a 110-min
+            // MP session on top of a progressive-finish week (155 MP-min weeks).
+            // ONE exception: taper week 2 (~10 days out) admits the SHORT dress
+            // rehearsal (≤45min, ~20min at race pace) — Pfitz's final MP touch.
+            let taperWk = week - baseDur - speedDur - peakDur
+            let dressRehearsalWeek = phase == .taper && taperWk == 1 && config.distance >= 21097
+            let filteredThresholds: [Workout] = {
+                guard config.distance >= 30000 else { return self.filteredThresholds }
+                if dressRehearsalWeek {
+                    return self.filteredThresholds.filter {
+                        $0.subtype != .marathonPace || $0.duration <= 45 * 60
+                    }
+                }
+                return self.filteredThresholds.filter { $0.subtype != .marathonPace }
+            }()
+
+            // Dress-rehearsal week: restrict the threshold family to the short MP
+            // tune-up so the selector can't prefer a bigger LT session instead.
+            let dressPool = filteredThresholds.filter { $0.subtype == .marathonPace && $0.duration <= 45 * 60 }
+            let weekThresholds = (dressRehearsalWeek && !dressPool.isEmpty) ? dressPool : filteredThresholds
+
             var weekWorkouts: [(type: String, workout: Workout)] = []
             var z5UsedThisWeek = false
             let targetLoad = targets.load
@@ -268,13 +295,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                         // collapsing to all-ladders. See AdvancedPlanGenerator.
                         let baseLTWeek = phase == .base && weekInPhase % 4 == 2
                         if baseLTWeek,
-                           let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                           let threshold = selectWorkoutByTargetV3(workouts: weekThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("threshold", threshold))
                             prevThreshold = threshold
                         } else if let interval = selectWorkoutByTargetV3(workouts: noZ5, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevInterval, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             weekWorkouts.append(("interval", interval))
                             prevInterval = interval
-                        } else if let threshold = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
+                        } else if let threshold = selectWorkoutByTargetV3(workouts: weekThresholds, targetLoad: targetLoad * 0.3, targetDuration: Int(targetDuration * 0.25), usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: isDeloading, phaseJustStarted: phaseJustStarted, isMaintenance: false) {
                             // No sub-Z5 interval exists (5K pools are mostly I-pace);
                             // use a threshold as the quality. See IntermediatePlanGenerator.
                             weekWorkouts.append(("threshold", threshold))
@@ -316,10 +343,10 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                                 weekWorkouts.append(("interval2", interval2))
                                 if isRealZ5(interval2) { z5UsedThisWeek = true }
                             }
-                        } else if !filteredThresholds.isEmpty {
+                        } else if !weekThresholds.isEmpty {
                             // Normal week: Add threshold
-                            let progressedThresholds = filterThresholdsByProgression(filteredThresholds, week: week, totalWeeks: actualWeeksToGenerate)
-                            var thresholdPool = progressedThresholds.isEmpty ? filteredThresholds : progressedThresholds
+                            let progressedThresholds = filterThresholdsByProgression(weekThresholds, week: week, totalWeeks: actualWeeksToGenerate)
+                            var thresholdPool = progressedThresholds.isEmpty ? weekThresholds : progressedThresholds
 
                             // Competitive marathon PEAK already carries MP via the
                             // MP-segment LR alternation. `.marathonPace` is also in
@@ -329,9 +356,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                             let mpQualitySlotWillFire = phase == .peak
                                 && config.isMarathonClass
                                 && !isDeloading
-                            if mpQualitySlotWillFire {
+                            // Also drop MP on DELOAD weeks: the deload long is
+                            // already plain aerobic (R18) — letting this slot pick
+                            // a 90min-MP session instead defeats the down week.
+                            if mpQualitySlotWillFire || isDeloading {
                                 let withoutMP = thresholdPool.filter { $0.subtype != .marathonPace }
                                 if !withoutMP.isEmpty { thresholdPool = withoutMP }
+                                else if isDeloading { thresholdPool = [] }  // skip the slot on a down week
                             }
 
                             // Cmp 21K Pfitz LT-interval preference: on alternating
@@ -344,7 +375,7 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                                 && (phase == .speed || phase == .peak)
                                 && (week % 2 == 0)
                             if preferMileRepeats {
-                                let mileRepsOnly = filteredThresholds.filter { $0.subtype == .mileRepeats }
+                                let mileRepsOnly = weekThresholds.filter { $0.subtype == .mileRepeats }
                                 if !mileRepsOnly.isEmpty { thresholdPool = mileRepsOnly }
                             }
 
@@ -385,7 +416,9 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 longRunTypes.append(.progressiveLong)
                 if phase == .speed {
                     let speedWeekIndex = week - baseDur
-                    if speedWeekIndex % 2 == 0 {
+                    // Not on deloads: forcing progressiveLong would put an MP
+                    // finish on the down week (cut the stressor).
+                    if speedWeekIndex % 2 == 0 && !isDeloading {
                         longRunTypes.removeAll { $0 == .steadyLong || $0 == .long }
                     }
                 }
@@ -458,6 +491,14 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                 let maxDurationMins = config.maxLongRunMinutes
                 pool = pool.filter { $0.duration <= maxDurationMins * 60 }
 
+                // Deload: plain aerobic long only — a progressiveLong here would
+                // carry a ≥25%-MP finish (the filter below guarantees it), which
+                // is exactly the stressor the down week exists to cut.
+                if isDeloading {
+                    let plain = pool.filter { $0.subtype != .progressiveLong }
+                    if !plain.isEmpty { pool = plain }
+                }
+
                 // Competitive: drop the lightest progressives (< 25% Z3 work). The
                 // selector otherwise picks the 12-18% Z3 variants, leaving long-run
                 // aerobic share ~85%; Pfitz prescribes 25-40% MP volume per workout.
@@ -520,7 +561,11 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                         let peakProgress = Double(peakWeekIndex) / Double(max(peakDur - 1, 1))
                         targetLongRunMins = p.speed + Int(Double(p.peak - p.speed) * peakProgress)
                     case .taper, .race:
-                        targetLongRunMins = p.taper
+                        // Step down across the taper: wk1 (3 out) keeps the Pfitz
+                        // final medium-long; wk2+ drops toward a race-week jog.
+                        let taperWeekIndex = week - baseDur - speedDur - peakDur
+                        targetLongRunMins = taperWeekIndex <= 0 ? p.taper
+                            : Int(Double(p.taper) * 0.8)
                     }
                     // Recovery/deload BUILD weeks: cut the LR target ~20%. See Beginner.
                     longRunTargetMins = recoveryLongRunTarget(targetLongRunMins, isDeloading: isDeloading, phase: phase)
@@ -528,6 +573,12 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
                     let filteredByTarget = pool.filter { abs(Int($0.duration) / 60 - longRunTargetMins) <= toleranceMins }
                     if !filteredByTarget.isEmpty {
                         pool = filteredByTarget
+                    } else if phase == .taper, week - baseDur - speedDur - peakDur >= 1 {
+                        // No template near the stepped-down target: cap at the
+                        // target rather than bouncing back up to a 140-min long
+                        // two weeks from the race (the ±15 filter found nothing).
+                        let capped = pool.filter { Int($0.duration) / 60 <= longRunTargetMins + 15 }
+                        if !capped.isEmpty { pool = capped }
                     }
                     // Low-mileage short races: load budget sits below the shortest run,
                     // so snap to the nearest-target aerobic run (half/marathon untouched).
@@ -710,9 +761,13 @@ final class CompetitivePlanGenerator: PlanGeneratorV3 {
             // #158: Cmp weeks now top up to the PHYSICAL duration target like
             // every other level — without this, the Pfitz-class targets were
             // aspirational (selection composed ~470-530min weeks regardless).
-            topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
-                                 isDeloading: isDeloading, phase: phase,
-                                 isCompetitive: true)
+            // 5K/10K deloads skip it: the marathon-tuned deload top-up lifted
+            // their down weeks to -7..+12% vs the build week.
+            if !isDeloading || config.isLongRaceClass {
+                topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
+                                     isDeloading: isDeloading, phase: phase,
+                                     isCompetitive: true)
+            }
 
             // Peak-volume cap — AFTER topUp (R17 P1-2: the old pre-topUp trim was
             // re-inflated by the 2.0× stretch, 52 breaches up to +24%). Tracks the
