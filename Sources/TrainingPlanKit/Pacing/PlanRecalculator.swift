@@ -369,8 +369,12 @@ public enum PlanRecalculator {
     /// The stored plan's planned race pace = the basePace of any Z3/race
     /// paceTarget in a FUTURE event (MP blocks render exactly at it). Public:
     /// the app's detector derives the plan's implied fitness from it.
-    public static func storedPlannedRacePace(_ plan: Plan) -> Int? {
-        for e in plan.events where !e.isCompleted {
+    public static func storedPlannedRacePace(_ plan: Plan, asOf: Date = Date()) -> Int? {
+        // Latest future row first: past misses, and today's row a splice keeps,
+        // still carry the pace from before the last recalibration.
+        let today = Calendar.current.startOfDay(for: asOf)
+        for e in plan.events.sorted(by: { $0.date > $1.date })
+        where !e.isCompleted && e.date >= today {
             for iv in e.workout.intervals {
                 if case .paceTarget(let base, let rel) = iv.target,
                    abs(rel - 1.0) < 0.001, base > 150 {
