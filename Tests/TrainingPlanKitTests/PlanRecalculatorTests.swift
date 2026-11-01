@@ -303,11 +303,60 @@ extension PlanRecalculatorTests {
         }
         var input = self.input(plan, vdot: implied, asOf: asOf)
         input.plannedRacePaceOverride = oldPlanned + 10
+        input.currentVDOTDerivedFromPlannedPace = true   // as the offset door passes it
         let r = PlanRecalculator.recalculate(input)
         XCTAssertEqual(r.newPlannedRacePace, oldPlanned + 10, "override pins race-day pace")
         for e in r.events where !e.isCompleted && e.date >= asOf {
             if let mp = mpPaceForTest(e) {
                 XCTAssertEqual(mp, oldPlanned + 10, "MP blocks shift by the offset")
+            }
+        }
+    }
+
+    // 14. Offset door, easy side: "easier" must make easy runs SLOWER by ≈ the
+    //     offset (and "harder" faster). Regression for the wrong-direction bug:
+    //     currentVDOT derived from the PLANNED (race-day) pace anchored easy
+    //     paces at race-week fitness, so +easier rendered FASTER easy runs.
+    func testOffsetDoorMovesEasyPacesTheRightWay() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 6)
+        let asOf = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        let oldPlanned = PlanRecalculator.storedPlannedRacePace(plan)!
+
+        func easyPace(_ events: [WorkoutEvent], after: Date) -> (id: UUID, pace: Int)? {
+            for e in events.sorted(by: { $0.date < $1.date })
+            where !e.isCompleted && e.date >= after && e.workout.subtype == .easy {
+                for iv in e.workout.intervals where iv.type == .work {
+                    if case .paceTarget(let b, let rel) = iv.target {
+                        return (e.id, Int(Double(b) * rel))
+                    }
+                }
+            }
+            return nil
+        }
+        guard let oldEasy = easyPace(plan.events, after: asOf) else {
+            return XCTFail("fixture has no future easy run")
+        }
+
+        for off in [10, -10] {
+            guard let implied = VDOT.fromRacePace(secondsPerKm: oldPlanned + off,
+                                                  distanceMeters: 42195) else {
+                return XCTFail("inversion failed")
+            }
+            var input = self.input(plan, vdot: implied, asOf: asOf)
+            input.plannedRacePaceOverride = oldPlanned + off
+            input.currentVDOTDerivedFromPlannedPace = true
+            let r = PlanRecalculator.recalculate(input)
+            guard let newEasy = easyPace(r.events, after: asOf) else {
+                return XCTFail("recalced plan has no future easy run")
+            }
+            XCTAssertEqual(newEasy.id, oldEasy.id, "identity survives the splice")
+            let shift = newEasy.pace - oldEasy.pace
+            if off > 0 {
+                XCTAssertTrue((off - 5...off + 5).contains(shift),
+                              "easier +\(off) must slow easy by ≈\(off), got \(shift)")
+            } else {
+                XCTAssertTrue((off - 5...off + 5).contains(shift),
+                              "harder \(off) must speed easy by ≈\(off), got \(shift)")
             }
         }
     }
@@ -500,5 +549,154 @@ extension LongRunGrowthCapTests {
         let d30 = rendered(atWeeks: 30)
         XCTAssertLessThan(d30, d18,
             "same relative point: 30w floor (\(d30/60)min) must be weaker than 18w (\(d18/60)min)")
+    }
+}
+
+extension PlanRecalculatorTests {
+    // 15. Stepper sequence: +5 / +10 / +15 from the SAME base plan must move
+    //     rendered paces monotonically (the app recomputes each tap from the
+    //     base plan, so equal outputs for different offsets = frozen preview).
+    func testOffsetStepsAreMonotonic() {
+        let plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 6)
+        let asOf = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        let oldPlanned = PlanRecalculator.storedPlannedRacePace(plan)!
+
+        func easyPace(_ events: [WorkoutEvent], after: Date) -> Int? {
+            for e in events.sorted(by: { $0.date < $1.date })
+            where !e.isCompleted && e.date >= after && e.workout.subtype == .easy {
+                for iv in e.workout.intervals where iv.type == .work {
+                    if case .paceTarget(let b, let rel) = iv.target {
+                        return Int(Double(b) * rel)
+                    }
+                }
+            }
+            return nil
+        }
+
+        var lastEasy: Int? = nil
+        var lastMP: Int? = nil
+        for off in [5, 10, 15] {
+            guard let implied = VDOT.fromRacePace(secondsPerKm: oldPlanned + off,
+                                                  distanceMeters: 42195) else {
+                return XCTFail("inversion failed at +\(off)")
+            }
+            var input = self.input(plan, vdot: implied, asOf: asOf)
+            input.plannedRacePaceOverride = oldPlanned + off
+            input.currentVDOTDerivedFromPlannedPace = true
+            let r = PlanRecalculator.recalculate(input)
+            XCTAssertEqual(r.newPlannedRacePace, oldPlanned + off,
+                           "override pins race pace at +\(off)")
+            let easy = easyPace(r.events, after: asOf)
+            let mp = r.events.compactMap { e -> Int? in
+                guard !e.isCompleted, e.date >= asOf else { return nil }
+                return mpPaceForTest(e)
+            }.first
+            print("STEP off=+\(off): easy=\(easy ?? -1) mp=\(mp ?? -1) planned=\(r.newPlannedRacePace)")
+            if let lastEasy, let easy {
+                XCTAssertGreaterThan(easy, lastEasy,
+                    "easy pace frozen between steps: +\(off) rendered \(easy), previous step \(lastEasy)")
+            }
+            if let lastMP, let mp {
+                XCTAssertGreaterThan(mp, lastMP,
+                    "MP frozen between steps: +\(off) rendered \(mp), previous step \(lastMP)")
+            }
+            lastEasy = easy
+            lastMP = mp
+        }
+    }
+}
+
+extension PlanRecalculatorTests {
+    // 16. Stepper on a plan whose remaining window has NO plain .easy run
+    //     (real catalogs render easy slots as strides/progression): the anchor
+    //     falls back to warmup samples and steps must stay monotonic.
+    func testOffsetStepsMonotonicWithoutPlainEasyRuns() {
+        var plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 6)
+        let asOf = cal.date(byAdding: .weekOfYear, value: 6, to: start)!
+        // Strip every future plain-easy event — only rehearsals (with warmups) remain.
+        plan.events.removeAll { !$0.isCompleted && $0.date >= asOf && $0.workout.subtype == .easy }
+        let oldPlanned = PlanRecalculator.storedPlannedRacePace(plan)!
+
+        func warmupPace(_ events: [WorkoutEvent], after: Date) -> Int? {
+            for e in events.sorted(by: { $0.date < $1.date })
+            where !e.isCompleted && e.date >= after {
+                for iv in e.workout.intervals where iv.type == .warmup {
+                    if case .paceTarget(let b, let rel) = iv.target {
+                        return Int(Double(b) * rel)
+                    }
+                }
+            }
+            return nil
+        }
+
+        var previous: Int? = nil
+        for off in [5, 10, 15] {
+            guard let implied = VDOT.fromRacePace(secondsPerKm: oldPlanned + off,
+                                                  distanceMeters: 42195) else {
+                return XCTFail("inversion failed at +\(off)")
+            }
+            var input = self.input(plan, vdot: implied, asOf: asOf)
+            input.plannedRacePaceOverride = oldPlanned + off
+            input.currentVDOTDerivedFromPlannedPace = true
+            let r = PlanRecalculator.recalculate(input)
+            guard let wu = warmupPace(r.events, after: asOf) else {
+                return XCTFail("no future warmup pace at +\(off)")
+            }
+            if let previous {
+                XCTAssertGreaterThan(wu, previous,
+                    "warmup-anchored easy frozen at +\(off): \(wu) vs \(previous)")
+            }
+            previous = wu
+        }
+    }
+}
+
+extension PlanRecalculatorTests {
+    // 16. Taper tail (the demo-data state): every race-pace workout is done,
+    //     the future holds only easy runs. The stepper must still (a) find the
+    //     planned race pace via the completed-events fallback and (b) actually
+    //     move the rendered easy paces in the preview.
+    func testStepperWorksOnTaperTailPlan() {
+        var plan = makePlan(currentVDOT: VDOT(value: 38), completedWeeks: 16)
+        // Complete the remaining rehearsals too — only easy runs stay ahead.
+        for i in plan.events.indices where plan.events[i].workout.subtype != .easy {
+            plan.events[i].isCompleted = true
+        }
+        let asOf = cal.date(byAdding: .weekOfYear, value: 16, to: start)!
+
+        guard let planned = PlanRecalculator.storedPlannedRacePace(plan) else {
+            return XCTFail("fallback failed: no planned race pace on taper-tail plan")
+        }
+
+        func futureEasyPace(_ events: [WorkoutEvent]) -> Int? {
+            for e in events.sorted(by: { $0.date < $1.date })
+            where !e.isCompleted && e.date >= asOf && e.workout.subtype == .easy {
+                for iv in e.workout.intervals where iv.type == .work {
+                    if case .paceTarget(let b, let rel) = iv.target {
+                        return Int(Double(b) * rel)
+                    }
+                }
+            }
+            return nil
+        }
+
+        let baseEasy = futureEasyPace(plan.events)
+        for off in [5, 15] {
+            guard let implied = VDOT.fromRacePace(secondsPerKm: planned + off,
+                                                  distanceMeters: 42195) else {
+                return XCTFail("VDOT inversion failed at +\(off)")
+            }
+            var input = self.input(plan, vdot: implied, asOf: asOf)
+            input.plannedRacePaceOverride = planned + off
+            input.currentVDOTDerivedFromPlannedPace = true
+            let r = PlanRecalculator.recalculate(input)
+            let easy = futureEasyPace(r.events)
+            print("TAPER STEP off=+\(off): baseEasy=\(baseEasy ?? -1) easy=\(easy ?? -1) planned=\(r.newPlannedRacePace) replaced=\(r.replacedCount)")
+            XCTAssertNotNil(easy, "future easy run lost its pace target at +\(off)")
+            if let baseEasy, let easy {
+                XCTAssertGreaterThan(easy, baseEasy,
+                    "easy pace did not move on taper-tail plan at +\(off)")
+            }
+        }
     }
 }

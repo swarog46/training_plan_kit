@@ -38,6 +38,12 @@ public enum PlanRecalculator {
         /// projection re-earns the offset over the remaining weeks and only
         /// current-anchored (easy) paces move. Rail still applies.
         public var plannedRacePaceOverride: Int? = nil
+        /// Set when `currentVDOT` was DERIVED from the stored planned (race-day)
+        /// pace rather than measured (the pace-offset door). The planned pace is
+        /// END-of-plan fitness, so anchoring "current" at it renders easy/speed
+        /// paces at race-week fitness — an "easier" request came out FASTER.
+        /// With this flag the remaining projected gain is backed out first.
+        public var currentVDOTDerivedFromPlannedPace: Bool = false
         /// Regenerates the HR-side plan for this config/date window. Injected:
         /// production passes `createMarathonPlanV3` + the live catalog; tests
         /// pass a deterministic fake. Generation is deterministic, so this
@@ -99,10 +105,33 @@ public enum PlanRecalculator {
         let remainingWeeks = max(1, cal.dateComponents(
             [.weekOfYear], from: input.asOf, to: plan.endDate).weekOfYear ?? 1)
 
-        var projected = input.currentVDOT.projected(
-            afterWeeks: remainingWeeks,
-            perWeek: input.perWeek,
-            adaptationCeiling: input.adaptationCeiling)
+        // Honest current fitness: when currentVDOT came from the planned pace
+        // (offset door), subtract the REMAINING share of the plan's projected
+        // gain — otherwise the current anchors sit at race-day fitness (see
+        // Input doc). Shaped like the render's linear anchor lerp: total
+        // ceiling-capped gain × remaining fraction of the plan.
+        var current = input.currentVDOT
+        var projected: VDOT
+        if input.currentVDOTDerivedFromPlannedPace {
+            let totalWeeks = max(remainingWeeks, cal.dateComponents(
+                [.weekOfYear], from: plan.startDate, to: plan.endDate).weekOfYear ?? remainingWeeks)
+            let totalGain = min(input.adaptationCeiling,
+                                input.perWeek * Double(totalWeeks))
+            let remainingGain = totalGain * Double(remainingWeeks) / Double(totalWeeks)
+            current = VDOT(value: max(20, current.value - remainingGain))
+            // Project back up along the SAME linear-capped schedule that was
+            // just backed out (and that the plan render itself uses). Mixing
+            // this with the exponential projected() made the two curves
+            // disagree per-week: head rows eased while tail rows got FASTER —
+            // a missed-week "easing" could speed up race pace. Invariant:
+            // zero detraining ⇒ exact no-op.
+            projected = VDOT(value: current.value + remainingGain)
+        } else {
+            projected = current.projected(
+                afterWeeks: remainingWeeks,
+                perWeek: input.perWeek,
+                adaptationCeiling: input.adaptationCeiling)
+        }
 
         // Rail: clamp the planned race pace shift vs the stored plan.
         let oldPlanned = storedPlannedRacePace(plan)
@@ -111,6 +140,14 @@ public enum PlanRecalculator {
         if input.plannedRacePaceOverride != nil {
             projected = vdotFor(racePaceSecondsPerKm: newPlanned,
                                 distance: plan.raceDistance, near: projected)
+        }
+        // ≤1s shift = pace→VDOT→pace rounding noise, not a fitness change.
+        // Snap to the stored pace so a near-zero recalibration is a true no-op
+        // instead of re-rendering every row one second apart.
+        if input.currentVDOTDerivedFromPlannedPace,
+           input.plannedRacePaceOverride == nil,
+           let old = oldPlanned, abs(newPlanned - old) <= 1 {
+            newPlanned = old
         }
         var clamped = false
         if let old = oldPlanned, old > 0 {
@@ -142,11 +179,27 @@ public enum PlanRecalculator {
             return max(1, Int(s.rounded()))
         }
 
-        let curRace  = racePace(input.currentVDOT, distance: plan.raceDistance)
-        let curEasy  = input.currentVDOT.easyPaceSecondsPerKm
-        let curSpeed = input.currentVDOT.fiveKPaceSecondsPerKm
-        let endEasy  = projected.easyPaceSecondsPerKm
+        let curRace  = racePace(current, distance: plan.raceDistance)
+        var curEasy  = current.easyPaceSecondsPerKm
+        let curSpeed = current.fiveKPaceSecondsPerKm
+        var endEasy  = projected.easyPaceSecondsPerKm
         let endSpeed = projected.fiveKPaceSecondsPerKm
+
+        // Offset door: Z2 easy renders exactly at the conversational anchor, so
+        // the plan's own events carry the rendered anchor line. Shift THAT by
+        // the (railed) offset — the easy family then moves by exactly what the
+        // user asked, instead of a VDOT-space approximation. The anchor must be
+        // evaluated AT asOf: sampling the nearest future easy run alone skews
+        // fast by however far that run sits past asOf (real catalogs space easy
+        // runs weeks apart), and a ±5s offset then cancels against the skew —
+        // the first stepper tap rendered a frozen preview (Q, 2026-07-29).
+        if input.currentVDOTDerivedFromPlannedPace, let old = oldPlanned {
+            let off = newPlanned - old
+            if let a = renderedEasyAnchor(plan, asOf: input.asOf) {
+                curEasy = a.atAsOf + off
+                endEasy = a.atEnd + off
+            }
+        }
 
         // Regenerate HR-side, render with the new anchors over the ORIGINAL window.
         let hrEvents = input.regenerate(plan.id, plan.startDate, plan.endDate)
@@ -167,18 +220,57 @@ public enum PlanRecalculator {
             isAdvanced: plan.difficultyLevel == .advanced)
 
         // Splice: keep everything past or completed; adopt regenerated futures.
-        // A user-moved date survives via (planWeekIndex, workout.id) matching.
+        // A user-moved date survives via (week, workout.id) matching. Week is
+        // derived from the DATE, never from planWeekIndex: consumers that
+        // round-trip events through a store (the app's CoreData) don't persist
+        // that field, so stored events all carry 0 and identity never matched.
+        let weekKey: (WorkoutEvent) -> String = { e in
+            let days = cal.dateComponents([.day],
+                                          from: cal.startOfDay(for: plan.startDate),
+                                          to: cal.startOfDay(for: e.date)).day ?? 0
+            return "\(max(0, days / 7))|\(e.workout.id)"
+        }
         let keep = plan.events.filter { $0.isCompleted || $0.date < input.asOf }
-        let keptKeys = Set(keep.map { eventKey($0) })
-        var future = rendered.filter { $0.date >= input.asOf && !keptKeys.contains(eventKey($0)) }
+        let keptKeys = Set(keep.map { weekKey($0) })
+        var future = rendered.filter { $0.date >= input.asOf && !keptKeys.contains(weekKey($0)) }
         let oldFuture = plan.events.filter { !$0.isCompleted && $0.date >= input.asOf }
+
+        // DIRECTION RAIL. Recalibration re-renders with TODAY's pace model, so
+        // any change to that model since the plan was generated lands in the
+        // diff as if it were a fitness change — pointing whichever way the
+        // model moved. The easy-vs-long gap widening 3%→5% made long runs ~2%
+        // faster, which swamped a small easing: "ease your paces" showed a long
+        // run 5:20 → 5:15 (Q, 2026-08-23). Whichever way the RACE pace moved,
+        // no individual workout may move the other way.
+        //   nil = no stored anchor, no rail · 1 = easing · -1 = gain · 0 = no-op
+        let railDir: Int? = oldPlanned.map {
+            newPlanned > $0 ? 1 : (newPlanned < $0 ? -1 : 0)
+        }
+        // The OFFSET door asks for something stronger than a direction: every
+        // remaining row moves by exactly this many seconds. Railing those rows
+        // to the OLD pace swallowed the request whenever model drift had made
+        // the regenerated row faster than stored — the stepper looked frozen
+        // (Q, 2026-09-07). Shift the rail's baseline by the offset so the ask
+        // is delivered AND the wrong direction is still blocked.
+        let railBaselineShift: Double = {
+            guard input.plannedRacePaceOverride != nil,
+                  input.currentVDOTDerivedFromPlannedPace,
+                  let old = oldPlanned else { return 0 }
+            return Double(newPlanned - old)
+        }()
+
         for i in future.indices {
-            if let old = oldFuture.first(where: { eventKey($0) == eventKey(future[i]) }) {
+            if let old = oldFuture.first(where: { weekKey($0) == weekKey(future[i]) }) {
                 // Carry the OLD event's identity + (possibly user-moved) date;
                 // only the workout payload changes. WorkoutEvent.id is immutable,
                 // so rebuild the event around the old shell.
                 var carried = old
                 carried.workout = future[i].workout
+                if let dir = railDir {
+                    carried.workout = railed(new: future[i].workout,
+                                             old: old.workout, direction: dir,
+                                             baselineShift: railBaselineShift)
+                }
                 carried.planWeekIndex = future[i].planWeekIndex
                 carried.isDeloadWeek = future[i].isDeloadWeek
                 carried.isTaperWeek = future[i].isTaperWeek
@@ -228,8 +320,41 @@ public enum PlanRecalculator {
 
     // MARK: - Helpers
 
-    private static func eventKey(_ e: WorkoutEvent) -> String {
-        "\(e.planWeekIndex)|\(e.workout.id)"
+    /// Clamps `new`'s pace targets so none crosses `old` against `direction`
+    /// (1 = easing, nothing may get faster; -1 = fitness gain, nothing may get
+    /// slower; 0 = no change, nothing moves). Keeps the NEW base anchor and
+    /// re-derives `relative`, so anything reading basePace still sees the
+    /// recalibrated anchor. Structure must match — a different template means
+    /// the workout genuinely changed and there is nothing to compare.
+    private static func railed(new: Workout, old: Workout, direction: Int,
+                              baselineShift: Double = 0) -> Workout {
+        guard new.intervals.count == old.intervals.count else { return new }
+        var changed = false
+        let intervals = zip(new.intervals, old.intervals).map { n, o -> WorkoutInterval in
+            guard case .paceTarget(let nb, let nr) = n.target, nb > 0,
+                  case .paceTarget(let ob, let or) = o.target else { return n }
+            let np = Double(nb) * nr, op = Double(ob) * or + baselineShift
+            let crosses: Bool
+            switch direction {
+            case 1:  crosses = np < op - 0.5
+            case -1: crosses = np > op + 0.5
+            default: crosses = abs(np - op) > 0.5
+            }
+            guard crosses else { return n }
+            changed = true
+            return WorkoutInterval(id: n.id, type: n.type, duration: n.duration,
+                                   distance: n.distance, targetType: n.targetType,
+                                   target: .paceTarget(basePace: nb,
+                                                       relative: op / Double(nb)))
+        }
+        guard changed else { return new }
+        return Workout(id: new.id, title: new.title, type: new.type, subtype: new.subtype,
+                       trainingType: new.trainingType, targetType: new.targetType,
+                       duration: new.duration, distance: new.distance, key: new.key,
+                       trainingLoad: new.trainingLoad, intervals: intervals,
+                       workRestRatio: new.workRestRatio, workDuration: new.workDuration,
+                       restDuration: new.restDuration, workDistance: new.workDistance,
+                       restDistance: new.restDistance)
     }
 
     private static func racePace(_ v: VDOT, distance: Int) -> Int {
@@ -244,8 +369,25 @@ public enum PlanRecalculator {
     /// The stored plan's planned race pace = the basePace of any Z3/race
     /// paceTarget in a FUTURE event (MP blocks render exactly at it). Public:
     /// the app's detector derives the plan's implied fitness from it.
-    public static func storedPlannedRacePace(_ plan: Plan) -> Int? {
-        for e in plan.events where !e.isCompleted {
+    public static func storedPlannedRacePace(_ plan: Plan, asOf: Date = Date()) -> Int? {
+        // Latest future row first: past misses, and today's row a splice keeps,
+        // still carry the pace from before the last recalibration.
+        let today = Calendar.current.startOfDay(for: asOf)
+        for e in plan.events.sorted(by: { $0.date > $1.date })
+        where !e.isCompleted && e.date >= today {
+            for iv in e.workout.intervals {
+                if case .paceTarget(let base, let rel) = iv.target,
+                   abs(rel - 1.0) < 0.001, base > 150 {
+                    return base
+                }
+            }
+        }
+        // Taper tail: the remaining weeks may render nothing at race pace
+        // (easy/long runs + a race-day placeholder). Fall back to the most
+        // recent COMPLETED race-pace rendering — same pace the remaining plan
+        // was generated with, so the stepper and recalibration keep working
+        // through the final weeks.
+        for e in plan.events.sorted(by: { $0.date > $1.date }) where e.isCompleted {
             for iv in e.workout.intervals {
                 if case .paceTarget(let base, let rel) = iv.target,
                    abs(rel - 1.0) < 0.001, base > 150 {
@@ -254,6 +396,46 @@ public enum PlanRecalculator {
             }
         }
         return nil
+    }
+
+    /// Rendered easy pace at the splice (first) or race end (last): the work
+    /// pace of the nearest/farthest future easy run — i.e. the conversational
+    /// anchor as the plan actually rendered it (5s-quantized).
+    /// The rendered conversational-anchor line, evaluated at `asOf` and at the
+    /// plan end, extended linearly by date — the same shape the render's own
+    /// lerp draws. Sampled from future plain-easy WORK blocks (which render
+    /// exactly at the anchor); plans whose remaining window has no plain easy
+    /// run (real catalogs render easy slots as strides/progression subtypes)
+    /// fall back to WARMUP intervals — also rendered at the anchor, and present
+    /// in nearly every workout. The two sample kinds are never mixed: a single
+    /// consistent family keeps the fitted line's slope honest.
+    private static func renderedEasyAnchor(_ plan: Plan, asOf: Date)
+        -> (atAsOf: Int, atEnd: Int)? {
+        func pace(_ e: WorkoutEvent, _ type: IntervalType) -> Int? {
+            for iv in e.workout.intervals where iv.type == type {
+                if case .paceTarget(let b, let rel) = iv.target { return Int(Double(b) * rel) }
+            }
+            return nil
+        }
+        let future = plan.events
+            .filter { !$0.isCompleted && $0.date >= asOf }
+            .sorted { $0.date < $1.date }
+        var pts: [(date: Date, pace: Int)] = future
+            .filter { $0.workout.subtype == .easy }
+            .compactMap { e in pace(e, .work).map { (e.date, $0) } }
+        if pts.isEmpty {
+            pts = future.compactMap { e in pace(e, .warmup).map { (e.date, $0) } }
+        }
+        guard let first = pts.first else { return nil }
+        guard let last = pts.last, last.date > first.date else {
+            return (first.pace, first.pace)
+        }
+        func value(at date: Date) -> Int {
+            let t = date.timeIntervalSince(first.date)
+                / last.date.timeIntervalSince(first.date)
+            return Int((Double(first.pace) + (Double(last.pace) - Double(first.pace)) * t).rounded())
+        }
+        return (value(at: asOf), value(at: plan.endDate))
     }
 
     /// Invert race pace → VDOT near a seed (±3), 0.05 steps — small search
