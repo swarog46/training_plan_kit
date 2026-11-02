@@ -11,10 +11,10 @@ import Foundation
 
 extension PlanConfiguration {
 
-    // 5K Competitive — sub-19 class. 6 days/wk, speed-forward phase split
-    // (5K fitness lives in SPEED/PEAK, not aerobic bulk). No Sunday long run —
-    // the generator's 5K branch drops the LR slot; endurance comes from easy
-    // frequency. Volume ~70-90 km/wk peak, per Daniels Phase III-IV 5K.
+    // 5K Competitive — Sub-20 5K. 5 days/wk (runner may pick 4), speed-forward
+    // phase split (5K fitness lives in SPEED/PEAK, not aerobic bulk). No Sunday
+    // long run — the generator's 5K branch drops the LR slot; endurance comes
+    // from easy frequency. ~35 → 70 km/wk at sub-20 anchors (Daniels III-IV).
     public static let competitive5Default = PlanConfiguration(
         raceDate: Date(),
         runnerLevel: .competitive,
@@ -32,25 +32,25 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 3,
         minTaperPhaseWeeks: 2,
-        trainingDays: [1, 2, 3, 4, 5, 6], // 6 days/wk (Mon rest)
+        trainingDays: [1, 2, 3, 5, 6], // 5 days/wk: Mon, Tue, Wed, Fri, Sat (Thu + Sun rest)
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: false,
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 13...22,
             phaseFinishDeloadPercent: 18...20,
             taperDeloadPercent: 30,
-            // R22-calibrated: peak lands ~90km at sub-19 anchors (pacedump).
-            initialWeeklyDuration: 190,
+            // Calibrated at sub-20 anchors (pacedump): ~70km peak at 5 days.
+            initialWeeklyDuration: 150,
             initialLongRunDuration: 55...65, // seeds the longest easy day cap
-            maxLongRunMinutes: 80,
+            maxLongRunMinutes: 75,
             longRunProgression: nil,         // no LR slot at 5K
-            baseLoad: 11400, loadScaleBaselineWeeks: 14
+            baseLoad: 9000, loadScaleBaselineWeeks: 14
         )
     )
 
-    // 10K Competitive — sub-40 class. 6 days/wk, keeps real long runs
-    // (unlike 5K) but shorter than half: peak LR ~105min ≈ 22-24km.
-    // Daniels Adv 10K sits 70-90 km/wk; competitive lands just above.
+    // 10K Competitive — Sub-40 10K. 5 days/wk (runner may pick 4), keeps real
+    // long runs (unlike 5K) but shorter than half. ~53 → 72 km/wk at sub-40
+    // anchors, long run 70 → 85 min, inside Daniels/Pfitz 5-day 10K volume.
     public static let competitive10Default = PlanConfiguration(
         raceDate: Date(),
         runnerLevel: .competitive,
@@ -66,18 +66,18 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 3,
         minTaperPhaseWeeks: 2,
-        trainingDays: [1, 2, 3, 4, 5, 6], // 6 days/wk (Mon rest)
+        trainingDays: [1, 2, 3, 5, 6], // 5 days/wk: Mon, Tue, Wed, Fri, Sat (Thu + Sun rest)
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 13...22,
             phaseFinishDeloadPercent: 18...20,
             taperDeloadPercent: 30,
-            initialWeeklyDuration: 235,
-            initialLongRunDuration: 70...85,
-            maxLongRunMinutes: 100,
-            longRunProgression: (base: 75, speed: 90, peak: 115, taper: 75),
-            baseLoad: 13300, loadScaleBaselineWeeks: 14
+            initialWeeklyDuration: 220,
+            initialLongRunDuration: 60...70,
+            maxLongRunMinutes: 95,
+            longRunProgression: (base: 65, speed: 80, peak: 95, taper: 55),
+            baseLoad: 12500, loadScaleBaselineWeeks: 14
         )
     )
 
@@ -104,7 +104,7 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 4,
         minTaperPhaseWeeks: 3,
-        trainingDays: [1, 2, 3, 4, 5, 6], // 6 days/wk (Mon rest)
+        trainingDays: [1, 2, 3, 4, 5, 6], // 6 days/wk: Mon–Sat (Sun rest)
         longestWorkoutDay: 6,
         useSeparateDayForLongRun: true,
         volume: VolumeProfile(
@@ -144,7 +144,7 @@ extension PlanConfiguration {
         minSpeedPhaseWeeks: 3,
         minPeakPhaseWeeks: 4,
         minTaperPhaseWeeks: 3,
-        trainingDays: [1, 2, 3, 4, 5, 6], // Tue–Sun, 6 days/wk (Mon rest)
+        trainingDays: [1, 2, 3, 4, 5, 6], // Mon–Sat, 6 days/wk (Sun rest)
         longestWorkoutDay: 6,
         volume: VolumeProfile(
             weeklyLoadIncreasePercent: 12...20,

@@ -16,6 +16,15 @@ them, and refactors are verified by diffing rendered plan catalogs.
 - Recalibration: the pace-offset door anchors to the plan's rendered
   paces; a direction rail keeps a recalibration from moving workouts
   against the race-pace direction; taper-tail and missed-training fixes.
+- Short Runs: an open-ended fitness preset per level
+  (`.shortRunsBeginner` / `.shortRunsIntermediate` / `.shortRunsAdvanced`).
+  Every run is 40 minutes or less, with one 50-60 minute run every fourth
+  week, and the quality sessions climb in density over the weeks.
+- Pro 5K/10K presets now target a Sub-20 5K and a Sub-40 10K on five days a
+  week (four also supported). `competitiveGoalTimeSeconds(distanceMeters:)`
+  is the shared goal table, and the gate anchors the 5K at 20:00.
+- `PlanCategory` gains `.fiveKCompetitive`, `.tenKCompetitive` and
+  `.shortRuns`, plus `isOpenEnded`.
 
 ## 0.7.0
 

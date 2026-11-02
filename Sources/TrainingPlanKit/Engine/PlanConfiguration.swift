@@ -95,6 +95,9 @@ public struct PlanConfiguration {
     // templates by week, no selector) and suppresses deload tagging: the
     // protocol's own progression IS the recovery structure.
     public var isCouchTo5K: Bool = false
+    // True for Short Runs — a maintenance-style plan (distance 0) routed to
+    // ShortRunsPlanGenerator: every run under 40 min, a longer one every 4th week.
+    public var isShortRuns: Bool = false
 
     // Phase duration ratios (will be used to calculate actual duration)
     public let basePhaseRatio: Double  // e.g., 0.25 = 25% of total training period

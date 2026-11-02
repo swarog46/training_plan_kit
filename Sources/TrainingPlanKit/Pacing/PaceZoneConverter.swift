@@ -749,7 +749,8 @@ public struct PaceZoneConverter {
         // 13km beginner floor let a half build finish without a race-relevant run).
         case 21097: (floorKm, capKm) = isCompetitive ? (18, 22)
                                      : isBeginner ? (16, 18) : (16, 21)
-        case 10000: (floorKm, capKm) = (0, 16)
+        // Sub-40 10K runs ~60-75km weeks; a 16km cap held its long run at ~70min.
+        case 10000: (floorKm, capKm) = isCompetitive ? (0, 20) : (0, 16)
         case 5000:  (floorKm, capKm) = (0, 12)
         // 15K / 10-mile: race-relevant peak ≈ 12-19km (Daniels 15K-to-half band).
         case 15000: (floorKm, capKm) = isBeginner ? (12, 15) : (12, 18)

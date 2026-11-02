@@ -24,7 +24,7 @@ extension PlanConfiguration {
             minSpeedPhaseWeeks: 0,
             minPeakPhaseWeeks: 0,
             minTaperPhaseWeeks: 0,
-            trainingDays: [1, 3, 5], // Tue/Thu/Sat
+            trainingDays: [1, 3, 5], // Mon/Wed/Fri
             longestWorkoutDay: 5,
             useSeparateDayForLongRun: false,
             volume: VolumeProfile(

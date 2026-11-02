@@ -524,6 +524,9 @@ class PlanGeneratorV3 {
         // Maintenance (distance 0) is cross-level; otherwise dispatch by level.
         // VO2 plans are a level's 5K block + flag, so they ride the level generator.
         if config.distance == 0 {
+            if config.isShortRuns {
+                return ShortRunsPlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
+            }
             return MaintenancePlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
         }
         if config.isCouchTo5K {
@@ -1367,8 +1370,11 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
         let longRunDay = config.longestWorkoutDay
         let adjacentDays: Set<Int> = [longRunDay - 1, longRunDay + 1]
 
+        // Rotating can land two hard sessions on back-to-back days; only Short Runs
+        // Adv weeks carry two, so those keep the interleaved order.
+        let twoHard = config.isShortRuns && interleaved.filter(isHardWorkout).count > 1
         let dayOrder: [Int]
-        if isMaintPlan && sortedDays.count > 1 {
+        if isMaintPlan && sortedDays.count > 1 && !twoHard {
             dayOrder = Array(sortedDays.suffix(from: weekIndex % sortedDays.count))
                      + Array(sortedDays.prefix(weekIndex % sortedDays.count))
         } else {

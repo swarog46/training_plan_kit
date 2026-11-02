@@ -1111,6 +1111,13 @@ DAYDUMP_PLANS = [
     ("Cmp 42K (long, 22w)", "Cmp 42K (long, 22w)"),
     ("Cmp 42K (build, 28w)", "Cmp 42K (build, 28w)"),
     ("Maint Adv (12w)",     "Maint Adv (12w)"),
+    ("Short Beg (16w)",     "Short Beg (16w)"),
+    ("Short Int (16w)",     "Short Int (16w)"),
+    ("Short Adv (16w)",     "Short Adv (16w)"),
+    ("Cmp 5K (rec, 12w)",   "Cmp 5K (rec, 12w)"),
+    ("Cmp 10K (rec, 12w)",  "Cmp 10K (rec, 12w)"),
+    ("Cmp 5K 4d (rec, 12w)",  "Cmp 5K 4d (rec, 12w)"),
+    ("Cmp 10K 4d (rec, 12w)", "Cmp 10K 4d (rec, 12w)"),
 ]
 for header, fil in DAYDUMP_PLANS:
     text = run_daydump(fil)
@@ -1848,6 +1855,15 @@ for vdot, dist in [(54.0, 42195), (55.2, 42195), (60.0, 42195),
     state, _, _ = gate_for(vdot, dist)
     check(f"gate(VDOT={vdot} dist={dist}) → clear (fitness meets/exceeds goal)",
           state == "clear", f"got state={state}")
+
+# Pro 5K/10K: Sub-20 5K needs ≈ VDOT 49.8, Sub-40 10K ≈ 51.9. VDOT 50.5 is the
+# discriminator — clear at the Sub-20 anchor, build band at the old sub-19 one.
+for vdot, dist, want in [(43.0, 5000, "blocked"), (47.5, 5000, "buildBand"),
+                         (50.5, 5000, "clear"), (55.0, 5000, "clear"),
+                         (45.0, 10000, "blocked"), (50.0, 10000, "buildBand"),
+                         (52.5, 10000, "clear"), (56.0, 10000, "clear")]:
+    state, _, _ = gate_for(vdot, dist)
+    check(f"gate(VDOT={vdot} dist={dist}) → {want}", state == want, f"got state={state}")
 
 # Regression: VDOT 55.2 marathon (the user's bug report case) MUST be clear,
 # not buildBand. Predicted marathon at that VDOT ≈ 2:55 < 3:00.
@@ -2908,7 +2924,8 @@ for pname, weeks in z5plans.items():
         # Long-race CLASS plans (15K and up — mirrors isLongRaceClass) carry
         # light base quality from W3; short races stay clean all base.
         long_class = any(t in pname for t in ('15K', '10mi', '21K', '30K', '42K', '50K'))
-        base_ok = wd['phase'] == 'base' and wn >= 3 and long_class
+        # Short Runs has no race build — its "base" is nominal; VO2 reps from W3.
+        base_ok = wd['phase'] == 'base' and wn >= 3 and (long_class or pname.startswith('Short'))
         if c and not isvo2 and wd['phase'] in ('base', 'taper', 'race') and not base_ok:
             bad_phase.append(f"{pname} W{wn}[{wd['phase']}]")
         if c and wn == 1 and not isvo2:
@@ -4008,7 +4025,8 @@ def _consecutive_build_deloads(label_filter):
             # gentle cutback weeks, and the 2-week opening easy ramp is a LEGITIMATE
             # consecutive-light pair (like a taper, not a wasted race-build deload).
             # Exclude it from this race-periodization consecutive-deload guard.
-            cur = None if m.group(1).startswith('Maint') else m.group(1)
+            # Short Runs shares the maintenance cadence (same opening ramp).
+            cur = None if m.group(1).startswith(('Maint', 'Short')) else m.group(1)
             weeks = []
             continue
         wm = re.match(r'^W\s*(\d+)\s+(BASE|SPEED|PEAK|TAPER|RACE)\s+load.*?(\[deload\])?\s*$', line)
@@ -4477,7 +4495,8 @@ def _pro_weeks(label):
             if sm: cur["subtypes"].append(sm.group(1))
     return out
 
-for _label, _dist in [("Cmp 5K (rec, 12w)", "5K"), ("Cmp 10K (rec, 12w)", "10K")]:
+for _label, _dist in [("Cmp 5K (rec, 12w)", "5K"), ("Cmp 10K (rec, 12w)", "10K"),
+                      ("Cmp 5K 4d (rec, 12w)", "5K"), ("Cmp 10K 4d (rec, 12w)", "10K")]:
     _ws = _pro_weeks(_label)
     check(f"{_label}: parsed 12 weeks", len(_ws) == 12, f"got {len(_ws)}")
     if len(_ws) != 12: continue
@@ -4489,8 +4508,10 @@ for _label, _dist in [("Cmp 5K (rec, 12w)", "5K"), ("Cmp 10K (rec, 12w)", "10K")
     _taper = [w for w in _ws if w["phase"] == "taper"]
     # Pfitz taper: first taper week cuts 30-50% of peak volume. 35% floor —
     # the 6-session week has a ~280min render floor that a 40% bar undercuts.
-    check(f"{_label}: taper cuts >=35% from peak week",
-          bool(_taper) and _taper[0]["mins"] <= 0.65 * _peak_mins,
+    # 4 days: the taper week keeps its quality + 60min-floor long run, so 20%.
+    _cut = 0.20 if " 4d " in _label else 0.35
+    check(f"{_label}: taper cuts >={_cut:.0%} from peak week",
+          bool(_taper) and _taper[0]["mins"] <= (1 - _cut) * _peak_mins,
           f"taper={_taper[0]['mins'] if _taper else '?'} peak={_peak_mins}")
     _race = [w for w in _ws if w["phase"] == "race"]
     check(f"{_label}: race week light (<=160min) with shakeout (>=3 sessions)",
@@ -4541,9 +4562,13 @@ def _km_per_week(filter_str, race_pace, easy_pace, speed_pace):
         i += 1
     return weeks
 
-# Class anchors: sub-19 5K (3:48/km, easy 4:55), sub-40 10K (4:00, easy 5:05).
-for _label, _rp, _ep, _sp, _lo, _hi in [("Cmp 5K (rec", 228, 286, 228, 80, 105),
-                                        ("Cmp 10K (rec", 240, 291, 231, 65, 95)]:
+# Class anchors: Sub-20 5K (4:00/km, easy 5:05), Sub-40 10K (4:00, easy 4:51).
+# 5 days by default; the 4-day variants (runner's pick) sit lower.
+for _label, _rp, _ep, _sp, _lo, _hi, _w1 in [
+        ("Cmp 5K (rec", 240, 305, 240, 55, 80, (30, 50)),
+        ("Cmp 10K (rec", 240, 291, 231, 55, 85, (45, 70)),
+        ("Cmp 5K 4d (rec", 240, 305, 240, 45, 70, (25, 45)),
+        ("Cmp 10K 4d (rec", 240, 291, 231, 40, 70, (35, 60))]:
     _w = _km_per_week(_label, _rp, _ep, _sp)
     if not _w:
         check(f"{_label}) R22: pacedump parsed", False, "no weeks parsed", full=True)
@@ -4554,8 +4579,8 @@ for _label, _rp, _ep, _sp, _lo, _hi in [("Cmp 5K (rec", 228, 286, 228, 80, 105),
           _lo <= _peak <= _hi, f"peak={_peak:.0f}km @W{_peak_w}", full=True)
     check(f"{_label}) R22: crescendo — peak lands in the plan's back half (W6+)",
           _peak_w >= 6, f"peak @W{_peak_w}", full=True)
-    check(f"{_label}) R22: W1 arrival volume sane (45-70km)",
-          45 <= _w[1] <= 70, f"W1={_w[1]:.0f}km", full=True)
+    check(f"{_label}) R22: W1 arrival volume sane ({_w1[0]}-{_w1[1]}km)",
+          _w1[0] <= _w[1] <= _w1[1], f"W1={_w[1]:.0f}km", full=True)
 
 section("New distances (R23): 15K/10mi/30K/50K structural sanity")
 
@@ -4565,6 +4590,10 @@ for _label, _wks, _has_lr, _mclass in [
     ("Int 10mi (rec, 12w)", 12, True, False), ("Adv 10mi (rec, 12w)", 12, True, False),
     ("Int 30K (rec, 16w)", 16, True, True), ("Adv 30K (rec, 16w)", 16, True, True),
     ("Int 50K (rec, 18w)", 18, True, True), ("Adv 50K (rec, 18w)", 18, True, True),
+] + [(f"{lv} {d} ({kind}, {n}w)", n, True, False)
+     for lv in ("Beg", "Int", "Adv") for d in ("15K", "10mi") for kind, n in (("long", 14),)] + [
+    ("Int 30K (long, 20w)", 20, True, True), ("Adv 30K (long, 20w)", 20, True, True),
+    ("Int 50K (long, 22w)", 22, True, True), ("Adv 50K (long, 22w)", 22, True, True),
 ]:
     _ws = _pro_weeks(_label)
     check(f"{_label}: parsed {_wks} weeks", len(_ws) == _wks, f"got {len(_ws)}")
@@ -4601,6 +4630,13 @@ for _label, _rp, _ep, _spd, _lo, _hi in [
     ("Adv 30K (rec", 273, 315, 237, 70, 95),
     ("Int 50K (rec", 345, 375, 270, 60, 85),
     ("Adv 50K (rec", 310, 320, 237, 75, 100),
+] + [(_l.replace("(rec", f"({kind}"), *rest) for _l, *rest in [
+    ("Beg 15K (rec", 335, 410, 305, 25, 45), ("Int 15K (rec", 275, 345, 255, 45, 70),
+    ("Adv 15K (rec", 247, 300, 228, 60, 85), ("Beg 10mi (rec", 332, 410, 305, 25, 45),
+    ("Int 10mi (rec", 272, 345, 255, 45, 70), ("Adv 10mi (rec", 245, 300, 228, 60, 85),
+] for kind in ("long",)] + [
+    ("Int 30K (long", 305, 365, 270, 55, 80), ("Adv 30K (long", 273, 315, 237, 70, 95),
+    ("Int 50K (long", 345, 375, 270, 60, 85), ("Adv 50K (long", 310, 320, 237, 75, 100),
 ]:
     _w = _km_per_week(_label, _rp, _ep, _spd)
     if not _w:
@@ -4742,6 +4778,65 @@ for _blk in run_dump("Cmp").split("\n=== ")[1:]:
             _prev = _mins
 check("Cmp 5K/10K build deloads dip >= 10% in minutes vs the prior build week",
       not _cmp_flat, f"{_cmp_flat[:8]}", full=True)
+
+section("Short Runs: <=40min runs, a 50-60min one every 4th week, building quality")
+
+def _short_weeks(label):
+    """[{week, mins, deload, runs:[(subtype, slot, mins, load, title)]}] from `dump`."""
+    out, cur = [], None
+    for line in run_dump(label).splitlines():
+        m = re.match(r"^W\s*(\d+) \[.*?\]\s+\d+wkts load=\s*\d+\s+(\d+)min(.*)", line)
+        if m:
+            cur = dict(week=int(m.group(1)), mins=int(m.group(2)),
+                       deload="deload" in m.group(3), runs=[])
+            out.append(cur)
+            continue
+        m = re.match(r"^    (.+?)\s+(\d+)min l=\s*(\d+)\s+\[(\w+)/(\w+)\]", line)
+        if m and cur is not None:
+            cur["runs"].append((m.group(4), m.group(5), int(m.group(2)), int(m.group(3)), m.group(1).strip()))
+    return out
+
+_SR_HARD = {"interval", "threshold", "hill"}
+for _label, _days in [("Short Beg (16w)", 3), ("Short Int (16w)", 3), ("Short Adv (16w)", 4)]:
+    _ws = _short_weeks(_label)
+    check(f"{_label}: parsed 16 weeks", len(_ws) == 16, f"got {len(_ws)}")
+    if len(_ws) != 16: continue
+    check(f"{_label}: {_days} runs every week",
+          all(len(w["runs"]) == _days for w in _ws), f"{[len(w['runs']) for w in _ws]}")
+    # Only W5/W9/W13 may hold a run over 40min — one, at most 60min.
+    _over = {w["week"]: [r[2] for r in w["runs"] if r[2] > 40] for w in _ws}
+    check(f"{_label}: every run <=40min except one <=60min run in W5/W9/W13",
+          all((not v) or (k in (5, 9, 13) and len(v) == 1 and v[0] <= 60) for k, v in _over.items()),
+          f"{ {k: v for k, v in _over.items() if v} }")
+    check(f"{_label}: W5/W9/W13 each carry the 50-60min run",
+          all(any(50 <= r[2] <= 60 for r in _ws[k - 1]["runs"]) for k in (5, 9, 13)),
+          f"{[[r[2] for r in _ws[k - 1]['runs']] for k in (5, 9, 13)]}", full=True)
+    _light = [w for w in _ws if w["deload"]]
+    check(f"{_label}: light weeks W1/W2/W6/W10/W14, no hard session in them",
+          [w["week"] for w in _light] == [1, 2, 6, 10, 14]
+          and not any(r[1] in _SR_HARD for w in _light for r in w["runs"]),
+          f"light={[w['week'] for w in _light]}")
+    # The dip leans on W5/W9/W13's 50-60min run, which only the full catalog holds.
+    check(f"{_label}: each cutback week dips below the week before",
+          all(_ws[k - 1]["mins"] < _ws[k - 2]["mins"] for k in (6, 10, 14)),
+          f"{[(_ws[k - 2]['mins'], _ws[k - 1]['mins']) for k in (6, 10, 14)]}", full=True)
+    _need = 2 if _days == 4 else 1
+    _thin = [w["week"] for w in _ws if not w["deload"]
+             and sum(r[1] in _SR_HARD for r in w["runs"]) < _need]
+    check(f"{_label}: every full week has >={_need} hard session(s)", not _thin, f"weeks {_thin}")
+    _qload = lambda ws: [r[3] for w in ws for r in w["runs"] if r[1] in _SR_HARD]
+    _early, _late = _qload(_ws[2:8]), _qload(_ws[10:16])
+    check(f"{_label}: quality gets denser (avg load W11-16 > W3-8)",
+          _early and _late and sum(_late) / len(_late) > sum(_early) / len(_early),
+          f"early={sum(_early) // max(1, len(_early))} late={sum(_late) // max(1, len(_late))}", full=True)
+    _easy = lambda ws: [r[2] for w in ws if not w["deload"] for r in w["runs"] if r[1] not in _SR_HARD and r[2] <= 40]
+    check(f"{_label}: easy days lengthen (avg W11-16 > W3-8)",
+          sum(_easy(_ws[10:16])) / max(1, len(_easy(_ws[10:16]))) > sum(_easy(_ws[2:8])) / max(1, len(_easy(_ws[2:8]))),
+          "", full=True)
+    _repeat = [w["week"] for a, w in zip(_ws, _ws[1:])
+               if {(r[4], r[2]) for r in a["runs"] if r[1] in _SR_HARD}
+               & {(r[4], r[2]) for r in w["runs"] if r[1] in _SR_HARD}]
+    check(f"{_label}: no hard session repeats in back-to-back weeks", not _repeat, f"weeks {_repeat}", full=True)
 
 print(f"\n{'='*60}")
 print(f"Passed: {len(passed)}")

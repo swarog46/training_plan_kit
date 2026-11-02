@@ -2,8 +2,8 @@
 //  CompetitiveGate.swift
 //  RunPlan
 //
-//  Single source of truth for "can this runner pick the Sub-3:00 Marathon /
-//  Sub-1:30 Half plan?" — shared by the iOS plan-setup screen and the
+//  Single source of truth for "can this runner pick a Pro plan (Sub-3:00
+//  Marathon / Sub-1:30 Half / Sub-40 10K / Sub-20 5K)?" — shared by the iOS plan-setup screen and the
 //  regression tests (via plan_debug), so they can't disagree.
 //
 //  Decision policy (locked with the user 2026-06-06). Compare to the
@@ -36,6 +36,16 @@ public enum CompetitiveGateState: Equatable {
 /// (14 marathon / 12 half), which fits inside the 36w / 32w plan-length cap.
 private let buildBandMaxGap: Double = 4.0
 
+/// The Pro plan's goal finish time (seconds) at this race distance.
+public func competitiveGoalTimeSeconds(distanceMeters: Int) -> Int {
+    switch distanceMeters {
+    case 42195: return 10800   // Sub-3:00 Marathon
+    case 21097: return 5400    // Sub-1:30 Half
+    case 10000: return 2400    // Sub-40 10K
+    default:    return 1200    // Sub-20 5K
+    }
+}
+
 /// Compute the gate state for a competitive plan given the runner's VDOT.
 /// Build-band's `recommendedWeeks` defers to `vdot.recommendedPlanWeeks` (the
 /// same source as the "use recommended date" button) so they can't disagree.
@@ -43,18 +53,11 @@ private let buildBandMaxGap: Double = 4.0
 /// - Parameters:
 ///   - vdot: The runner's VDOT from a recent race result. Pass nil before the
 ///     user enters a result — returns `.clear` to let them through the picker.
-///   - distanceMeters: The competitive plan's race distance (42195 or 21097).
+///   - distanceMeters: The competitive plan's race distance (5000/10000/21097/42195).
 /// - Returns: The gate state to surface in the UI.
 public func competitiveGateState(vdot: VDOT?, distanceMeters: Int) -> CompetitiveGateState {
     guard let vdot = vdot else { return .clear }
-    // Tier class anchors: sub-3:00 M / sub-1:30 HM / sub-40 10K / sub-19 5K.
-    let goalTime: Int
-    switch distanceMeters {
-    case 42195: goalTime = 10800
-    case 21097: goalTime = 5400
-    case 10000: goalTime = 2400
-    default:    goalTime = 1140
-    }
+    let goalTime = competitiveGoalTimeSeconds(distanceMeters: distanceMeters)
     guard let requiredVDOT = VDOT.from(distanceMeters: distanceMeters, timeSeconds: goalTime) else {
         return .clear  // Pathological — degrade open.
     }

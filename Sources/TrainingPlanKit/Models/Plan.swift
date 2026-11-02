@@ -20,18 +20,32 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     case marathon = "Marathon"
     case halfMarathonCompetitive = "Sub-1:30 Half"
     case marathonCompetitive = "Sub-3:00 Marathon"
+    case fiveKCompetitive = "Sub-20 5K"
+    case tenKCompetitive = "Sub-40 10K"
     case recovery = "Recovery"
     case maintenance = "Maintenance"
     // Daniels Phase III-style 8-week VO2 max block. Non-race fitness plan
     // focused on aerobic-power gains: weekly VO2 interval + tempo + long.
     case vo2max = "VO2 Max"
+    // Open-ended fitness for busy weeks: every run under 40 min, one 50-60 min
+    // run every 4th week. Maintenance's short-run sibling.
+    case shortRuns = "Short Runs"
+    // Classic 9-week run/walk protocol to a first 5K (C25KPlanGenerator).
+    case couchTo5K = "Couch to 5K"
+    case fifteenK = "15K"
+    case tenMile = "10 Mile"
+    case thirtyK = "30K"
+    case fiftyK = "50K"
 
     public var id: String { rawValue }
 
-    /// Whether this category is a competitive (sub-3 / sub-1:30) plan.
+    /// Whether this category is a competitive (Pro) plan.
     /// Drives picker hiding and config routing.
     public var isCompetitive: Bool {
-        self == .marathonCompetitive || self == .halfMarathonCompetitive
+        switch self {
+        case .marathonCompetitive, .halfMarathonCompetitive, .tenKCompetitive, .fiveKCompetitive: return true
+        default: return false
+        }
     }
 
     // MARK: Plan classification
@@ -48,6 +62,15 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     /// Whether this is a VO2 max-focused fitness plan
     public var isVO2Max: Bool { self == .vo2max }
 
+    /// Whether this is the Short Runs fitness plan
+    public var isShortRuns: Bool { self == .shortRuns }
+
+    /// Whether this is the Couch-to-5K run/walk plan
+    public var isCouchTo5K: Bool { self == .couchTo5K }
+
+    /// No race and no fixed end: maintenance and Short Runs.
+    public var isOpenEnded: Bool { isMaintenance || isShortRuns }
+
     /// Whether this plan requires a race date selection
     public var requiresRaceDate: Bool { isRacePlan }
 
@@ -56,11 +79,15 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     /// Target race distance in meters (nil for non-race plans)
     public var distance: Int? {
         switch self {
-        case .fiveK: return 5000
-        case .tenK: return 10000
+        case .fiveK, .fiveKCompetitive, .couchTo5K: return 5000
+        case .tenK, .tenKCompetitive: return 10000
         case .halfMarathon, .halfMarathonCompetitive: return 21097
         case .marathon, .marathonCompetitive: return 42195
-        case .recovery, .maintenance, .vo2max: return nil
+        case .fifteenK: return 15000
+        case .tenMile: return 16093
+        case .thirtyK: return 30000
+        case .fiftyK: return 50000
+        case .recovery, .maintenance, .vo2max, .shortRuns: return nil
         }
     }
 
@@ -77,11 +104,20 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         // build curve. 12 weeks still preserves a real PEAK > TAPER curve.
         case .halfMarathonCompetitive: return 12
         case .marathonCompetitive: return 12
+        // Pro 5K/10K phase minimums sum to 10 (2+3+3+2).
+        case .fiveKCompetitive, .tenKCompetitive: return 10
         case .recovery: return 3
-        case .maintenance: return 52
+        case .maintenance, .shortRuns: return 52
         // VO2 max adaptation window peaks around 6-8 weeks; longer blocks
         // plateau and risk overreaching. Fixed at 8 by min == max.
         case .vo2max: return 8
+        // The protocol is 9 weeks; shorter would skip steps, longer repeats W9.
+        case .couchTo5K: return 9
+        // Below 12 weeks the build loses its cutback weeks (R23 deload rhythm).
+        case .fifteenK, .tenMile: return 12
+        // 30K/50K phase minimums sum to 15 / 17 (Adv 30K, both 50K presets).
+        case .thirtyK: return 16
+        case .fiftyK: return 18
         }
     }
 
@@ -100,9 +136,16 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         // at 26-30 for half / 30-34 for marathon. See CompetitiveGate.swift.
         case .halfMarathonCompetitive: return 32
         case .marathonCompetitive: return 36
+        // recommendedPlanWeeks clamps 12-24 for the build band.
+        case .fiveKCompetitive, .tenKCompetitive: return 24
         case .recovery: return 4
-        case .maintenance: return 52
+        case .maintenance, .shortRuns: return 52
         case .vo2max: return 8
+        case .couchTo5K: return 9
+        case .fifteenK, .tenMile: return 14
+        case .thirtyK: return 20
+        // Past 22 weeks the 50K PEAK phase outgrows the certified marathon's (9-10).
+        case .fiftyK: return 22
         }
     }
 
@@ -111,9 +154,9 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     /// Weekly load increase percentage range for this plan type
     public var weeklyLoadIncreaseRange: ClosedRange<Double> {
         switch self {
-        case .maintenance, .recovery: return 5...10
-        case .fiveK, .tenK, .vo2max:  return 10...15
-        case .halfMarathon, .marathon, .halfMarathonCompetitive, .marathonCompetitive: return 15...20
+        case .maintenance, .recovery, .shortRuns, .couchTo5K: return 5...10
+        case .fiveK, .tenK, .vo2max, .fiveKCompetitive, .tenKCompetitive, .fifteenK, .tenMile: return 10...15
+        case .halfMarathon, .marathon, .halfMarathonCompetitive, .marathonCompetitive, .thirtyK, .fiftyK: return 15...20
         }
     }
 
@@ -130,9 +173,16 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         // generated plan agree.
         case .marathonCompetitive: return 6...6
         case .halfMarathonCompetitive: return 6...6
+        // Pro 5K/10K default to 5 days; the runner may drop to 4.
+        case .fiveKCompetitive, .tenKCompetitive: return 4...5
         case .recovery: return 2...3
         case .maintenance: return 2...4
+        case .shortRuns: return 3...4
         case .vo2max: return 3...5
+        case .couchTo5K: return 3...3
+        // Presets: Beg 3 / Int 4 / Adv 5; 30K/50K have no beginner preset.
+        case .fifteenK, .tenMile: return 3...5
+        case .thirtyK, .fiftyK: return 4...5
         }
     }
 
@@ -167,10 +217,23 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
             return [.easy, .strides, .long, .mediumLong, .threshold, .intervals, .hillRepeats, .mileRepeats, .fivekPace, .raceRehearsalHM]
         case .marathonCompetitive:
             return [.easy, .strides, .long, .mediumLong, .threshold, .intervals, .hillRepeats, .mileRepeats, .yasso800, .raceRehearsalM]
+        case .fiveKCompetitive:
+            return [.easy, .strides, .threshold, .intervals, .hillRepeats, .fivekPace, .timeTrial]
+        case .tenKCompetitive:
+            return [.easy, .strides, .long, .mediumLong, .threshold, .intervals, .hillRepeats, .tenkPace, .raceRehearsal10K]
+        case .shortRuns:
+            return [.easy, .strides, .intervals, .threshold, .hillRepeats, .progression]
         // Daniels Phase III VO2 max focus: aerobic-power intervals + threshold
         // for support, with easy + long for aerobic foundation.
         case .vo2max:
             return [.easy, .long, .threshold, .intervals, .hillRepeats, .fivekPace, .timeTrial, .strides]
+        // Run/walk sessions are catalog `intervals`; the rest is easy running.
+        case .couchTo5K:
+            return [.easy, .intervals]
+        case .fifteenK, .tenMile:
+            return [.easy, .strides, .long, .mediumLong, .progression, .threshold, .intervals, .hillRepeats, .mileRepeats, .tenkPace, .raceRehearsalHM, .timeTrial]
+        case .thirtyK, .fiftyK:
+            return [.easy, .strides, .long, .mediumLong, .progression, .threshold, .intervals, .hillRepeats, .mileRepeats, .raceRehearsalM]
         }
     }
 
@@ -193,6 +256,14 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         // pattern competitive plans use difficultyLevel == .competitive to
         // separate themselves from .marathon / .halfMarathon.
         case 1:     self = .vo2max
+        // Short Runs stores raceDistance = 2 (engine still runs at distance 0).
+        case 2:     self = .shortRuns
+        // Couch to 5K stores 3: a 5000 would read back as the Beginner 5K plan.
+        case 3:     self = .couchTo5K
+        case 15000: self = .fifteenK
+        case 16093: self = .tenMile
+        case 30000: self = .thirtyK
+        case 50000: self = .fiftyK
         default: return nil
         }
     }
@@ -245,6 +316,8 @@ public struct Plan: Identifiable, Codable, Hashable {
             switch raceDistance {
             case 21097: return .halfMarathonCompetitive
             case 42195: return .marathonCompetitive
+            case 10000: return .tenKCompetitive
+            case 5000:  return .fiveKCompetitive
             default: break
             }
         }

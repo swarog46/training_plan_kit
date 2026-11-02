@@ -67,7 +67,8 @@ generators rather than prose:
 ## The plans it makes
 
 **Distances.** 5K, 10K, 15K, 10 miles, half marathon, 30K, marathon, 50K —
-plus non-race blocks: maintenance, a VO2-max development block
+plus non-race blocks: maintenance, Short Runs (every run 40 minutes or less,
+`.shortRunsIntermediate`), a VO2-max development block
 (`.vo2maxIntermediate`), and a Couch-to-5K program (`.couchTo5K`).
 
 **Levels.** Beginner, Intermediate, Advanced — level sets weekly volume,

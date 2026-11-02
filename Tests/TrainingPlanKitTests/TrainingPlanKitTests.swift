@@ -84,6 +84,50 @@ final class TrainingPlanKitTests: XCTestCase {
         XCTAssertEqual(shortPlan[6]?.first?.workout.key, "c25k_w9")
     }
 
+    /// Saved plans resolve back to the new categories: Short Runs via its
+    /// raceDistance 2 sentinel, Pro 5K/10K via the competitive difficulty.
+    func testNewPlanCategoriesRoundTrip() {
+        func category(_ distance: Int, _ level: DifficultyLevel) -> PlanCategory? {
+            Plan(name: "T", startDate: Date(), endDate: Date(), events: [],
+                 difficultyLevel: level, raceDistance: distance).category
+        }
+        XCTAssertEqual(category(2, .beginner), .shortRuns)
+        XCTAssertEqual(category(5000, .competitive), .fiveKCompetitive)
+        XCTAssertEqual(category(10000, .competitive), .tenKCompetitive)
+        XCTAssertEqual(category(5000, .advanced), .fiveK)
+        XCTAssertTrue(PlanCategory.shortRuns.isOpenEnded && PlanCategory.maintenance.isOpenEnded)
+        XCTAssertFalse(PlanCategory.vo2max.isOpenEnded)
+        XCTAssertTrue(PlanCategory.fiveKCompetitive.isCompetitive && PlanCategory.tenKCompetitive.isCompetitive)
+        XCTAssertEqual(competitiveGoalTimeSeconds(distanceMeters: 5000), 1200)
+        XCTAssertEqual(competitiveGoalTimeSeconds(distanceMeters: 10000), 2400)
+        XCTAssertEqual(category(3, .beginner), .couchTo5K)
+        XCTAssertEqual(PlanCategory.couchTo5K.distance, 5000)
+        XCTAssertTrue(PlanCategory.couchTo5K.requiresRaceDate)
+        for (meters, expected) in [(15000, PlanCategory.fifteenK), (16093, .tenMile), (30000, .thirtyK), (50000, .fiftyK)] {
+            XCTAssertEqual(category(meters, .intermediate), expected)
+            XCTAssertEqual(expected.distance, meters)
+        }
+    }
+
+    /// Short Runs: every run <= 40 min, except one <= 60 min run in W5/W9/W13;
+    /// each week fills the level's days.
+    func testShortRunsCapsRunLength() {
+        let catalog = loadSampleCatalog()
+        for config in [PlanConfiguration.shortRunsBeginner, .shortRunsIntermediate, .shortRunsAdvanced] {
+            let plan = generatePlan(config: config, totalWeeks: 16, catalog: catalog)
+            XCTAssertEqual(plan.keys.count, 16)
+            for (week, sessions) in plan {
+                XCTAssertEqual(sessions.count, config.trainingDays.count, "\(config.runnerLevel) W\(week + 1)")
+                let over = sessions.map { Int($0.workout.duration / 60) }.filter { $0 > 40 }
+                if [4, 8, 12].contains(week) {
+                    XCTAssertTrue(over.count <= 1 && over.allSatisfy { $0 <= 60 }, "W\(week + 1): \(over)")
+                } else {
+                    XCTAssertTrue(over.isEmpty, "\(config.runnerLevel) W\(week + 1) has runs over 40 min: \(over)")
+                }
+            }
+        }
+    }
+
     /// New distances (R23): each preset fills every week and appends its
     /// race day; 50K carries MP rehearsals via the marathon-class pools.
     func testNewDistancePresetsGenerate() {

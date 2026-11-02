@@ -258,6 +258,12 @@ let filter = args.count > 2 ? args[2] : ""
 let adaptive = (ProcessInfo.processInfo.environment["ADAPTIVE"] ?? "1") != "0"
 if !adaptive { print("# ADAPTIVE=0 — free-tier mode (no paid subtypes)") }
 
+func withDays(_ config: PlanConfiguration, _ days: [Int]) -> PlanConfiguration {
+    var c = config
+    c.trainingDays = days
+    return c
+}
+
 // (label, config, weeks-variant, weeks)
 let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     // 5K — recommended 6-8w. Test short / rec / long.
@@ -295,6 +301,9 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("Cmp 10K (short, 10w)", .competitive10Default, 10),
     ("Cmp 10K (rec, 12w)",   .competitive10Default, 12),
     ("Cmp 10K (long, 16w)",  .competitive10Default, 16),
+    // The runner may drop the Pro 5K/10K to 4 days (Mon, Wed, Fri, Sat).
+    ("Cmp 5K 4d (rec, 12w)", withDays(.competitive5Default, [1, 3, 5, 6]),  12),
+    ("Cmp 10K 4d (rec, 12w)", withDays(.competitive10Default, [1, 3, 5, 6]), 12),
 
     // 21K Competitive — sub-1:30 target
     // Min (12w) and max (32w) cover the gate's build-band recommended
@@ -326,6 +335,11 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("Maint Int (12w)",      .maintenanceIntermediate, 12),
     ("Maint Adv (12w)",      .maintenanceAdvanced,   12),
 
+    // Short Runs — open-ended, every run <= 40min + a 50-60min one every 4th week
+    ("Short Beg (16w)",      .shortRunsBeginner,     16),
+    ("Short Int (16w)",      .shortRunsIntermediate, 16),
+    ("Short Adv (16w)",      .shortRunsAdvanced,     16),
+
     // VO2 max — 8-week fixed block
     ("VO2 Beg (8w)",         .vo2maxBeginner,         8),
     ("VO2 Int (8w)",         .vo2maxIntermediate,     8),
@@ -341,12 +355,23 @@ let cases: [(label: String, config: PlanConfiguration, weeks: Int)] = [
     ("Beg 10mi (rec, 12w)",  .beginner10MiDefault,   12),
     ("Int 10mi (rec, 12w)",  .intermediate10MiDefault, 12),
     ("Adv 10mi (rec, 12w)",  .advanced10MiDefault,   12),
+    // The app's 14-week max (PlanCategory.maxWeeks; 12 = rec above).
+    ("Beg 15K (long, 14w)",  .beginner15Default,     14),
+    ("Int 15K (long, 14w)",  .intermediate15Default, 14),
+    ("Adv 15K (long, 14w)",  .advanced15Default,     14),
+    ("Beg 10mi (long, 14w)", .beginner10MiDefault,   14),
+    ("Int 10mi (long, 14w)", .intermediate10MiDefault, 14),
+    ("Adv 10mi (long, 14w)", .advanced10MiDefault,   14),
 
     // 30K / 50K — marathon-class (rec 16/18w)
     ("Int 30K (rec, 16w)",   .intermediate30Default, 16),
     ("Adv 30K (rec, 16w)",   .advanced30Default,     16),
     ("Int 50K (rec, 18w)",   .intermediate50Default, 18),
     ("Adv 50K (rec, 18w)",   .advanced50Default,     18),
+    ("Int 30K (long, 20w)",  .intermediate30Default, 20),
+    ("Adv 30K (long, 20w)",  .advanced30Default,     20),
+    ("Int 50K (long, 22w)",  .intermediate50Default, 22),
+    ("Adv 50K (long, 22w)",  .advanced50Default,     22),
 
     // Accessible ("real life") tier — lighter variants, same structure
     ("Acc Beg 5K (rec, 7w)",  .accessibleBeginner5Default,      7),
