@@ -341,11 +341,12 @@ public struct PaceZoneConverter {
                 } else if zone >= 5 || isHills || isLadder {
                     // VO2/rep work anchors to the PLANNED 5K, flat, rep-length-
                     // aware — same philosophy as MP: practice destination pace,
-                    // progress the dose. Short reps run FASTER than 5K (R/I-pace):
-                    // ≤90s→0.88, ≤3min→0.92, longer + hills→0.96 (I-pace).
-                    let target: Double = isHills ? 0.96
-                        : (interval.duration <= 90 ? 0.88
-                            : (interval.duration <= 180 ? 0.92 : 0.96))
+                    // progress the dose. Short reps run faster than 5K, near Daniels'
+                    // 1500m-3K (0.90-0.97 × 5K): ≤90s→0.91, ≤3min→0.95, longer + hills→0.96
+                    // (I-pace). Strides stay 0.88: turnover, not VO2.
+                    let target: Double = subtype == .strides ? 0.88 : isHills ? 0.96
+                        : (interval.duration <= 90 ? 0.91
+                            : (interval.duration <= 180 ? 0.95 : 0.96))
                     // Never slower than the planned race on 5K/10K (speed ≈ race).
                     let rel = min(target, Double(plannedRacePace) / Double(plannedSpeedPace))
                     newTarget = .paceTarget(basePace: plannedSpeedPace, relative: rel)
@@ -1076,38 +1077,13 @@ public struct PaceZoneConverter {
             }
         }
 
-        // #174 — long-run build-chain growth cap: week-over-week, a non-deload
-        // long run may exceed the LAST NON-DELOAD long run by at most +25%
-        // (or +15min, whichever is larger). Kills the phase-boundary cliffs the
-        // 27w Beg 42K showed (70→120min, +71%; slow tier 3h20 arriving in one
-        // step) — the excess spreads forward since later weeks' targets stand.
-        // Rehearsals/fastFinish keep their titled dose (never capped, #178) but
-        // do advance the chain; deload/taper weeks neither cap nor advance it.
-        var chainIdxByWeek: [Int: Int] = [:]
-        for (i, e) in out.enumerated() where longRunSubtypes.contains(e.workout.subtype) {
-            if let cur = chainIdxByWeek[e.planWeekIndex],
-               out[cur].workout.duration >= e.workout.duration { continue }
-            chainIdxByWeek[e.planWeekIndex] = i
-        }
-        let growthCappable = longRunSubtypes   // rehearsals too (#178 makes scaling safe)
-        var chainPrevSec: Int64? = nil
-        for wk in chainIdxByWeek.keys.sorted() {
-            let i = chainIdxByWeek[wk]!
-            if out[i].isDeloadWeek || out[i].isTaperWeek { continue }
-            if let prev = chainPrevSec, growthCappable.contains(out[i].workout.subtype) {
-                // Cap WINS over the km floor: the length-aware ramp raises the
-                // floor gradually, so a capped week reaches full floor within
-                // +25% steps a week later — no cliff, marathon prep intact.
-                var cap = max(prev + 900, Int64((Double(prev) * 1.25).rounded()))
-                // #199: ceiling — tick nearest unless that crosses it, then drop
-                // one tick (blanket tick-down cascaded -5min through the chain).
-                let nearestTick = Int64((Double(cap) / 300).rounded()) * 300
-                cap = nearestTick <= cap ? nearestTick : nearestTick - 300
-                if out[i].workout.duration > cap {
-                    out[i].workout = scaleWorkout(out[i].workout, toSeconds: cap)
-                }
-            }
-            chainPrevSec = out[i].workout.duration
+        // #174 — after the km floor: long runs climb to their peak within the 30-day run growth
+        // cap. Plans without long runs (C25K, 5K) keep the generator's capped durations.
+        if (raceDistanceMeters ?? 0) > 0, out.contains(where: { longRunSubtypes.contains($0.workout.subtype) }) {
+            let opening = Calendar.current.date(byAdding: .day, value: 14, to: Calendar.current.startOfDay(for: startDate))!
+            let byDate = out.indices.sorted { out[$0].date < out[$1].date }
+            let lifted = liftLongRunClimbV3(byDate.map { out[$0] }, opening: opening, rescale: scaleWorkout)
+            for (i, e) in zip(byDate, capRunGrowthV3(lifted, opening: opening, rescale: scaleWorkout)) { out[i] = e }
         }
 
         // #197 — Cmp marathon 32km guarantee: a competitive build must deliver

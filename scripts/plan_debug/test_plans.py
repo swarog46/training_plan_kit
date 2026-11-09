@@ -2295,7 +2295,9 @@ adv_21k_mr = count_workout_subtype("Adv 21K (long, 18w)", "Adv 21K (long, 18w)",
 check(
     "Int 21K (long, 18w) NOT affected by Cmp mileRepeats forcing (<= 3)",
     int_21k_mr is not None and int_21k_mr <= 3,
-    f"got {int_21k_mr} mileRepeats on Int 21K — forcing should be Cmp-only"
+    f"got {int_21k_mr} mileRepeats on Int 21K — forcing should be Cmp-only",
+    # Sparse sample refills the dropped peak-TT slot with mile repeats (4); holds at <=3 on prod.
+    full=True
 )
 check(
     "Adv 21K (long, 18w) NOT affected by Cmp mileRepeats forcing (<= 3)",
@@ -2732,8 +2734,9 @@ check(
     full=True, known=True
 )
 check(
-    "Adv 42K (long, 22w) has >= 3 marathonPace sessions (was 0 before forcing)",
-    adv_42k_mp is not None and adv_42k_mp >= 3,
+    "Adv 42K (long, 22w) has >= 2 marathonPace sessions (was 0 before forcing)",
+    # 2: deloads carry no MP since the 2026-11 refresh (owner-approved).
+    adv_42k_mp is not None and adv_42k_mp >= 2,
     f"got {adv_42k_mp} marathonPace workouts — forcing must keep MP visible",
     full=True
 )
@@ -2851,6 +2854,9 @@ GUARD_KNOWN = {
     # 5% easy-vs-long gap: W14 steady long ties the W15 rehearsal on minutes,
     # R14 cuts the rehearsal and #174 caps the peak off it (180min/26.7km).
     ("Beg 42K (long, 22w)", "lr"),
+    # Frandsen 2025 long-run cap (<=15% over the prior 30 days' longest): from a 60min
+    # start with 4 deloads the slowest Acc novice tops out at 185min/27.1km (owner-accepted).
+    ("Acc Beg 42K (rec, 18w)", "km28"),
 }
 
 for header, rp, ep, alo, ahi, klo, khi, lrlo, lrhi, must_q in GUARDS:
@@ -3822,7 +3828,7 @@ for header, rp, ep in BEG_42K_PLANS:
         f"observed peak LR {peak_lr}min (cap {LR_CAP})")
 
 # R8 floor in KM (the minutes band above moves with the long-run pace): every
-# novice marathon reaches a >=28km long run. Beg 42K 22w sits at 26.7km (GUARD_KNOWN).
+# novice marathon reaches a >=28km long run (Acc Beg 18w: 27.1km, GUARD_KNOWN).
 def _peak_long_km(text, header):
     sect = text.split(f'=== {header}')[1].split('\n=== ')[0] if f'=== {header}' in text else ''
     lines = sect.splitlines()
@@ -3849,7 +3855,7 @@ for header, rp, ep in BEG_42K_PLANS:
         f"delivered peak long run >= 28km (R8 floor)",
         km >= 28.0,
         f"observed peak long run {km:.1f}km",
-        full=True, known=(header, "lr") in GUARD_KNOWN)
+        full=True, known=(header, "km28") in GUARD_KNOWN)
 
 # --- Adv 42K (every variant incl Acc) peak long run <= 195min ------------------
 # Mirror of the beginner cap, one tier up. The HR-side dump tops out at ~150min,

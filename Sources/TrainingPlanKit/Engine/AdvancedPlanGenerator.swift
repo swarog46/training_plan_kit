@@ -65,13 +65,10 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             let recalibTTWeek = (speedDur > 0)
                 ? (phase == .speed && weekInPhase == speedDur / 2)
                 : (phase == .base && weekInPhase == baseDur - 1)
-            // Late PEAK tune-up TT only for the longer plans (half+); short 5K/10K
-            // blocks keep just the mid-plan recalib. See BeginnerPlanGenerator.
-            // R23 (#156 extended): the NEW marathon-class distances (30K/50K)
-            // skip the peak tune-up TT — their MP rehearsals are the peak
-            // tune-ups, and TT+rehearsal stacked into one brutal week.
-            // Mid-plan recalibration TTs stay. 21K/42K byte-identical.
-            let skipPeakTT = config.isMarathonClass && config.distance != 42195
+            // Late PEAK tune-up TT: 15K/10mi only; 5K/10K keep just the mid-plan recalib.
+            // R23: half+ skip it, their race-pace rehearsals are the peak tune-ups (TT +
+            // rehearsal stacked into one brutal week). Mid-plan recalibration TTs stay.
+            let skipPeakTT = config.distance >= 21097
             let peakTTWeek = config.isLongRaceClass && phase == .peak && !skipPeakTT
                 && (weekInPhase % milestoneCadence) == milestoneCadence / 2
             let ttWeek = recalibTTWeek || peakTTWeek
@@ -289,9 +286,8 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                         // Rotate an LT (threshold) session into every other off-week so
                         // BASE carries 3 quality types (hill/ladder/LT). %4==2 → 2,6,10,…
                         let baseLTWeek = phase == .base && weekInPhase % 4 == 2
-                        // 30K/50K deloads never fall back onto MP (the 42K keeps its
-                        // shipped output).
-                        let fallbackThresholds = isDeloading && config.isMarathonClass && config.distance != 42195
+                        // Marathon-class deloads never fall back onto MP.
+                        let fallbackThresholds = isDeloading && config.isMarathonClass
                             ? filteredThresholds.filter { $0.subtype != .marathonPace }
                             : filteredThresholds
                         if baseLTWeek,
@@ -317,10 +313,11 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     
                     // Threshold in SPEED/PEAK only, gated to 4+ day plans (a 2nd quality
                     // would zero out a 3-day week's easy days). See IntermediatePlanGenerator.
-                    // 30K/50K: a deload's TT is the week's quality (Pfitz tune-up in a
-                    // recovery week), no threshold beside it.
-                    let ttDeload = skipPeakTT && isDeloading && ttWeek
-                    if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 && !ttDeload {
+                    // 15K+ deloads keep one quality (Pfitz recovery week): no threshold beside
+                    // the week's intervals or TT.
+                    let oneQualityDeload = isDeloading && config.isLongRaceClass
+                        && weekWorkouts.contains { $0.type == "interval" || $0.type == "threshold" }
+                    if (phase == .speed || phase == .peak) && config.trainingDays.count >= 4 && !oneQualityDeload {
                         // Determine variation type for this week
                         let weekVariation = week % 5  // Cycle every 5 weeks for variety
 
@@ -607,14 +604,14 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
                     // Non-5K Advanced: easy by default; progression every 3rd week.
                     // R10: never a SECOND progression-shaped run in one week — if
                     // the long run is already progressive (or a progression is
-                    // placed), this slot stays plain easy. 30K/50K deloads stay easy
+                    // placed), this slot stays plain easy. Half+ deloads stay easy
                     // too (a Z3/Z4 progression beside the threshold out-hit the build week).
                     let hasProgressionShape = weekWorkouts.contains {
                         $0.workout.subtype == .progression || $0.workout.subtype == .progressiveLong
                             || $0.workout.subtype == .raceRehearsalM
                             || $0.workout.subtype == .raceRehearsalHM
                     }
-                    let easyDeload = isDeloading && config.isMarathonClass && config.distance != 42195
+                    let easyDeload = isDeloading && config.distance >= 21097
                     if !progressionWeek || hasProgressionShape || easyDeload {
                         if let easy = selectWorkoutByTargetV3(workouts: easyRuns, targetLoad: targetLoad * 0.15, targetDuration: Int(targetDuration * 0.30), usedIds: &usedIds, isMaintenance: false) {
                             weekWorkouts.append(("easy", easy))
@@ -738,13 +735,12 @@ final class AdvancedPlanGenerator: PlanGeneratorV3 {
             topUpAerobicVolumeV3(&weekWorkouts, targetDurationMins: targetDuration,
                                  isDeloading: isDeloading, phase: phase)
 
-            // #202: Adv marathon peak-week ceiling (~Pfitz 18/55-65 band tops out
-            // ~420). Long variants stacked rehearsal+MLR+rep to 430-455 — shrink
-            // the largest aerobic run (never a quality session) back under.
-            if config.isMarathonClass || config.isVO2Max {
-                // VO2 block: 250min ceiling kills the W7 +41% volume spike
-                // (fills stacked to 280min); marathon keeps the Pfitz 430.
-                let capMins = config.isVO2Max ? 250 : 430
+            // #202: Adv peak-week ceiling (~Pfitz 18/55-65 band tops out ~420). Long
+            // variants stacked rehearsal+MLR+rep to 430-470 — shrink the largest aerobic
+            // run (never a quality session) back under. Half 400 stays below marathon 430.
+            if config.distance >= 21097 || config.isVO2Max {
+                // VO2 block: 250min ceiling kills the W7 +41% volume spike (fills stacked to 280min).
+                let capMins = config.isVO2Max ? 250 : config.isMarathonClass ? 430 : 400
                 func weekMins() -> Int { weekWorkouts.reduce(0) { $0 + Int($1.workout.duration) / 60 } }
                 let trimmable: Set<WorkoutSubtype> = [.mediumLong, .easy]
                 // Fallback victims for weeks with no easy/MLR at all (R18 P1:

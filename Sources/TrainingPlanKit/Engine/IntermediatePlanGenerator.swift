@@ -65,13 +65,10 @@ final class IntermediatePlanGenerator: PlanGeneratorV3 {
             let recalibTTWeek = (speedDur > 0)
                 ? (phase == .speed && weekInPhase == speedDur / 2)
                 : (phase == .base && weekInPhase == baseDur - 1)
-            // Late PEAK tune-up TT only for the longer plans (half+); short 5K/10K
-            // blocks keep just the mid-plan recalib. See BeginnerPlanGenerator.
-            // R23 (#156 extended): the NEW marathon-class distances (30K/50K)
-            // skip the peak tune-up TT — their MP rehearsals are the peak
-            // tune-ups, and TT+rehearsal stacked into one brutal week.
-            // Mid-plan recalibration TTs stay. 21K/42K byte-identical.
-            let skipPeakTT = config.isMarathonClass && config.distance != 42195
+            // Late PEAK tune-up TT: 15K/10mi only; 5K/10K keep just the mid-plan recalib.
+            // R23: half+ skip it, their race-pace rehearsals are the peak tune-ups (TT +
+            // rehearsal stacked into one brutal week). Mid-plan recalibration TTs stay.
+            let skipPeakTT = config.distance >= 21097
             let peakTTWeek = config.isLongRaceClass && phase == .peak && !skipPeakTT
                 && (weekInPhase % milestoneCadence) == milestoneCadence / 2
             let ttWeek = recalibTTWeek || peakTTWeek

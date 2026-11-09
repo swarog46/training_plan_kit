@@ -1223,10 +1223,30 @@ class PlanGeneratorV3 {
                     trimmedPlan[week - weeksToTrim] = workouts
                 }
             }
-            return trimmedPlan
+            return withRunGrowthCap(trimmedPlan)
         }
 
-        return workoutsByWeek
+        return withRunGrowthCap(workoutsByWeek)
+    }
+
+    /// Race plans: runs over the 30-day run growth cap are cut; each week is a 7-day step.
+    func withRunGrowthCap(_ plan: [Int: [(type: String, workout: Workout)]]) -> [Int: [(type: String, workout: Workout)]] {
+        guard config.distance > 0, !config.isCouchTo5K, !config.isVO2Max else { return plan }
+        let day0 = Date(timeIntervalSinceReferenceDate: 0)
+        let slots = plan.keys.sorted().flatMap { week in plan[week]!.indices.map { (week: week, index: $0) } }
+        let events = slots.map { slot -> WorkoutEvent in
+            var e = WorkoutEvent(workout: plan[slot.week]![slot.index].workout, planId: UUID(),
+                                 date: day0.addingTimeInterval(Double(slot.week) * 7 * 86400))
+            e.planWeekIndex = slot.week
+            e.isDeloadWeek = deloadWeeks.contains(slot.week)
+            e.isTaperWeek = taperWeeks.contains(slot.week)
+            return e
+        }
+        var out = plan
+        for (slot, e) in zip(slots, capRunGrowthV3(events, opening: day0.addingTimeInterval(14 * 86400))) {
+            out[slot.week]![slot.index].workout = e.workout
+        }
+        return out
     }
 
     /// True if this strides workout has a stride rep shorter than 15s. The rep is
@@ -1496,6 +1516,54 @@ func rescaledV3(_ w: Workout, toSeconds target: Int64) -> Workout {
                    workDuration: Int64((Double(w.workDuration) * f).rounded()),
                    restDuration: Int64((Double(w.restDuration) * f).rounded()),
                    workDistance: w.workDistance, restDistance: w.restDistance)
+}
+
+/// Frandsen et al. 2025 (BJSM, n=5,205): a run more than 10% longer than the longest of the
+/// previous 30 days raises injury risk. Such runs are cut to that (same workout, 5-min steps);
+/// races count but are never cut, and runs before `opening` set the starting level.
+/// Frandsen et al. 2025 (BJSM, n=5,205): a run much longer than the longest of the previous
+/// 30 days raises injury risk (+10-30%: HRR 1.64).
+private let runGrowthLimit = 1.15
+
+/// The longest run allowed after a 30-day longest of `longest` seconds (nearest 5 minutes).
+public func runGrowthCap(afterLongest longest: Int64) -> Int64 {
+    Int64((Double(longest) * runGrowthLimit / 300).rounded()) * 300
+}
+
+/// Raises build-week long runs (from `opening` on) just enough that the peak (e.g. a pace plan's
+/// km floor) is reachable within `runGrowthLimit` per week; deload and taper weeks stay as they are.
+func liftLongRunClimbV3(_ events: [WorkoutEvent], opening: Date,
+                        rescale: (Workout, Int64) -> Workout = rescaledV3) -> [WorkoutEvent] {
+    var out = events
+    let byWeek = Dictionary(grouping: out.indices.filter {
+        out[$0].date >= opening && out[$0].workout.type != .race && !out[$0].isDeloadWeek && !out[$0].isTaperWeek
+    }) { out[$0].planWeekIndex }
+    let chain = byWeek.keys.sorted().compactMap { byWeek[$0]!.max { out[$0].workout.duration < out[$1].workout.duration } }
+    var need: Int64 = 0
+    for i in chain.reversed() {
+        need = Int64(Double(need) / runGrowthLimit + 299) / 300 * 300
+        if out[i].workout.duration < need { out[i].workout = rescale(out[i].workout, need) }
+        need = out[i].workout.duration
+    }
+    return out
+}
+
+/// Cuts any run over `runGrowthCap` of the previous 30 days (same workout). Races count but
+/// are never cut; runs before `opening` set the starting level.
+func capRunGrowthV3(_ events: [WorkoutEvent], after history: [WorkoutEvent] = [], opening: Date,
+                    rescale: (Workout, Int64) -> Workout = rescaledV3) -> [WorkoutEvent] {
+    let cal = Calendar.current
+    var done = history
+    for var e in events {
+        let monthAgo = cal.date(byAdding: .day, value: -30, to: e.date)!
+        let longest = done.filter { $0.date >= monthAgo && $0.date < e.date }.map(\.workout.duration).max() ?? 0
+        let cap = runGrowthCap(afterLongest: longest)
+        if e.date >= opening, e.workout.type != .race, longest > 0, e.workout.duration > cap {
+            e.workout = rescale(e.workout, cap)
+        }
+        done.append(e)
+    }
+    return Array(done.dropFirst(history.count))
 }
 
 /// R8: the LONG run must out-last any medium-long run in its week. Fixed

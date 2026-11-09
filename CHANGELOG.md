@@ -25,6 +25,16 @@ them, and refactors are verified by diffing rendered plan catalogs.
   is the shared goal table, and the gate anchors the 5K at 20:00.
 - `PlanCategory` gains `.fiveKCompetitive`, `.tenKCompetitive` and
   `.shortRuns`, plus `isOpenEnded`.
+- Long-run growth: no run more than 15% longer than the longest of the
+  previous 30 days (Frandsen et al. 2025, BJSM). Applied by the
+  generator and again after the pace render; replaces the +25% chain cap.
+- Short VO2 reps ease to Daniels' ratios: 90 s or less at 0.91 × 5K pace
+  (was 0.88), up to 3 min at 0.95 (was 0.92). Strides and long reps keep
+  their paces.
+- Intermediate and Advanced half/marathon plans drop the late time trial
+  that stacked with the race-pace rehearsal; the mid-plan one stays.
+- Advanced recovery weeks from 15K up keep one quality session; the
+  Advanced half caps its peak week at 400 minutes (marathon: 430).
 
 ## 0.7.0
 
