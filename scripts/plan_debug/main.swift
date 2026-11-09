@@ -1090,3 +1090,86 @@ if mode == "json" {
     try! data.write(to: URL(fileURLWithPath: jsonPath))
     print("json → \(jsonPath) (\(out.count) plans)")
 }
+
+// season [beg|int|adv] — multi-race seasons, one line per week: block, minutes, load, longest run,
+// week-on-week change, ACWR (load / mean of the 4 weeks before), sessions (E L Q I, R race).
+if mode == "season" {
+    let level: RunnerLevel = filter == "beg" ? .beginner : filter == "adv" ? .advanced : .intermediate
+    let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+    func d(_ s: String) -> Date { f.date(from: s)! }
+    let seasons: [(String, String, [(String, Int)])] = [
+        ("10K + 10K + marathon", "2027-01-04", [("2027-03-14", 10000), ("2027-06-06", 10000), ("2027-10-10", 42195)]),
+        ("half tune-up in a marathon block", "2027-05-23", [("2027-09-05", 21097), ("2027-10-10", 42195)]),
+        ("10K, half, marathon", "2027-02-01", [("2027-04-18", 10000), ("2027-06-27", 21097), ("2027-11-07", 42195)]),
+    ]
+    func config(_ m: Int) -> PlanConfiguration {
+        var c: PlanConfiguration
+        if m == 0 {
+            c = level == .beginner ? .maintenanceBeginner : level == .advanced ? .maintenanceAdvanced : .maintenanceIntermediate
+        } else {
+            c = .raceConfig(level: level, distanceMeters: m)
+        }
+        c.trainingDays = level == .beginner ? [2, 4, 0] : level == .advanced ? [1, 2, 4, 6, 0] : [2, 4, 6, 0]
+        c.longestWorkoutDay = 0
+        return c
+    }
+    for (title, start, list) in seasons {
+        let layout = SeasonPlanner.layout(races: list.map { SeasonRace(date: d($0.0), distanceMeters: $0.1) },
+                                          start: d(start), level: level)
+        let events = SeasonPlanBuilder.build(layout, level: level, catalog: workouts, planId: UUID(), config: { block in
+            switch block.kind {
+            case .build(let i), .recovery(let i): return config(layout.races[i].distanceMeters)
+            case .bridge: return config(0)
+            }
+        })
+        print("\n=== \(title) (\(level)) — priorities \(layout.priorities.map(\.rawValue)) issues \(layout.issues)")
+        let cal = Calendar.current
+        var week = d(start)
+        var loads: [Int] = []
+        var lastMin = 0
+        print("week        block       min  load  long    Δmin  acwr  >30d  sessions")
+        while week <= layout.races.last!.date {
+            let next = cal.date(byAdding: .day, value: 7, to: week)!
+            let block = layout.blocks.last { $0.start <= week }
+            let label: String
+            switch block?.kind {
+            case .build(let i)?: label = "build \(layout.races[i].distanceMeters / 1000)K"
+            case .recovery?: label = "recovery"
+            case .bridge?: label = "bridge"
+            case nil: label = "?"
+            }
+            let wk = events.filter { $0.date >= week && $0.date < next }
+            let cells = wk.map { e -> String in
+                if e.workout.type == .race { return "R\(e.workout.distance / 1000)K" }
+                let c: String
+                switch determineWorkoutCategory(workout: e.workout) {
+                case .longRun: c = "L"
+                case .interval: c = "I"
+                case .quality: c = "Q"
+                default: c = "E"
+                }
+                return "\(c)\(e.workout.duration / 60)"
+            }
+            let total = wk.reduce(0) { $0 + Int($1.workout.duration) / 60 }
+            let load = wk.reduce(0) { $0 + Int($1.workout.trainingLoad) }
+            let long = wk.map { Int($0.workout.duration) / 60 }.max() ?? 0
+            let change = lastMin > 0 ? String(format: "%+5.0f%%", Double(total - lastMin) / Double(lastMin) * 100) : "     -"
+            // Runs over the 30-day growth cap (capRunGrowthV3), as % over the prior 30 days' longest.
+            let opening = cal.date(byAdding: .day, value: 14, to: d(start))!
+            let excess = wk.filter { $0.date >= opening && $0.workout.type != .race }.compactMap { e -> Int? in
+                let longest = events.filter { $0.date < e.date && $0.date >= cal.date(byAdding: .day, value: -30, to: e.date)! }
+                    .map(\.workout.duration).max() ?? 0
+                guard longest > 0, e.workout.duration > runGrowthCap(afterLongest: longest) else { return nil }
+                return Int((e.workout.duration - longest) * 100 / longest)
+            }.max()
+            let spike = excess.map { "+\($0)%" } ?? ""
+            let prior = loads.suffix(4)
+            let acwr = prior.count == 4 && prior.reduce(0, +) > 0
+                ? String(format: "%4.2f", Double(load) / (Double(prior.reduce(0, +)) / 4)) : "   -"
+            print("\(f.string(from: week))  \(label.padding(toLength: 10, withPad: " ", startingAt: 0)) \(String(format: "%4d", total))  \(String(format: "%4d", load))  \(String(format: "%4d", long))  \(change)  \(acwr)  \(spike.padding(toLength: 5, withPad: " ", startingAt: 0)) \(cells.joined(separator: " "))")
+            loads.append(load)
+            lastMin = total
+            week = next
+        }
+    }
+}

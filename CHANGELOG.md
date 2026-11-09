@@ -35,6 +35,10 @@ them, and refactors are verified by diffing rendered plan catalogs.
   that stacked with the race-pace rehearsal; the mid-plan one stays.
 - Advanced recovery weeks from 15K up keep one quality session; the
   Advanced half caps its peak week at 400 minutes (marathon: 430).
+- Multi-race seasons: `SeasonPlanner` lays out up to 11 months of races
+  (goal, own-block and tune-up races, each block at least its plan's
+  minimum build); `SeasonPlanBuilder` renders each block with the
+  single-race engine and keeps the growth cap across blocks.
 
 ## 0.7.0
 

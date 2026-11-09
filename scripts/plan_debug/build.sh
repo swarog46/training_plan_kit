@@ -27,6 +27,7 @@ swiftc \
   Sources/TrainingPlanKit/Models/*.swift \
   Sources/TrainingPlanKit/Engine/*.swift \
   Sources/TrainingPlanKit/Pacing/*.swift \
+  Sources/TrainingPlanKit/Season/*.swift \
   scripts/plan_debug/main.swift
 
 echo "Built: $OUTPUT"
