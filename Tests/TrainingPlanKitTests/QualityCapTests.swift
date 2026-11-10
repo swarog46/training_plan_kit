@@ -67,6 +67,34 @@ final class QualityCapTests: XCTestCase {
         XCTAssertEqual(marathon.with(.gentler).maxQualitySessions, 1)
     }
 
+    /// Extended recovery (masters): one quality session a week at every distance, deeper
+    /// recovery weeks, the same days and the same hard sessions otherwise.
+    func testExtendedRecoveryKeepsIntensityAndCutsDensity() {
+        for meters in [10000, 42195] {
+            let standard = PlanConfiguration.raceConfig(level: .advanced, distanceMeters: meters)
+            let masters = standard.with(PlanOptions(extendedRecovery: true))
+            XCTAssertTrue(masters.intensities.isEmpty, "already at one quality session a week")
+            for w in qualityPerWeek(masters, weeks: 18) { XCTAssertLessThanOrEqual(w.count, 1, "\(meters) week \(w.week + 1)") }
+
+            let (plan, deloads, taper) = generatePlanV3WithDeloads(config: masters, totalWeeks: 18, allWorkouts: catalog)
+            let (usual, _, _) = generatePlanV3WithDeloads(config: standard, totalWeeks: 18, allWorkouts: catalog)
+            XCTAssertEqual(plan.mapValues(\.count), usual.mapValues(\.count), "same runs a week")
+            func longRun(_ week: Int) -> Int { plan[week]!.filter { $0.workout.subtype.isLongRun }.map { $0.workout.minutes }.max() ?? 0 }
+            for week in deloads where plan[week - 1] != nil && !deloads.contains(week - 1) && !taper.contains(week - 1) {
+                XCTAssertLessThanOrEqual(longRun(week), max(60, longRun(week - 1) * 3 / 4), "\(meters) week \(week + 1)")
+            }
+        }
+    }
+
+    func testExtendedRecoveryIsOfferedWherePlansAreBuilt() {
+        XCTAssertTrue(PlanConfiguration.raceConfig(level: .beginner, distanceMeters: 21097).offersExtendedRecovery)
+        XCTAssertTrue(PlanConfiguration.maintenanceIntermediate.offersExtendedRecovery)
+        for fixed in [PlanConfiguration.couchTo5K, .walkToRun, .vo2maxBeginner, .competitive42Default] {
+            XCTAssertFalse(fixed.offersExtendedRecovery)
+            XCTAssertFalse(fixed.with(PlanOptions(extendedRecovery: true)).extendedRecovery, "asking changes nothing")
+        }
+    }
+
     func testHalfAndUpKeepTheGeneratorsCount() {
         XCTAssertNil(PlanConfiguration.raceConfig(level: .advanced, distanceMeters: 21097).qualityCap)
         XCTAssertNil(PlanConfiguration.raceConfig(level: .beginner, distanceMeters: 10000).qualityCap)

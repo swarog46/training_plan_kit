@@ -79,6 +79,10 @@ them, and refactors are verified by diffing rendered plan catalogs.
   Walk to Run (6 weeks, hands over to Couch to 5K), 5K to 10K (8 weeks,
   ends on the 10K) and Return to Running (4 weeks). New `PlanCategory`
   cases `.walkToRun`, `.fiveToTenK`, `.returnToRunning`.
+- `PlanOptions` (intensity + `extendedRecovery`) through
+  `PlanConfiguration.with(_:)`. Extended recovery, for masters runners,
+  keeps one quality session a week at full intensity and deepens
+  recovery weeks (long run 75%, week 80% of the build week before).
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 

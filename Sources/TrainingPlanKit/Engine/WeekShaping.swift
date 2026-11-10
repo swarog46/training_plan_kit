@@ -118,9 +118,9 @@ extension PlanGeneratorV3 {
         return plainRun(.easy, minutes: min(workout.minutes, 75)).map { ("easy", $0) }
     }
 
-    /// A recovery week runs at most 90% of the minutes of the build week before it. Its long
-    /// run stops at 80% of that week's (60 min at least), then its longest plain run gives up
-    /// 5 minutes at a time, never under 30. Quality sessions stay.
+    /// A recovery week runs at most 90% of the minutes of the build week before it (80% with
+    /// extended recovery). Its long run stops at 80% of that week's (75%), 60 min at least,
+    /// then its longest plain run gives up 5 minutes at a time, never under 30. Quality stays.
     func withRecoveryDip(_ plan: WeekPlan) -> WeekPlan {
         var out = plan
         for week in deloadWeeks.sorted() where isBuildWeek(week - 1) {
@@ -137,10 +137,10 @@ extension PlanGeneratorV3 {
     private func recovering(_ recovery: WeekSessions, after before: WeekSessions) -> WeekSessions {
         var week = recovery
         if let long = week.longRun, let longBefore = before.longRunMinutes {
-            let cap = max(60, longBefore * 4 / 5 / 5 * 5)
+            let cap = max(60, longBefore * config.recoveryWeekPercent.longRun / 100 / 5 * 5)
             if week.sessions[long].workout.minutes > cap { week.shorten(long, to: cap) }
         }
-        let limit = before.minutes * 9 / 10
+        let limit = before.minutes * config.recoveryWeekPercent.week / 100
         while week.minutes > limit, let run = week.longestPlainRun(above: 30) {
             week.shorten(run, to: week.sessions[run].workout.minutes - 5)
         }

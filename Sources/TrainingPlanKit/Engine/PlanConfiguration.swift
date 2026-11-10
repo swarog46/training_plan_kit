@@ -106,14 +106,24 @@ public struct PlanConfiguration {
     /// selection each gives way to a twin, so a second block isn't a copy of the first.
     public var sessionsDoneBefore: Set<String> = []
 
+    /// More recovery between hard efforts, for masters runners: one quality session a week
+    /// (intensity kept, density down) and deeper recovery weeks. Set through `with(_:)`.
+    public var extendedRecovery = false
+
     /// Most quality sessions a week (hard sessions, quality long runs, progression runs);
     /// the extra ones become easy. nil = the plan's own cap (`qualityCap`).
     public var maxQualitySessions: Int? = nil
     /// Under the half: Intermediate/Advanced two a week, Pro three.
     /// Maintenance: one. Other plans keep the generator's count.
     var qualityCap: Int? {
+        if extendedRecovery { return 1 }
         if let maxQualitySessions { return maxQualitySessions }
         return defaultQualityCap
+    }
+
+    /// A recovery week's long run and total minutes, as percentages of the build week before it.
+    var recoveryWeekPercent: (longRun: Int, week: Int) {
+        extendedRecovery ? (75, 80) : (80, 90)
     }
 
     private var defaultQualityCap: Int? {
@@ -330,13 +340,38 @@ public enum PlanIntensity: String, Codable, CaseIterable {
     case harder     // every session the generator builds
 }
 
+/// The runner's choices that shape a plan's weeks. Anything that regenerates the plan
+/// (recalibration, a rebuild) applies them again, or the plan quietly returns to standard.
+public struct PlanOptions: Codable, Equatable {
+    public var intensity: PlanIntensity
+    public var extendedRecovery: Bool
+
+    public init(intensity: PlanIntensity = .standard, extendedRecovery: Bool = false) {
+        self.intensity = intensity
+        self.extendedRecovery = extendedRecovery
+    }
+}
+
 public extension PlanConfiguration {
+    /// Race plans and maintenance below Pro; the beginner protocols and the VO2 block run as written.
+    var offersExtendedRecovery: Bool {
+        runnerLevel != .competitive && !isCouchTo5K && !isVO2Max && !isShortRuns && fixedProtocol == nil
+    }
+
     /// The choices that change this plan: Intermediate and Advanced race plans. Harder only
     /// where the plan caps quality itself (under the half); the rest already run uncapped.
+    /// None with extended recovery, which already holds a week to one quality session.
     var intensities: [PlanIntensity] {
         let isRacePlan = distance > 0 && !isCouchTo5K && !isVO2Max && fixedProtocol == nil
-        guard isRacePlan, runnerLevel == .intermediate || runnerLevel == .advanced else { return [] }
+        guard isRacePlan, !extendedRecovery, runnerLevel == .intermediate || runnerLevel == .advanced else { return [] }
         return defaultQualityCap == nil ? [.gentler, .standard] : PlanIntensity.allCases
+    }
+
+    /// The plan with the runner's choices; one the plan doesn't offer changes nothing.
+    func with(_ options: PlanOptions) -> PlanConfiguration {
+        var config = self
+        config.extendedRecovery = options.extendedRecovery && offersExtendedRecovery
+        return config.with(options.intensity)
     }
 
     /// The plan at this intensity; a choice the plan doesn't offer leaves it standard.
