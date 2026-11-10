@@ -223,6 +223,8 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                     // instead of detonating straight to a full long+threshold+progression.
                     let isFirstQualityWeek = week == 2
                     let qualityLoadMult = isFirstQualityWeek ? 0.22 : 0.3
+                    // A beginner's first quality week is a progression: a threshold there doubled the week's load.
+                    let easesIn = isFirstQualityWeek && config.runnerLevel == .beginner
 
                     // LONG RUN
                     let shouldAddLong = canFitBoth || isLongWeek
@@ -240,8 +242,8 @@ final class MaintenancePlanGenerator: PlanGeneratorV3 {
                                 weekWorkouts.append(("interval", intv))
                                 prevInterval = intv
                             }
-                        } else if !filteredThresholds.isEmpty {
-                            if let th = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * qualityLoadMult, targetDuration: isFirstQualityWeek ? 28 : 35, usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: false, isMaintenance: true) {
+                        } else if !filteredThresholds.isEmpty || easesIn {
+                            if !easesIn, let th = selectWorkoutByTargetV3(workouts: filteredThresholds, targetLoad: targetLoad * qualityLoadMult, targetDuration: isFirstQualityWeek ? 28 : 35, usedIds: &usedIds, previousWorkout: prevThreshold, isDeloading: false, isMaintenance: true) {
                                 weekWorkouts.append(("threshold", th))
                                 prevThreshold = th
                             } else if let prog = selectWorkoutByTargetV3(workouts: progressivePool, targetLoad: targetLoad * 0.25, targetDuration: progTargetMin, usedIds: &usedIds, isMaintenance: true) {

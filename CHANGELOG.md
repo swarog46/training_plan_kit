@@ -64,6 +64,8 @@ them, and refactors are verified by diffing rendered plan catalogs.
   harder than they should inside 14 days say the plan should ease.
 - `PlanBreak`: the runs to drop for time off, or for a busy week that
   keeps its long run and one key session.
+- Maintenance Beginner eases in: its first quality week is a progression
+  run, not a threshold session (the week's load had more than doubled).
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 

@@ -2617,10 +2617,11 @@ for label, long_fil, short_fil, rp, ep in GROWS_WITH_LENGTH:
     # Short and long variants share the same baseLoad and peak-phase
     # boost — they peak at similar absolute weekly load. The long
     # variant builds more TOTAL volume (more weeks at high load) but
-    # per-week peak is comparable. Allow 5% slack for selector variance.
+    # per-week peak is comparable. Allow 10% slack for selector variance: one
+    # interval session picked 9 minutes longer is a 6% swing on a 5K week.
     check(
-        f"{label} long variant peak km >= short variant peak km (5% slack)",
-        long_peak >= short_peak * 0.95,
+        f"{label} long variant peak km >= short variant peak km (10% slack)",
+        long_peak >= short_peak * 0.90,
         f"long={long_peak:.1f} km, short={short_peak:.1f} km — short shouldn't significantly out-volume long"
     )
 
@@ -3348,7 +3349,7 @@ TAPER_PLANS = [
     ("Beg 5K (long, 10w)",    "Beg 5K (long",  67),  # single mid-plan TT (no peak TT) → lower peak week, race-week ratio ~64% (race-week load itself unchanged)
     ("Beg 10K (long, 12w)",   "Beg 10K (long", 62),
     ("Adv 5K (long, 10w)",    "Adv 5K (long",  58),
-    ("Int 10K (long, 12w)",   "Int 10K (long", 58),
+    ("Int 10K (long, 12w)",   "Int 10K (long", 70),  # 2026-11 quality cap: lighter peak weeks, same race week → ~63%
     ("Int 21K (long, 18w)",   "Int 21K (long", 45),
     ("Adv 21K (long, 18w)",   "Adv 21K (long", 45),
     ("Int 42K (long, 22w)",   "Int 42K (long", 45),
