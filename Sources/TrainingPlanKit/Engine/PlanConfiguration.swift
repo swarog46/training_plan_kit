@@ -106,6 +106,10 @@ public struct PlanConfiguration {
     /// Maintenance: one. Other plans keep the generator's count.
     var qualityCap: Int? {
         if let maxQualitySessions { return maxQualitySessions }
+        return defaultQualityCap
+    }
+
+    private var defaultQualityCap: Int? {
         if isVO2Max || isCouchTo5K || isShortRuns { return nil }
         if distance == 0 { return 1 }
         guard distance < 21097 else { return nil }
@@ -309,5 +313,34 @@ extension DifficultyLevel {
         case .advanced:     return .advanced
         case .competitive:  return .competitive
         }
+    }
+}
+
+/// How hard the runner wants a plan's weeks.
+public enum PlanIntensity: String, Codable, CaseIterable {
+    case gentler    // one quality session a week
+    case standard   // the plan's own cap
+    case harder     // every session the generator builds
+}
+
+public extension PlanConfiguration {
+    /// The choices that change this plan: Intermediate and Advanced race plans. Harder only
+    /// where the plan caps quality itself (under the half); the rest already run uncapped.
+    var intensities: [PlanIntensity] {
+        let isRacePlan = distance > 0 && !isCouchTo5K && !isVO2Max
+        guard isRacePlan, runnerLevel == .intermediate || runnerLevel == .advanced else { return [] }
+        return defaultQualityCap == nil ? [.gentler, .standard] : PlanIntensity.allCases
+    }
+
+    /// The plan at this intensity; a choice the plan doesn't offer leaves it standard.
+    func with(_ intensity: PlanIntensity) -> PlanConfiguration {
+        var config = self
+        guard intensities.contains(intensity) else { return config }
+        switch intensity {
+        case .gentler: config.maxQualitySessions = 1
+        case .standard: config.maxQualitySessions = nil
+        case .harder: config.maxQualitySessions = .max
+        }
+        return config
     }
 }

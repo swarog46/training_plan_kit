@@ -45,6 +45,28 @@ final class QualityCapTests: XCTestCase {
         }
     }
 
+    func testIntensityChoicesPerPlan() {
+        func choices(_ level: RunnerLevel, _ meters: Int) -> [PlanIntensity] {
+            PlanConfiguration.raceConfig(level: level, distanceMeters: meters).intensities
+        }
+        XCTAssertEqual(choices(.advanced, 10000), [.gentler, .standard, .harder])
+        XCTAssertEqual(choices(.intermediate, 42195), [.gentler, .standard], "uncapped already: nothing harder to offer")
+        XCTAssertEqual(choices(.beginner, 10000), [])
+        XCTAssertEqual(PlanConfiguration.maintenanceIntermediate.intensities, [])
+    }
+
+    func testIntensityMovesTheWeeklyQuality() {
+        let standard = PlanConfiguration.raceConfig(level: .advanced, distanceMeters: 10000)
+        func total(_ intensity: PlanIntensity) -> Int { qualityPerWeek(standard.with(intensity), weeks: 12).reduce(0) { $0 + $1.count } }
+        for w in qualityPerWeek(standard.with(.gentler), weeks: 12) { XCTAssertLessThanOrEqual(w.count, 1, "week \(w.week + 1)") }
+        XCTAssertLessThan(total(.gentler), total(.standard))
+        XCTAssertGreaterThan(total(.harder), total(.standard))
+        // A marathon plan has no harder setting: asking for it changes nothing.
+        let marathon = PlanConfiguration.raceConfig(level: .advanced, distanceMeters: 42195)
+        XCTAssertNil(marathon.with(.harder).maxQualitySessions)
+        XCTAssertEqual(marathon.with(.gentler).maxQualitySessions, 1)
+    }
+
     func testHalfAndUpKeepTheGeneratorsCount() {
         XCTAssertNil(PlanConfiguration.raceConfig(level: .advanced, distanceMeters: 21097).qualityCap)
         XCTAssertNil(PlanConfiguration.raceConfig(level: .beginner, distanceMeters: 10000).qualityCap)

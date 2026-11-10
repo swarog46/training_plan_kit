@@ -57,6 +57,9 @@ them, and refactors are verified by diffing rendered plan catalogs.
 - `RaceEffort` on a season's earlier races: predicted, push (-2.5%) or
   controlled (+4%) race-day pace; a half or longer inside the goal's
   last three weeks is run controlled.
+- `PlanIntensity` (gentler / standard / harder) via
+  `PlanConfiguration.intensities` and `with(_:)`: gentler holds a week
+  to one quality session, harder lifts the plan's own cap.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 
