@@ -46,10 +46,13 @@ public enum EffortAdvice {
     /// A bad day or two is training; this many in two weeks is the plan.
     public static let warningsToEase = 3
 
-    /// The last two weeks hold enough runs that felt harder than they should.
+    /// The last two weeks hold enough runs that felt harder than they should, and not all in
+    /// one week: a single rough week (a cold, bad sleep, heat) is not the plan's fault.
     public static func shouldEase(_ runs: [RatedRun], today: Date = Date()) -> Bool {
         let cal = Calendar.current
         guard let from = cal.date(byAdding: .day, value: -windowDays, to: cal.startOfDay(for: today)) else { return false }
-        return runs.filter { $0.date >= from && $0.date <= today && $0.isWarning }.count >= warningsToEase
+        let warnings = runs.filter { $0.date >= from && $0.date <= today && $0.isWarning }
+        let weeks = Set(warnings.map { cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: $0.date) })
+        return warnings.count >= warningsToEase && weeks.count >= 2
     }
 }
