@@ -43,8 +43,8 @@ public enum EffortAdvice {
 
     /// Ratings older than this say nothing about the plan today.
     public static let windowDays = 14
-    /// One bad day is a bad day; this many is the plan.
-    public static let warningsToEase = 2
+    /// A bad day or two is training; this many in two weeks is the plan.
+    public static let warningsToEase = 3
 
     /// The last two weeks hold enough runs that felt harder than they should.
     public static func shouldEase(_ runs: [RatedRun], today: Date = Date()) -> Bool {

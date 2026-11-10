@@ -7,21 +7,20 @@ final class RunEffortTests: XCTestCase {
         .init(date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: today)!, kind: kind, effort: effort)
     }
 
-    func testTwoRunsThatFeltTooHardEaseThePlan() {
-        XCTAssertTrue(EffortAdvice.shouldEase([run(2, .quality, .tooHard), run(9, .long, .tooHard)], today: today))
-        XCTAssertTrue(EffortAdvice.shouldEase([run(1, .easy, .hard), run(3, .easy, .hard)], today: today))
+    func testThreeRunsThatFeltTooHardEaseThePlan() {
+        XCTAssertTrue(EffortAdvice.shouldEase([run(2, .quality, .tooHard), run(6, .easy, .hard), run(9, .long, .tooHard)], today: today))
     }
 
-    func testOneBadDayOrHardSessionsFeelingHardDoNot() {
-        XCTAssertFalse(EffortAdvice.shouldEase([run(2, .quality, .tooHard)], today: today))
+    func testABadDayOrTwoOrHardSessionsFeelingHardDoNot() {
+        XCTAssertFalse(EffortAdvice.shouldEase([run(2, .quality, .tooHard), run(9, .long, .tooHard)], today: today))
         XCTAssertFalse(EffortAdvice.shouldEase([run(1, .quality, .hard), run(3, .long, .hard), run(5, .quality, .hard)], today: today),
                        "hard sessions are meant to feel hard")
-        XCTAssertFalse(EffortAdvice.shouldEase([run(1, .easy, .right), run(3, .easy, .easy)], today: today))
+        XCTAssertFalse(EffortAdvice.shouldEase([run(1, .easy, .right), run(3, .easy, .easy), run(5, .easy, .right)], today: today))
     }
 
     func testOldRatingsAgeOut() {
-        XCTAssertFalse(EffortAdvice.shouldEase([run(2, .easy, .tooHard), run(15, .easy, .tooHard)], today: today))
-        XCTAssertTrue(EffortAdvice.shouldEase([run(2, .easy, .tooHard), run(14, .easy, .tooHard)], today: today))
+        XCTAssertFalse(EffortAdvice.shouldEase([run(2, .easy, .tooHard), run(5, .easy, .tooHard), run(15, .easy, .tooHard)], today: today))
+        XCTAssertTrue(EffortAdvice.shouldEase([run(2, .easy, .tooHard), run(5, .easy, .tooHard), run(14, .easy, .tooHard)], today: today))
     }
 
     func testEventKinds() {
