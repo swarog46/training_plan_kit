@@ -71,6 +71,10 @@ them, and refactors are verified by diffing rendered plan catalogs.
   kind and zone, within 5 minutes and 10% of load and hard running).
   Long runs, easy runs, rehearsals and time trials stay
   (`PlanConfiguration.sessionsDoneBefore`).
+- VO2 block: a Beginner peaks at 15-16 minutes of VO2 work and an
+  Intermediate at 20 (were 25-26: 5 x 5 min). Beginner sessions keep
+  reps to 4 minutes with a jog at least half as long, so the block runs
+  30/30s, 60/60s, then 2:30-3 minute reps.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 

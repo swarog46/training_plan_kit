@@ -632,10 +632,13 @@ class PlanGeneratorV3 {
         // targets early match the new 30/30-style templates (8-12min z5),
         // mid picks 60/60s + 4x4s, late lands the 300s reps + ladder. Beg
         // starts far gentler than the old flat 12 (its W2 used to jump to 15).
+        // Peaks: a Beginner tops out at the 4 x 4 min session (16 min; Helgerud 2007),
+        // an Intermediate at 5 x 4 (20). Their old 25-26 min peaks were 5 x 5 min at
+        // VO2 effort on two or three runs a week, far past Daniels' 8%-of-volume cap.
         let lo: Double, hi: Double
         switch config.runnerLevel {
-        case .beginner:     (lo, hi) = (8, 25)
-        case .intermediate: (lo, hi) = (12, 26)
+        case .beginner:     (lo, hi) = (8, 16)
+        case .intermediate: (lo, hi) = (12, 20)
         default:            (lo, hi) = (18, 32)
         }
         let target = lo + (hi - lo) * frac
@@ -649,6 +652,12 @@ class PlanGeneratorV3 {
     func vo2DoseMatched(_ pool: [Workout], targetMinutes: Int,
                         preferShortReps: Bool = false) -> [Workout] {
         var z5 = pool.filter { isRealZ5($0) }
+        // A Beginner's VO2 work keeps reps to 4 minutes with a jog at least half as long:
+        // ten 90-second reps on 30 seconds' rest is a session for a trained runner.
+        if config.runnerLevel == .beginner {
+            let gentle = z5.filter { $0.hasGentleReps }
+            if !gentle.isEmpty { z5 = gentle }
+        }
         guard !z5.isEmpty else { return [] }
         // Early block: prefer the 30/30-60/60 style (§4 — high time-at-VO2max,
         // low mechanical cost) when such templates exist near the target dose.

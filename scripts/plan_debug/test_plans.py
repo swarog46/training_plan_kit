@@ -3007,10 +3007,12 @@ for _vo2 in ("VO2 Beg", "VO2 Int", "VO2 Adv"):
     weeks = _z5min.get(_vo2, {})
     doses = [weeks[w] for w in sorted(weeks)]                 # per-week VO2 dose
     n = len(doses) or 1
-    real = [d for d in doses if d >= VO2_Z5_FLOOR]            # weeks with true VO2
+    # A Beginner opens on 16 x 30/30 (8 min at VO2): a real dose at that level.
+    floor = 8 if _vo2 == "VO2 Beg" else VO2_Z5_FLOOR
+    real = [d for d in doses if d >= floor]                   # weeks with true VO2
     # (1) Most weeks carry a true-Z5 session — >=6 of 8 (W1 onboarding + the
     # taper week may legitimately skip it; everything else must deliver VO2).
-    check(f"{_vo2}: true-Z5 session (>={VO2_Z5_FLOOR}min) in >=6 of {n} weeks",
+    check(f"{_vo2}: true-Z5 session (>={floor}min) in >=6 of {n} weeks",
           len(real) >= 6,
           f"only {len(real)}/{n} weeks carry a real VO2 dose; per-week z5={doses}",
           full=True)
@@ -3018,7 +3020,7 @@ for _vo2 in ("VO2 Beg", "VO2 Int", "VO2 Adv"):
     # doses among the true-Z5 weeks, the late dose to exceed the early dose, and
     # no week to drop more than one ladder rung (~8min) below the running peak
     # before the taper (a controlled, non-collapsing ramp).
-    real_seq = [d for d in doses if d >= VO2_Z5_FLOOR]
+    real_seq = [d for d in doses if d >= floor]
     distinct = sorted(set(real_seq))
     progresses = len(distinct) >= 3
     climbs = bool(real_seq) and real_seq[-1] > real_seq[0]
@@ -3026,7 +3028,7 @@ for _vo2 in ("VO2 Beg", "VO2 Int", "VO2 Adv"):
     # >8min below the peak seen so far (until the final taper week, excluded).
     running_peak = 0
     collapses = []
-    real_weeks_sorted = [w for w in sorted(weeks) if weeks[w] >= VO2_Z5_FLOOR]
+    real_weeks_sorted = [w for w in sorted(weeks) if weeks[w] >= floor]
     for i, w in enumerate(real_weeks_sorted):
         d = weeks[w]
         running_peak = max(running_peak, d)

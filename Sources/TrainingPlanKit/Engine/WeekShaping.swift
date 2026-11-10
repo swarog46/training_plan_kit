@@ -171,6 +171,14 @@ extension Workout {
     /// The highest heart-rate zone any of its intervals asks for.
     var peakZone: Int { intervals.compactMap(\.zone).max() ?? 0 }
 
+    /// Hard reps of at most 4 minutes, each followed by a recovery at least half as long.
+    var hasGentleReps: Bool {
+        let reps = intervals.filter { $0.type == .work && ($0.zone ?? 0) >= 5 }.map(\.duration)
+        let recoveries = intervals.filter { $0.type == .recovery || $0.type == .rest }.map(\.duration)
+        guard let longestRep = reps.max(), let shortestRecovery = recoveries.min() else { return false }
+        return longestRep <= 240 && shortestRecovery * 2 >= longestRep
+    }
+
     /// Time at threshold effort or harder (zone 4 and up).
     var hardSeconds: Double { intervals.filter { ($0.zone ?? 0) >= 4 }.reduce(0) { $0 + $1.duration } }
 }
