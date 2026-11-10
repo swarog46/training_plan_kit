@@ -60,6 +60,8 @@ them, and refactors are verified by diffing rendered plan catalogs.
 - `PlanIntensity` (gentler / standard / harder) via
   `PlanConfiguration.intensities` and `with(_:)`: gentler holds a week
   to one quality session, harder lifts the plan's own cap.
+- `RunEffort` and `EffortAdvice`: how runs felt, and when two that felt
+  harder than they should inside 14 days say the plan should ease.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 
