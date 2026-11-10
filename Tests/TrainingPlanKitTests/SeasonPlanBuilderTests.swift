@@ -79,6 +79,29 @@ final class SeasonPlanBuilderTests: XCTestCase {
         XCTAssertEqual(events.filter { $0.workout.type == .race }.map(\.date), races.map(\.date))
     }
 
+    /// Tune-up and block races before the goal are paced by the effort chosen; a half inside
+    /// the goal's last three weeks is run controlled whatever was asked.
+    func testRaceDayPaceFollowsEffort() {
+        func paces(_ tenK: RaceEffort, _ half: RaceEffort) -> [Int] {
+            var block = SeasonRace(date: day("2027-03-14"), distanceMeters: 10000)
+            var late = SeasonRace(date: day("2027-09-26"), distanceMeters: 21097)
+            block.effort = tenK
+            late.effort = half
+            let (_, events) = build([block, late, SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)],
+                                    start: "2027-01-04", fitness: { _ in VDOT(value: 45) })
+            return events.filter { $0.workout.type == .race }.sorted { $0.date < $1.date }.prefix(2).compactMap(\.racePaceTarget)
+        }
+        func pace(_ meters: Int, _ effort: RaceEffort) -> Int {
+            SeasonPlanBuilder.racePace(distanceMeters: meters, vdot: VDOT(value: 45), effort: effort)!
+        }
+        XCTAssertEqual(paces(.push, .push), [pace(10000, .push), pace(21097, .controlled)])
+        XCTAssertEqual(paces(.controlled, .predicted), [pace(10000, .controlled), pace(21097, .controlled)])
+        XCTAssertLessThan(pace(10000, .push), pace(10000, .predicted))
+        XCTAssertGreaterThan(pace(10000, .controlled), pace(10000, .predicted))
+        XCTAssertEqual(SeasonPlanner.efforts(for: SeasonRace(date: day("2027-09-26"), distanceMeters: 21097),
+                                             goal: SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)), [.controlled])
+    }
+
     func testNextRaceIsTheFirstNotYetPast() {
         let races = [SeasonRace(date: day("2027-03-14"), distanceMeters: 10000),
                      SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)]

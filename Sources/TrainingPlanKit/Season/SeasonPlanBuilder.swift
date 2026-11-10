@@ -34,11 +34,7 @@ public enum SeasonPlanBuilder {
             for i in tuneUps {
                 events = addTuneUp(layout.races[i], to: events, level: level, catalog: catalog, planId: planId)
             }
-            events = render(block, events).map { e in
-                guard e.workout.type == .race, let race = tuneUps.map({ layout.races[$0] }).first(where: { $0.date == e.date }),
-                      let vdot = fitness(e.date) else { return e }
-                return pacedRace(e, distanceMeters: race.distanceMeters, vdot: vdot)
-            }
+            events = render(block, events).map { pacingRaceDay($0, layout: layout, fitness: fitness) }
             // Across blocks too, after render (a pace render resizes long runs to its km window).
             events = capRunGrowthV3(events.sorted { $0.date < $1.date }, after: season,
                                     opening: Calendar.current.date(byAdding: .day, value: 14, to: seasonStart)!)
@@ -108,10 +104,29 @@ public enum SeasonPlanBuilder {
         return (out + [e]).sorted { $0.date < $1.date }
     }
 
-    /// Race-day target at the race's own predicted pace, not the block's race pace.
-    static func pacedRace(_ event: WorkoutEvent, distanceMeters: Int, vdot: VDOT) -> WorkoutEvent {
-        guard let seconds = vdot.predictedTime(forDistanceMeters: distanceMeters) else { return event }
-        let pace = Int((Double(seconds) * 1000 / Double(distanceMeters)).rounded())
+    /// Race days before the goal carry their own target: a tune-up's predicted pace at its own
+    /// distance, and any race's pace moved by the effort the runner chose. A block's race at
+    /// predicted effort keeps the pace its block rendered.
+    static func pacingRaceDay(_ event: WorkoutEvent, layout: SeasonLayout, fitness: (Date) -> VDOT?) -> WorkoutEvent {
+        guard event.workout.type == .race, let goal = layout.races.last,
+              let index = layout.races.dropLast().firstIndex(where: { $0.date == event.date }),
+              let vdot = fitness(event.date) else { return event }
+        let race = layout.races[index]
+        let effort = SeasonPlanner.efforts(for: race, goal: goal).contains(race.effort) ? race.effort : .controlled
+        guard layout.priorities[index] == .tuneUp || effort != .predicted else { return event }
+        return pacedRace(event, distanceMeters: race.distanceMeters, vdot: vdot, effort: effort)
+    }
+
+    /// Seconds per km for a race run at `effort` by a runner of this fitness.
+    public static func racePace(distanceMeters: Int, vdot: VDOT, effort: RaceEffort = .predicted) -> Int? {
+        vdot.predictedTime(forDistanceMeters: distanceMeters).map {
+            Int((Double($0) * 1000 / Double(distanceMeters) * effort.paceFactor).rounded())
+        }
+    }
+
+    /// Race-day target at the race's own pace, not the block's race pace.
+    static func pacedRace(_ event: WorkoutEvent, distanceMeters: Int, vdot: VDOT, effort: RaceEffort = .predicted) -> WorkoutEvent {
+        guard let pace = racePace(distanceMeters: distanceMeters, vdot: vdot, effort: effort) else { return event }
         let w = event.workout
         var e = event
         e.workout = Workout(id: w.id, title: w.title, type: w.type, subtype: w.subtype,

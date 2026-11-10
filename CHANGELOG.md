@@ -54,6 +54,9 @@ them, and refactors are verified by diffing rendered plan catalogs.
   the season out again and replaces the plan from next week; a race
   joining too late for its own build is a tune-up (`tuneUpOnly`); a
   race removed inside 7 days becomes an easy run.
+- `RaceEffort` on a season's earlier races: predicted, push (-2.5%) or
+  controlled (+4%) race-day pace; a half or longer inside the goal's
+  last three weeks is run controlled.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 

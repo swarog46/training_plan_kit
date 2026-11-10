@@ -12,6 +12,22 @@
 
 import Foundation
 
+/// How a race before the goal is run, against the time predicted for it.
+public enum RaceEffort: String, Codable, CaseIterable {
+    case predicted
+    case push         // about 2.5% faster: ambitious but reachable
+    case controlled   // about 4% slower: a hard workout, not a race
+
+    /// Race-day pace against the predicted pace.
+    public var paceFactor: Double {
+        switch self {
+        case .predicted: return 1
+        case .push: return 0.975
+        case .controlled: return 1.04
+        }
+    }
+}
+
 /// A race the runner has entered.
 public struct SeasonRace: Codable, Hashable {
     public var date: Date
@@ -21,6 +37,8 @@ public struct SeasonRace: Codable, Hashable {
     public var runsPerWeek: Int?
     /// Joined a plan under way without time for its own build: a tune-up, or it doesn't fit.
     public var tuneUpOnly = false
+    /// Ignored for the goal race, which is paced by the plan itself.
+    public var effort = RaceEffort.predicted
 
     public init(date: Date, distanceMeters: Int, name: String? = nil, runsPerWeek: Int? = nil) {
         self.date = Calendar.current.startOfDay(for: date)
@@ -129,6 +147,17 @@ public enum SeasonPlanner {
         Calendar.current.date(byAdding: .day, value: days, to: date)!
     }
 
+    /// A half or longer inside the goal's last three weeks is run controlled, whatever was asked
+    /// (the layout warns about it); any other race as the runner chose.
+    public static func efforts(for race: SeasonRace, goal: SeasonRace) -> [RaceEffort] {
+        isLongRaceNearGoal(race, goal: goal) ? [.controlled] : RaceEffort.allCases
+    }
+
+    static func isLongRaceNearGoal(_ race: SeasonRace, goal: SeasonRace) -> Bool {
+        let days = Calendar.current.dateComponents([.day], from: race.date, to: goal.date).day ?? 0
+        return race.distanceMeters >= 21097 && days < 21
+    }
+
     /// Raced inside the next race's training: a half or shorter, and no longer than that race.
     static func canBeTuneUp(_ race: SeasonRace, before next: SeasonRace) -> Bool {
         race.distanceMeters <= 21097 && race.distanceMeters <= next.distanceMeters
@@ -198,7 +227,7 @@ public enum SeasonPlanner {
             let next = races[(i + 1)...].indices.first { priorities[$0] != .tuneUp }!
             if !canBeTuneUp(races[i], before: races[next]) {
                 issues.append(.noRoomToTrain(races[i], weeks: minBuildWeeks(races[i])))
-            } else if races[i].distanceMeters >= 21097 && days(races[i].date, goal.date) < 21 {
+            } else if isLongRaceNearGoal(races[i], goal: goal) {
                 issues.append(.longTuneUpNearGoal(races[i], days: days(races[i].date, goal.date)))
             }
         }
