@@ -39,6 +39,10 @@ public struct SeasonRace: Codable, Hashable {
     public var tuneUpOnly = false
     /// Ignored for the goal race, which is paced by the plan itself.
     public var effort = RaceEffort.predicted
+    /// The race calendar's id for the race, when it was picked from it.
+    public var calendarId: String?
+    /// The date is projected from the last edition; the organizer hasn't announced it.
+    public var dateIsEstimated = false
 
     public init(date: Date, distanceMeters: Int, name: String? = nil, runsPerWeek: Int? = nil) {
         self.date = Calendar.current.startOfDay(for: date)
@@ -159,7 +163,7 @@ public enum SeasonPlanner {
     }
 
     /// Raced inside the next race's training: a half or shorter, and no longer than that race.
-    static func canBeTuneUp(_ race: SeasonRace, before next: SeasonRace) -> Bool {
+    public static func canBeTuneUp(_ race: SeasonRace, before next: SeasonRace) -> Bool {
         race.distanceMeters <= 21097 && race.distanceMeters <= next.distanceMeters
     }
 

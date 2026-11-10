@@ -76,7 +76,7 @@ public enum SeasonEdit {
         }
     }
 
-    private static func daysUntil(_ date: Date, from today: Date) -> Int {
+    public static func daysUntil(_ date: Date, from today: Date) -> Int {
         let cal = Calendar.current
         return cal.dateComponents([.day], from: cal.startOfDay(for: today), to: cal.startOfDay(for: date)).day ?? 0
     }
