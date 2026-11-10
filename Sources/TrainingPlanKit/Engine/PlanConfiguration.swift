@@ -99,6 +99,10 @@ public struct PlanConfiguration {
     // ShortRunsPlanGenerator: every run under 40 min, a longer one every 4th week.
     public var isShortRuns: Bool = false
 
+    /// Quality sessions (by key) the runner did in an earlier block of the same kind. After
+    /// selection each gives way to a twin, so a second block isn't a copy of the first.
+    public var sessionsDoneBefore: Set<String> = []
+
     /// Most quality sessions a week (hard sessions, quality long runs, progression runs);
     /// the extra ones become easy. nil = the plan's own cap (`qualityCap`).
     public var maxQualitySessions: Int? = nil

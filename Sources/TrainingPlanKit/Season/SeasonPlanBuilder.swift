@@ -25,8 +25,14 @@ public enum SeasonPlanBuilder {
                              fitness: (Date) -> VDOT? = { _ in nil }) -> [WorkoutEvent] {
         guard let seasonStart = layout.blocks.first?.start else { return [] }
         var season: [WorkoutEvent] = []
+        // What each race distance's earlier blocks ran, so a second block of it varies its sessions.
+        var doneByDistance: [Int: Set<String>] = [:]
         for block in layout.blocks {
-            var events = training(for: block, level: level, catalog: catalog, planId: planId, config: config)
+            var blockConfig = config(block)
+            let distance = block.buildRace.map { layout.races[$0].distanceMeters }
+            if let distance { blockConfig.sessionsDoneBefore = doneByDistance[distance] ?? [] }
+            var events = training(for: block, level: level, catalog: catalog, planId: planId, config: blockConfig)
+            if let distance { doneByDistance[distance, default: []].formUnion(events.map(\.workout.key)) }
             // Blocks share their boundary day: a tune-up on it goes to the later block only.
             let tuneUps = layout.races.indices.filter { i in
                 layout.priorities[i] == .tuneUp && layout.blocks.last { $0.contains(layout.races[i].date) } == block
@@ -46,13 +52,13 @@ public enum SeasonPlanBuilder {
     }
 
     static func training(for block: SeasonBlock, level: RunnerLevel,
-                         catalog: [Workout], planId: UUID, config: (SeasonBlock) -> PlanConfiguration) -> [WorkoutEvent] {
+                         catalog: [Workout], planId: UUID, config: PlanConfiguration) -> [WorkoutEvent] {
         switch block.kind {
         case .build, .bridge:
             return createMarathonPlanV3(startDate: block.start, raceDate: block.end, from: catalog,
-                                        planId: planId, config: config(block))
+                                        planId: planId, config: config)
         case .recovery:
-            return recovery(block, config: config(block), level: level, catalog: catalog, planId: planId)
+            return recovery(block, config: config, level: level, catalog: catalog, planId: planId)
         }
     }
 
@@ -147,6 +153,12 @@ public enum SeasonPlanBuilder {
 }
 
 extension SeasonBlock {
+    /// The race a build block trains for.
+    var buildRace: Int? {
+        if case .build(let race) = kind { return race }
+        return nil
+    }
+
     /// Training days of the block, race day included.
     func contains(_ date: Date) -> Bool { date >= start && date <= end }
 }

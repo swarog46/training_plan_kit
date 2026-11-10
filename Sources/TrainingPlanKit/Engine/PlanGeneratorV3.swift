@@ -1223,10 +1223,10 @@ class PlanGeneratorV3 {
                     trimmedPlan[week - weeksToTrim] = workouts
                 }
             }
-            return withRecoveryDip(withRunGrowthCap(withQualityCap(trimmedPlan)))
+            return withRecoveryDip(withRunGrowthCap(withQualityCap(withFreshSessions(trimmedPlan))))
         }
 
-        return withRecoveryDip(withRunGrowthCap(withQualityCap(workoutsByWeek)))
+        return withRecoveryDip(withRunGrowthCap(withQualityCap(withFreshSessions(workoutsByWeek))))
     }
 
     /// Race plans: runs over the 30-day run growth cap are cut; each week is a 7-day step.

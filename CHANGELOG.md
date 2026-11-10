@@ -66,6 +66,11 @@ them, and refactors are verified by diffing rendered plan catalogs.
   keeps its long run and one key session.
 - Maintenance Beginner eases in: its first quality week is a progression
   run, not a threshold session (the week's load had more than doubled).
+- A season's second block of the same distance varies: after selection,
+  each quality session the earlier block ran gives way to a twin (same
+  kind and zone, within 5 minutes and 10% of load and hard running).
+  Long runs, easy runs, rehearsals and time trials stay
+  (`PlanConfiguration.sessionsDoneBefore`).
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 

@@ -48,6 +48,48 @@ struct WeekSessions {
 extension PlanGeneratorV3 {
     typealias WeekPlan = [Int: [WeekSessions.Session]]
 
+    /// A quality session the runner did in an earlier block of the same kind gives way to its
+    /// twin: the same kind of session at the same intensity, within 5 minutes and 10% of its
+    /// load and hard running. Selection is finished by now, so the week's shape, the long
+    /// runs and every other choice stay exactly as built. No twin, no change.
+    func withFreshSessions(_ plan: WeekPlan) -> WeekPlan {
+        guard !config.sessionsDoneBefore.isEmpty else { return plan }
+        var out = plan
+        // One twin per session for the whole block, and never the same twin for two sessions.
+        var twins: [String: Workout] = [:]
+        var taken = config.sessionsDoneBefore.union(plan.values.joined().map(\.workout.key))
+        for week in plan.keys.sorted() where !taperWeeks.contains(week) {
+            for (index, session) in plan[week]!.enumerated() where isRepeat(session.workout) {
+                let key = session.workout.key
+                if twins[key] == nil, let twin = twin(of: session.workout, excluding: taken) {
+                    twins[key] = twin
+                    taken.insert(twin.key)
+                }
+                if let twin = twins[key] { out[week]![index].workout = twin }
+            }
+        }
+        return out
+    }
+
+    /// A session worth varying: done before, and neither a long run nor a session whose exact
+    /// form matters (race rehearsals, time trials).
+    private func isRepeat(_ workout: Workout) -> Bool {
+        guard let rank = workout.subtype.qualityRank, rank < 3, !workout.subtype.isLongRun else { return false }
+        return config.sessionsDoneBefore.contains(workout.key)
+    }
+
+    /// The closest match in the generator's own pool, or nil when nothing is close enough.
+    private func twin(of workout: Workout, excluding taken: Set<String>) -> Workout? {
+        func near(_ a: Double, _ b: Double, within share: Double) -> Bool { abs(a - b) <= max(a, b) * share }
+        func distance(_ w: Workout) -> Int64 { abs(w.trainingLoad - workout.trainingLoad) }
+        return workoutPool
+            .filter { $0.subtype == workout.subtype && $0.type == workout.type && !taken.contains($0.key) }
+            .filter { $0.peakZone == workout.peakZone && abs($0.minutes - workout.minutes) <= 5 }
+            .filter { near(Double($0.trainingLoad), Double(workout.trainingLoad), within: 0.10) }
+            .filter { near($0.hardSeconds, workout.hardSeconds, within: 0.10) }
+            .min { (distance($0), $0.key) < (distance($1), $1.key) }
+    }
+
     /// Weeks over the plan's quality cap swap their least important quality sessions for an
     /// easy run (a quality long run for a steady one) of the same length. Taper weeks stay.
     func withQualityCap(_ plan: WeekPlan) -> WeekPlan {
@@ -125,6 +167,19 @@ extension PlanGeneratorV3 {
 
 extension Workout {
     var minutes: Int { Int(duration) / 60 }
+
+    /// The highest heart-rate zone any of its intervals asks for.
+    var peakZone: Int { intervals.compactMap(\.zone).max() ?? 0 }
+
+    /// Time at threshold effort or harder (zone 4 and up).
+    var hardSeconds: Double { intervals.filter { ($0.zone ?? 0) >= 4 }.reduce(0) { $0 + $1.duration } }
+}
+
+extension WorkoutInterval {
+    var zone: Int? {
+        if case .heartRateZone(let zone) = target { return zone }
+        return nil
+    }
 }
 
 extension WorkoutSubtype {

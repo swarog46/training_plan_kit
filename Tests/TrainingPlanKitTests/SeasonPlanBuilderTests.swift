@@ -38,17 +38,23 @@ final class SeasonPlanBuilderTests: XCTestCase {
         XCTAssertEqual(Set(events.map { cal.startOfDay(for: $0.date) }).count, events.count, "one session a day")
 
         // Each build block is the standalone single-race plan for its window, except runs
-        // shortened to the 30-day growth cap across block joins.
+        // shortened to the 30-day growth cap across block joins. The second 10K block may
+        // swap quality sessions the first one ran for their twins, and nothing else.
+        var firstTenK: Set<String> = []
         for block in layout.blocks {
             guard case .build(let i) = block.kind else { continue }
             let alone = createMarathonPlanV3(startDate: block.start, raceDate: block.end, from: catalog,
                                              planId: UUID(), config: config(races[i].distanceMeters))
             let inSeason = events.filter { $0.date >= block.start && $0.date <= block.end }
             XCTAssertEqual(inSeason.map(\.date), alone.map(\.date), "block \(i) keeps the single-race plan's days")
-            XCTAssertEqual(inSeason.map(\.workout.id), alone.map(\.workout.id), "block \(i): same workouts")
-            for (s, a) in zip(inSeason, alone) {
+            for (s, a) in zip(inSeason, alone) where s.workout.id != a.workout.id {
+                XCTAssertEqual(i, 1, "only a repeated block varies")
+                assertTwins(s.workout, a.workout, notIn: firstTenK)
+            }
+            for (s, a) in zip(inSeason, alone) where s.workout.id == a.workout.id {
                 XCTAssertLessThanOrEqual(s.workout.duration, a.workout.duration, "block \(i): only ever shortened")
             }
+            if i == 0 { firstTenK = Set(inSeason.map(\.workout.key)) }
         }
         let opened = cal.date(byAdding: .day, value: 14, to: day("2027-01-04"))!
         for e in events where e.date >= opened && e.workout.type != .race {
@@ -111,6 +117,33 @@ final class SeasonPlanBuilderTests: XCTestCase {
         XCTAssertEqual(plan.nextRace(from: races[0].date)?.date, races[0].date, "race day itself")
         XCTAssertEqual(plan.nextRace(from: day("2027-03-15"))?.date, races[1].date)
         XCTAssertEqual(plan.nextRace(from: day("2027-12-01"))?.date, races[1].date, "past the plan: the goal race")
+    }
+
+    /// A twin: the same kind of quality session, as long and as hard, that the first block didn't run.
+    private func assertTwins(_ twin: Workout, _ original: Workout, notIn done: Set<String>,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(twin.subtype, original.subtype, file: file, line: line)
+        XCTAssertEqual(twin.peakZone, original.peakZone, file: file, line: line)
+        XCTAssertLessThanOrEqual(abs(twin.minutes - original.minutes), 5, file: file, line: line)
+        XCTAssertEqual(Double(twin.trainingLoad), Double(original.trainingLoad), accuracy: Double(max(twin.trainingLoad, original.trainingLoad)) * 0.10, file: file, line: line)
+        XCTAssertEqual(twin.hardSeconds, original.hardSeconds, accuracy: max(twin.hardSeconds, original.hardSeconds) * 0.10, file: file, line: line)
+        XCTAssertTrue(done.contains(original.key), "only sessions done before are swapped", file: file, line: line)
+        XCTAssertFalse(done.contains(twin.key), file: file, line: line)
+        XCTAssertNotNil(original.subtype.qualityRank, file: file, line: line)
+        XCTAssertFalse(original.subtype.isLongRun, file: file, line: line)
+    }
+
+    /// A plan on its own never varies: there is nothing done before.
+    func testAStandalonePlanIsUntouchedByVariety() {
+        let config = config(10000)
+        XCTAssertTrue(config.sessionsDoneBefore.isEmpty)
+        func keys(_ c: PlanConfiguration) -> [String] {
+            createMarathonPlanV3(startDate: day("2027-01-04"), raceDate: day("2027-03-14"), from: catalog, planId: UUID(), config: c)
+                .map { "\($0.workout.key) \($0.workout.duration)" }
+        }
+        var seeded = config
+        seeded.sessionsDoneBefore = ["no-such-session"]
+        XCTAssertEqual(keys(seeded), keys(config), "keys that never come up change nothing")
     }
 
     func testTuneUpHalfInsideMarathonBlock() {
