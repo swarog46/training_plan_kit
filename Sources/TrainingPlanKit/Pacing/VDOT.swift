@@ -10,7 +10,7 @@
 
 import Foundation
 
-public struct VDOT: Equatable {
+public struct VDOT: Equatable, Codable {
     /// The VDOT value (typically 30-85 for amateur → elite range).
     public let value: Double
 

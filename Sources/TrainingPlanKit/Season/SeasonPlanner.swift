@@ -19,6 +19,8 @@ public struct SeasonRace: Codable, Hashable {
     public var name: String?
     /// Runs per week while training for this race; nil = the same as the goal race.
     public var runsPerWeek: Int?
+    /// Joined a plan under way without time for its own build: a tune-up, or it doesn't fit.
+    public var tuneUpOnly = false
 
     public init(date: Date, distanceMeters: Int, name: String? = nil, runsPerWeek: Int? = nil) {
         self.date = Calendar.current.startOfDay(for: date)
@@ -217,6 +219,7 @@ public enum SeasonPlanner {
         for mask in (0..<(1 << goal)).reversed() {
             let p = races.indices.map { $0 == goal ? RacePriority.goal : mask & (1 << $0) != 0 ? .block : .tuneUp }
             let owners = races.indices.filter { p[$0] != .tuneUp }
+            guard !owners.contains(where: { races[$0].tuneUpOnly && $0 != goal }) else { continue }
             var free = start, fits = true
             for i in owners {
                 let buildStart = adding(-7 * minBuildWeeks(races[i]), to: races[i].date)

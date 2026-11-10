@@ -49,6 +49,11 @@ them, and refactors are verified by diffing rendered plan catalogs.
   before it and the week at 90% of its minutes (plain runs shorten,
   quality stays). Medium-long runs outside Pro stop at 110 minutes.
 - `Plan.nextRace(from:)`: the race being trained for on a date.
+- `SeasonEdit`: change a season's races once it is under way. Removing a
+  race more than 7 days out, or adding one with 10 days of notice, lays
+  the season out again and replaces the plan from next week; a race
+  joining too late for its own build is a tune-up (`tuneUpOnly`); a
+  race removed inside 7 days becomes an easy run.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 
