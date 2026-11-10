@@ -117,6 +117,18 @@ public enum WorkoutSubtype: String, CaseIterable, Identifiable, Codable {
 
     public var id: String { self.rawValue }
 
+    /// Quality sessions by how much a week needs them (higher = kept first); nil = not quality.
+    var qualityRank: Int? {
+        switch self {
+        case .progression: return 0
+        case .progressiveLong, .fastFinish: return 1
+        case .intervals, .pyramidIntervals, .ladderIntervals, .fartlek, .hillRepeats, .mileRepeats,
+             .yasso800, .fivekPace, .tenkPace, .tempo, .threshold, .speed, .marathonPace: return 2
+        case .raceRehearsalM, .raceRehearsalHM, .raceRehearsal10K, .timeTrial: return 3
+        default: return nil
+        }
+    }
+
     /// The parent WorkoutType — used for color/icon when a subtype chip
     /// stands on its own (e.g. the plan-detail "Types of runs" section).
     /// Maps each fine-grained subtype back to one of the canonical types

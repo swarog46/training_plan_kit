@@ -99,6 +99,23 @@ public struct PlanConfiguration {
     // ShortRunsPlanGenerator: every run under 40 min, a longer one every 4th week.
     public var isShortRuns: Bool = false
 
+    /// Most quality sessions a week (hard sessions, quality long runs, progression runs);
+    /// the extra ones become easy. nil = the plan's own cap (`qualityCap`).
+    public var maxQualitySessions: Int? = nil
+    /// Under the half: Intermediate/Advanced two a week (one on three days), Pro three.
+    /// Maintenance: one. Other plans keep the generator's count.
+    var qualityCap: Int? {
+        if let maxQualitySessions { return maxQualitySessions }
+        if isVO2Max || isCouchTo5K || isShortRuns { return nil }
+        if distance == 0 { return 1 }
+        guard distance < 21097 else { return nil }
+        switch runnerLevel {
+        case .intermediate, .advanced: return max(1, min(2, trainingDays.count - 2))
+        case .competitive: return 3     // two sessions and a quality long run; recovery weeks one
+        case .beginner: return nil
+        }
+    }
+
     // Phase duration ratios (will be used to calculate actual duration)
     public let basePhaseRatio: Double  // e.g., 0.25 = 25% of total training period
     public let speedPhaseRatio: Double // e.g., 0.25 = 25% of total training period

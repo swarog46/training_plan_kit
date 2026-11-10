@@ -110,6 +110,8 @@ public enum SeasonPlanner {
 
     /// A multi-race plan runs at most this long, start to goal race.
     public static let maxSeasonMonths = 11
+    /// Races before the goal; layout tries every block/tune-up split of them.
+    public static let maxOtherRaces = 6
 
     /// A race's own block is at least the shortest single-race plan for its distance.
     public static func minBuildWeeks(_ race: SeasonRace) -> Int {

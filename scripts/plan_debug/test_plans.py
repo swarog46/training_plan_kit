@@ -886,7 +886,11 @@ section("Cmp plans unchanged from prior fixes (regression guard)")
 CMP_SNAPSHOTS = [
     # (header, filter, race_pace, easy_pace, total_min, sessions, peak_LR_min)
     # 7380 → 7531 from mediumLong forcing alternating weeks (Pfitz half MLR).
-    ("Cmp 21K (long, 18w)", "Cmp 21K (long", 256, 300, 7531, 105, 115),
+    # 2026-11: medium-long runs capped at 120 / 100 min (Pfitz 18/70), owner-approved:
+    # 42K 10558 → 10278 and 13053 → 12713; 21K 7531 → 7181 (growth cap + MLR cap).
+    # Peak long runs follow the 15% 30-day growth cap (owner: "keep 15%"): 21K 115 → 105,
+    # 42K 210 → 160 and 200 → 165 (33-34 km at this runner's pace).
+    ("Cmp 21K (long, 18w)", "Cmp 21K (long", 256, 300, 7181, 105, 105),
     # Snapshots bumped 2026-06-06 for the easy-pool mediumLong migration:
     # selector now picks 90-100min "Medium-Long Run" over 85min "Easy Run"
     # for Cmp 42K midweek long-easy slots, matching Pfitz 18/85's explicit
@@ -904,7 +908,7 @@ CMP_SNAPSHOTS = [
     # (cascade). Sessions (124) and peak LR (210) unchanged.
     # 2026-11-01: 9790→10558, 124→129 sessions from the Pfitz-shaped deloads
     # (keep 6 days, top up to -20-25% instead of a -40% crash).
-    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 10558, 129, 210),
+    ("Cmp 42K (long, 22w)", "Cmp 42K (long", 256, 300, 10278, 129, 160),
     # Additional bump 12002 → 12123 from the alternating-week mediumLong
     # forcing — Cmp 42K build picks 90-100min ML on even weeks where
     # selector previously picked 80min easy. 2026-06-16: 12123→11809.
@@ -912,7 +916,7 @@ CMP_SNAPSHOTS = [
     # phase-scaled caps, single MLR fill [core+1=Pfitz 2], 60010 duration fix).
     # 165→162 sessions from the same peak-volume cap.
     # 2026-11-01: 11953→13053 from the same Cmp deload top-up.
-    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 13053, 162, 200),
+    ("Cmp 42K (build, 28w)", "Cmp 42K (build", 256, 300, 12713, 162, 165),
 ]
 for header, fil, rp, ep, exp_total, exp_sess, exp_peak in CMP_SNAPSHOTS:
     text = run_pacedump(fil, race_pace=rp, easy_pace=ep)
@@ -2814,7 +2818,7 @@ GUARDS = [
     # Int 42K — Pfitz 18/55 territory: full quality variety incl. MP.
     # km max 80→84: 2026-06-16 intermediate quality easing → Advanced (honest
     # race-pace naming) runs quality slightly faster → marginally more km/wk.
-    ("Int 42K (long, 22w)", 300, 400, 88, 96, 50, 84, 175, 215,
+    ("Int 42K (long, 22w)", 300, 400, 88, 96, 50, 84, 160, 215,
      {'marathonPace', 'threshold'}),
     # Adv 42K — Pfitz 18/70 territory after Track D engine work:
     # baseLoad×1.20 + MP-forcing on alt PEAK weeks. Now hits ~101 km/wk

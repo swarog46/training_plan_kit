@@ -39,6 +39,14 @@ them, and refactors are verified by diffing rendered plan catalogs.
   (goal, own-block and tune-up races, each block at least its plan's
   minimum build); `SeasonPlanBuilder` renders each block with the
   single-race engine and keeps the growth cap across blocks.
+- Quality cap: Intermediate and Advanced plans under the half hold two
+  quality sessions a week (one on three days), Maintenance one, Pro
+  5K/10K three; recovery weeks keep one. Extra sessions become easy runs
+  of the same length. `PlanConfiguration.maxQualitySessions` overrides it.
+- Pro half/marathon medium-long runs stop at 120 and 100 minutes (Pfitz
+  18/70) instead of stretching to the long run's length.
+- Seasons: a tune-up race on a block's boundary day is added once;
+  `SeasonPlanner.maxOtherRaces`.
 
 ## 0.7.0
 

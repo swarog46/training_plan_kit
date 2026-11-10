@@ -68,6 +68,17 @@ final class SeasonPlanBuilderTests: XCTestCase {
         XCTAssertEqual(weeks, weeks.sorted(), "week index runs through the season")
     }
 
+    /// The recovery block ends on the day the next block starts; a tune-up there is raced once.
+    func testTuneUpOnBlockBoundaryIsAddedOnce() {
+        let first = SeasonRace(date: day("2027-03-14"), distanceMeters: 10000)
+        let boundary = SeasonPlanner.recovered(after: first, level: .intermediate)
+        let races = [first, SeasonRace(date: boundary, distanceMeters: 5000),
+                     SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)]
+        let (layout, events) = build(races, start: "2027-01-04")
+        XCTAssertEqual(layout.priorities, [.block, .tuneUp, .goal])
+        XCTAssertEqual(events.filter { $0.workout.type == .race }.map(\.date), races.map(\.date))
+    }
+
     func testTuneUpHalfInsideMarathonBlock() {
         let half = SeasonRace(date: day("2027-09-05"), distanceMeters: 21097)
         let (_, events) = build([half, SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)],

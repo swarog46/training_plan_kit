@@ -27,7 +27,10 @@ public enum SeasonPlanBuilder {
         var season: [WorkoutEvent] = []
         for block in layout.blocks {
             var events = training(for: block, level: level, catalog: catalog, planId: planId, config: config)
-            let tuneUps = layout.races.indices.filter { layout.priorities[$0] == .tuneUp && block.contains(layout.races[$0].date) }
+            // Blocks share their boundary day: a tune-up on it goes to the later block only.
+            let tuneUps = layout.races.indices.filter { i in
+                layout.priorities[i] == .tuneUp && layout.blocks.last { $0.contains(layout.races[i].date) } == block
+            }
             for i in tuneUps {
                 events = addTuneUp(layout.races[i], to: events, level: level, catalog: catalog, planId: planId)
             }
