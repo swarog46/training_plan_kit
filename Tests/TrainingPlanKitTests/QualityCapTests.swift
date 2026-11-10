@@ -1,7 +1,7 @@
 import XCTest
 @testable import TrainingPlanKit
 
-/// Weeks hold at most the plan's quality cap; recovery weeks one session.
+/// Weeks hold at most the plan's quality cap (recovery weeks one session) and recovery weeks dip.
 final class QualityCapTests: XCTestCase {
     private let catalog = loadSampleCatalog()
 
@@ -18,9 +18,30 @@ final class QualityCapTests: XCTestCase {
         for w in weeks { XCTAssertLessThanOrEqual(w.count, w.deload ? 1 : 2, "week \(w.week + 1)") }
     }
 
-    func testThreeDayAndMaintenancePlansHoldOne() {
-        for config in [PlanConfiguration.raceConfig(level: .intermediate, distanceMeters: 10000), .maintenanceIntermediate] {
-            for w in qualityPerWeek(config, weeks: 12) { XCTAssertLessThanOrEqual(w.count, 1, "week \(w.week + 1)") }
+    func testThreeDayPlansKeepAnEasyRunAndMaintenanceHoldsOne() {
+        for w in qualityPerWeek(.raceConfig(level: .intermediate, distanceMeters: 10000), weeks: 12) {
+            XCTAssertLessThanOrEqual(w.count, w.deload ? 1 : 2, "week \(w.week + 1)")
+        }
+        for w in qualityPerWeek(.maintenanceIntermediate, weeks: 12) { XCTAssertLessThanOrEqual(w.count, 1, "week \(w.week + 1)") }
+    }
+
+    /// A recovery week's long run stops at 80% of the build week's before it (60 min at least),
+    /// and the week runs at most 90% of that week's minutes unless no plain run is left to shorten.
+    func testRecoveryWeeksDip() {
+        for meters in [10000, 21097, 42195] {
+            for level in [RunnerLevel.intermediate, .advanced, .competitive] {
+                let config = PlanConfiguration.raceConfig(level: level, distanceMeters: meters)
+                let (plan, deloads, taper) = generatePlanV3WithDeloads(config: config, totalWeeks: 18, allWorkouts: catalog)
+                func minutes(_ week: Int) -> Int { plan[week]!.reduce(0) { $0 + $1.workout.minutes } }
+                func longRun(_ week: Int) -> Int { plan[week]!.filter { $0.workout.subtype.isLongRun }.map { $0.workout.minutes }.max() ?? 0 }
+                for week in deloads where plan[week - 1] != nil && !deloads.contains(week - 1) && !taper.contains(week - 1) {
+                    let label = "\(level) \(meters) week \(week + 1)"
+                    XCTAssertLessThanOrEqual(longRun(week), max(60, longRun(week - 1) * 4 / 5), label)
+                    let nothingToShorten = plan[week]!.allSatisfy { !$0.workout.subtype.isPlainRun || $0.workout.minutes <= 30 }
+                    XCTAssertTrue(minutes(week) <= minutes(week - 1) * 9 / 10 || nothingToShorten,
+                                  "\(label): \(minutes(week)) vs \(minutes(week - 1))")
+                }
+            }
         }
     }
 

@@ -102,7 +102,7 @@ public struct PlanConfiguration {
     /// Most quality sessions a week (hard sessions, quality long runs, progression runs);
     /// the extra ones become easy. nil = the plan's own cap (`qualityCap`).
     public var maxQualitySessions: Int? = nil
-    /// Under the half: Intermediate/Advanced two a week (one on three days), Pro three.
+    /// Under the half: Intermediate/Advanced two a week, Pro three.
     /// Maintenance: one. Other plans keep the generator's count.
     var qualityCap: Int? {
         if let maxQualitySessions { return maxQualitySessions }
@@ -110,7 +110,7 @@ public struct PlanConfiguration {
         if distance == 0 { return 1 }
         guard distance < 21097 else { return nil }
         switch runnerLevel {
-        case .intermediate, .advanced: return max(1, min(2, trainingDays.count - 2))
+        case .intermediate, .advanced: return 2
         case .competitive: return 3     // two sessions and a quality long run; recovery weeks one
         case .beginner: return nil
         }

@@ -79,6 +79,17 @@ final class SeasonPlanBuilderTests: XCTestCase {
         XCTAssertEqual(events.filter { $0.workout.type == .race }.map(\.date), races.map(\.date))
     }
 
+    func testNextRaceIsTheFirstNotYetPast() {
+        let races = [SeasonRace(date: day("2027-03-14"), distanceMeters: 10000),
+                     SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)]
+        let (_, events) = build(races, start: "2027-01-04")
+        let plan = Plan(name: "S", startDate: day("2027-01-04"), endDate: races[1].date, events: events, raceDistance: 42195)
+        XCTAssertEqual(plan.nextRace(from: day("2027-02-01"))?.date, races[0].date)
+        XCTAssertEqual(plan.nextRace(from: races[0].date)?.date, races[0].date, "race day itself")
+        XCTAssertEqual(plan.nextRace(from: day("2027-03-15"))?.date, races[1].date)
+        XCTAssertEqual(plan.nextRace(from: day("2027-12-01"))?.date, races[1].date, "past the plan: the goal race")
+    }
+
     func testTuneUpHalfInsideMarathonBlock() {
         let half = SeasonRace(date: day("2027-09-05"), distanceMeters: 21097)
         let (_, events) = build([half, SeasonRace(date: day("2027-10-10"), distanceMeters: 42195)],

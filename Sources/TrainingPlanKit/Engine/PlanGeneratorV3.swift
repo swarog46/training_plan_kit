@@ -1223,40 +1223,10 @@ class PlanGeneratorV3 {
                     trimmedPlan[week - weeksToTrim] = workouts
                 }
             }
-            return withRunGrowthCap(withQualityCap(trimmedPlan))
+            return withRecoveryDip(withRunGrowthCap(withQualityCap(trimmedPlan)))
         }
 
-        return withRunGrowthCap(withQualityCap(workoutsByWeek))
-    }
-
-    /// Weeks over the plan's quality cap swap their least important quality sessions for an
-    /// easy run (a quality long run for a steady one) of the same length. Taper weeks stay.
-    func withQualityCap(_ plan: [Int: [(type: String, workout: Workout)]]) -> [Int: [(type: String, workout: Workout)]] {
-        guard let cap = config.qualityCap else { return plan }
-        func plain(_ subtype: WorkoutSubtype, minutes: Int) -> Workout? {
-            func gap(_ w: Workout) -> Int { abs(Int(w.duration) / 60 - minutes) }
-            return allWorkouts.filter { $0.subtype == subtype }.min { gap($0) < gap($1) }
-        }
-        let longestSteady = plan.values.joined().filter { $0.workout.subtype == .steadyLong || $0.workout.subtype == .long }
-            .map { Int($0.workout.duration) / 60 }.max()
-        var out = plan
-        for (week, sessions) in plan where !taperWeeks.contains(week) {
-            // Least important first: progressions, quality long runs, then the lightest hard session.
-            func key(_ i: Int) -> (Int, Int64) { (sessions[i].workout.subtype.qualityRank ?? 0, sessions[i].workout.trainingLoad) }
-            let quality = sessions.indices.filter { sessions[$0].workout.subtype.qualityRank != nil }
-                .sorted { key($0) < key($1) }
-            // A recovery week keeps one quality session.
-            for i in quality.dropLast(deloadWeeks.contains(week) ? min(cap, 1) : cap) {
-                let w = sessions[i].workout
-                // A quality long run turns steady, no longer than the plan's own steady long runs;
-                // plans without a long-run ramp (5K) take an easy run instead.
-                let isLong = (w.subtype.parentType == .longRun || w.subtype == .fastFinish) && config.longRunProgression != nil
-                let minutes = min(Int(w.duration) / 60, isLong ? longestSteady ?? .max : 75)
-                guard let swap = plain(isLong ? .steadyLong : .easy, minutes: minutes) else { continue }
-                out[week]![i] = (type: isLong ? sessions[i].type : "easy", workout: swap)
-            }
-        }
-        return out
+        return withRecoveryDip(withRunGrowthCap(withQualityCap(workoutsByWeek)))
     }
 
     /// Race plans: runs over the 30-day run growth cap are cut; each week is a 7-day step.
@@ -1669,13 +1639,14 @@ func topUpAerobicVolumeV3(_ weekWorkouts: inout [(type: String, workout: Workout
     let longestLR = weekWorkouts
         .filter { longSubs.contains($0.workout.subtype) }
         .map { Double($0.workout.duration) }.max()
-    // Pfitz 18/70 midweek runs: one medium-long up to 2 h, a second up to 1 h 40.
-    // Stretched to the long run's length, three near-long runs landed in one Cmp week.
-    var mediumLongCeilings = [120.0, 100.0]
+    // Pfitz 18/70 midweek runs: one medium-long up to 2 h, a second up to 1 h 40 (stretched to
+    // the long run's length, three near-long runs landed in one Cmp week). Other levels keep
+    // the catalog's own 110 min ceiling.
+    var mediumLongCeilings = isCompetitive ? [120.0, 100.0] : [110.0]
     for i in aeroIdx.sorted(by: { weekWorkouts[$0].workout.duration > weekWorkouts[$1].workout.duration }) {
         let w = weekWorkouts[i].workout
         var raw = Double(w.duration) * factor
-        if isCompetitive, w.subtype == .mediumLong {
+        if w.subtype == .mediumLong {
             raw = min(raw, (mediumLongCeilings.count > 1 ? mediumLongCeilings.removeFirst() : mediumLongCeilings[0]) * 60)
         }
         if let lr = longestLR {

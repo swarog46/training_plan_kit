@@ -15,6 +15,12 @@ public extension Plan {
     var goalRace: WorkoutEvent? { raceEvents.last }
 
     var isMultiRace: Bool { raceEvents.count > 1 }
+
+    /// The race being trained for on `date`: the first not yet past, else the goal race.
+    func nextRace(from date: Date = Date()) -> WorkoutEvent? {
+        let day = Calendar.current.startOfDay(for: date)
+        return raceEvents.first { $0.date >= day } ?? goalRace
+    }
 }
 
 public extension WorkoutEvent {
