@@ -83,6 +83,10 @@ them, and refactors are verified by diffing rendered plan catalogs.
   `PlanConfiguration.with(_:)`. Extended recovery, for masters runners,
   keeps one quality session a week at full intensity and deepens
   recovery weeks (long run 75%, week 80% of the build week before).
+- `PlanChangeLedger`: one record of what changed how hard a plan is
+  (measured fitness, missed-training ease, rebuild, pace offset, easing,
+  a declined suggestion), a week of quiet after any of them, and the
+  date since which effort ratings describe the current plan.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 
