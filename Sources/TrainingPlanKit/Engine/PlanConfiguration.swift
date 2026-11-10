@@ -98,6 +98,9 @@ public struct PlanConfiguration {
     // True for Short Runs — a maintenance-style plan (distance 0) routed to
     // ShortRunsPlanGenerator: every run under 40 min, a longer one every 4th week.
     public var isShortRuns: Bool = false
+    /// A plan written out week by week (Walk to Run, 5K to 10K, Return to Running):
+    /// routed to ProtocolPlanGenerator, with no deloads, caps or selection.
+    public var fixedProtocol: FixedProtocol? = nil
 
     /// Quality sessions (by key) the runner did in an earlier block of the same kind. After
     /// selection each gives way to a twin, so a second block isn't a copy of the first.
@@ -114,7 +117,7 @@ public struct PlanConfiguration {
     }
 
     private var defaultQualityCap: Int? {
-        if isVO2Max || isCouchTo5K || isShortRuns { return nil }
+        if isVO2Max || isCouchTo5K || isShortRuns || fixedProtocol != nil { return nil }
         if distance == 0 { return 1 }
         guard distance < 21097 else { return nil }
         switch runnerLevel {
@@ -331,7 +334,7 @@ public extension PlanConfiguration {
     /// The choices that change this plan: Intermediate and Advanced race plans. Harder only
     /// where the plan caps quality itself (under the half); the rest already run uncapped.
     var intensities: [PlanIntensity] {
-        let isRacePlan = distance > 0 && !isCouchTo5K && !isVO2Max
+        let isRacePlan = distance > 0 && !isCouchTo5K && !isVO2Max && fixedProtocol == nil
         guard isRacePlan, runnerLevel == .intermediate || runnerLevel == .advanced else { return [] }
         return defaultQualityCap == nil ? [.gentler, .standard] : PlanIntensity.allCases
     }

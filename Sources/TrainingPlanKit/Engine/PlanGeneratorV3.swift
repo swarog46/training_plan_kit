@@ -521,6 +521,9 @@ class PlanGeneratorV3 {
 
     /// Routes a config to its per-type generator. The single dispatch point.
     static func make(config: PlanConfiguration, totalWeeks: Int, allWorkouts: [Workout], adaptive: Bool) -> PlanGeneratorV3 {
+        if config.fixedProtocol != nil {
+            return ProtocolPlanGenerator(config: config, totalWeeks: totalWeeks, allWorkouts: allWorkouts, adaptive: adaptive)
+        }
         // Maintenance (distance 0) is cross-level; otherwise dispatch by level.
         // VO2 plans are a level's 5K block + flag, so they ride the level generator.
         if config.distance == 0 {
@@ -1209,7 +1212,7 @@ class PlanGeneratorV3 {
         // re-indexed to the trimmed plan below.
         var rawDeloads = Set<Int>()
         var rawTaper = Set<Int>()
-        for week in 0..<actualWeeksToGenerate where !config.isCouchTo5K {
+        for week in 0..<actualWeeksToGenerate where !config.isCouchTo5K && config.fixedProtocol == nil {
             let pi = determinePhaseV3(weekIndex: week, baseDur: baseDur, speedDur: speedDur, peakDur: peakDur, taperDur: taperDur)
             if pi.phase == .taper || pi.phase == .race { rawTaper.insert(week); continue }
             guard pi.phase == .base || pi.phase == .speed || pi.phase == .peak else { continue }
@@ -1240,7 +1243,7 @@ class PlanGeneratorV3 {
 
     /// Race plans: runs over the 30-day run growth cap are cut; each week is a 7-day step.
     func withRunGrowthCap(_ plan: [Int: [(type: String, workout: Workout)]]) -> [Int: [(type: String, workout: Workout)]] {
-        guard config.distance > 0, !config.isCouchTo5K, !config.isVO2Max else { return plan }
+        guard config.distance > 0, !config.isCouchTo5K, !config.isVO2Max, config.fixedProtocol == nil else { return plan }
         let day0 = Date(timeIntervalSinceReferenceDate: 0)
         let slots = plan.keys.sorted().flatMap { week in plan[week]!.indices.map { (week: week, index: $0) } }
         let events = slots.map { slot -> WorkoutEvent in
@@ -1324,6 +1327,13 @@ public func createMarathonPlanV3(startDate: Date, raceDate: Date, from workouts:
         var assignedWorkouts: [(workout: Workout, dayOfWeek: Int)] = []
         var remainingDays = trainingDays
         var remainingWorkouts = weekWorkouts
+
+        // A fixed protocol is written in day order: no hard/easy shuffling.
+        if config.fixedProtocol != nil {
+            assignedWorkouts = FixedProtocol.days(for: weekWorkouts.map(\.workout), on: trainingDays, longDay: config.longestWorkoutDay)
+            remainingDays = []
+            remainingWorkouts = []
+        }
 
         // Assign long run to longest day
         if let longIndex = remainingWorkouts.firstIndex(where: { $0.type.contains("long") }) {

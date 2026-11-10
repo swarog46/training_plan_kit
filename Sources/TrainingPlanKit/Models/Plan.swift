@@ -36,8 +36,26 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     case tenMile = "10 Mile"
     case thirtyK = "30K"
     case fiftyK = "50K"
+    // Fixed beginner protocols (FixedProtocol): six weeks of walking with jogs that hand
+    // over to Couch to 5K, eight weeks from a 5K to a 10K, four weeks back from a break.
+    case walkToRun = "Walk to Run"
+    case fiveToTenK = "5K to 10K"
+    case returnToRunning = "Return to Running"
 
     public var id: String { rawValue }
+
+    /// The week-by-week protocol behind the plan, for the plans that are one.
+    public var fixedProtocol: FixedProtocol? {
+        switch self {
+        case .walkToRun: return .walkToRun
+        case .fiveToTenK: return .fiveToTenK
+        case .returnToRunning: return .returnToRunning
+        default: return nil
+        }
+    }
+
+    /// A beginner plan with its own written progression: one level, heart rate only, fixed length.
+    public var isBeginnerProtocol: Bool { isCouchTo5K || fixedProtocol != nil }
 
     /// Whether this category is a competitive (Pro) plan.
     /// Drives picker hiding and config routing.
@@ -80,14 +98,14 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     public var distance: Int? {
         switch self {
         case .fiveK, .fiveKCompetitive, .couchTo5K: return 5000
-        case .tenK, .tenKCompetitive: return 10000
+        case .tenK, .tenKCompetitive, .fiveToTenK: return 10000
         case .halfMarathon, .halfMarathonCompetitive: return 21097
         case .marathon, .marathonCompetitive: return 42195
         case .fifteenK: return 15000
         case .tenMile: return 16093
         case .thirtyK: return 30000
         case .fiftyK: return 50000
-        case .recovery, .maintenance, .vo2max, .shortRuns: return nil
+        case .recovery, .maintenance, .vo2max, .shortRuns, .walkToRun, .returnToRunning: return nil
         }
     }
 
@@ -113,6 +131,10 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         case .vo2max: return 8
         // The protocol is 9 weeks; shorter would skip steps, longer repeats W9.
         case .couchTo5K: return 9
+        // Fixed protocols run their written length.
+        case .walkToRun: return 6
+        case .fiveToTenK: return 8
+        case .returnToRunning: return 4
         // Below 12 weeks the build loses its cutback weeks (R23 deload rhythm).
         case .fifteenK, .tenMile: return 12
         // 30K/50K phase minimums sum to 15 / 17 (Adv 30K, both 50K presets).
@@ -142,6 +164,9 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         case .maintenance, .shortRuns: return 52
         case .vo2max: return 8
         case .couchTo5K: return 9
+        case .walkToRun: return 6
+        case .fiveToTenK: return 8
+        case .returnToRunning: return 4
         case .fifteenK, .tenMile: return 14
         case .thirtyK: return 20
         // Past 22 weeks the 50K PEAK phase outgrows the certified marathon's (9-10).
@@ -154,7 +179,7 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
     /// Weekly load increase percentage range for this plan type
     public var weeklyLoadIncreaseRange: ClosedRange<Double> {
         switch self {
-        case .maintenance, .recovery, .shortRuns, .couchTo5K: return 5...10
+        case .maintenance, .recovery, .shortRuns, .couchTo5K, .walkToRun, .fiveToTenK, .returnToRunning: return 5...10
         case .fiveK, .tenK, .vo2max, .fiveKCompetitive, .tenKCompetitive, .fifteenK, .tenMile: return 10...15
         case .halfMarathon, .marathon, .halfMarathonCompetitive, .marathonCompetitive, .thirtyK, .fiftyK: return 15...20
         }
@@ -179,7 +204,7 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         case .maintenance: return 2...4
         case .shortRuns: return 3...4
         case .vo2max: return 3...5
-        case .couchTo5K: return 3...3
+        case .couchTo5K, .walkToRun, .fiveToTenK, .returnToRunning: return 3...3
         // Presets: Beg 3 / Int 4 / Adv 5; 30K/50K have no beginner preset.
         case .fifteenK, .tenMile: return 3...5
         case .thirtyK, .fiftyK: return 4...5
@@ -228,8 +253,10 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         case .vo2max:
             return [.easy, .long, .threshold, .intervals, .hillRepeats, .fivekPace, .timeTrial, .strides]
         // Run/walk sessions are catalog `intervals`; the rest is easy running.
-        case .couchTo5K:
+        case .couchTo5K, .walkToRun, .returnToRunning:
             return [.easy, .intervals]
+        case .fiveToTenK:
+            return [.easy]
         case .fifteenK, .tenMile:
             return [.easy, .strides, .long, .mediumLong, .progression, .threshold, .intervals, .hillRepeats, .mileRepeats, .tenkPace, .raceRehearsalHM, .timeTrial]
         case .thirtyK, .fiftyK:
@@ -260,6 +287,10 @@ public enum PlanCategory: String, Codable, CaseIterable, Identifiable {
         case 2:     self = .shortRuns
         // Couch to 5K stores 3: a 5000 would read back as the Beginner 5K plan.
         case 3:     self = .couchTo5K
+        // The fixed protocols store 4, 5 and 6 (5K to 10K's 10000 would read back as the 10K plan).
+        case 4:     self = .walkToRun
+        case 5:     self = .fiveToTenK
+        case 6:     self = .returnToRunning
         case 15000: self = .fifteenK
         case 16093: self = .tenMile
         case 30000: self = .thirtyK

@@ -75,6 +75,10 @@ them, and refactors are verified by diffing rendered plan catalogs.
   Intermediate at 20 (were 25-26: 5 x 5 min). Beginner sessions keep
   reps to 4 minutes with a jog at least half as long, so the block runs
   30/30s, 60/60s, then 2:30-3 minute reps.
+- Fixed beginner protocols (`FixedProtocol`, sessions built in code):
+  Walk to Run (6 weeks, hands over to Couch to 5K), 5K to 10K (8 weeks,
+  ends on the 10K) and Return to Running (4 weeks). New `PlanCategory`
+  cases `.walkToRun`, `.fiveToTenK`, `.returnToRunning`.
 - Seasons: a tune-up race on a block's boundary day is added once;
   `SeasonPlanner.maxOtherRaces`.
 
