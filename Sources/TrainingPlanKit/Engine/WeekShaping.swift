@@ -65,7 +65,8 @@ extension PlanGeneratorV3 {
                     twins[key] = twin
                     taken.insert(twin.key)
                 }
-                if let twin = twins[key] { out[week]![index].workout = twin }
+                // The same session resized for another week keeps its own form: the twin fits one length.
+                if let twin = twins[key], abs(twin.minutes - session.workout.minutes) <= 5 { out[week]![index].workout = twin }
             }
         }
         return out
@@ -142,7 +143,7 @@ extension PlanGeneratorV3 {
         }
         let limit = before.minutes * config.recoveryWeekPercent.week / 100
         while week.minutes > limit, let run = week.longestPlainRun(above: 30) {
-            week.shorten(run, to: week.sessions[run].workout.minutes - 5)
+            week.shorten(run, to: max(30, week.sessions[run].workout.minutes - 5))
         }
         return relabelingShortMediumLongs(week)
     }
