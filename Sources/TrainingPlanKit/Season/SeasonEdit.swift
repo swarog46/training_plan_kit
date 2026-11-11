@@ -57,12 +57,12 @@ public enum SeasonEdit {
     }
 
     /// The plan after a rebuild: its events before `cut` as they were, then the rebuilt
-    /// season's, with run growth capped against what was kept.
+    /// season's, with run growth capped against what was kept and days off still off.
     public static func merged(_ existing: [WorkoutEvent], rebuilt: [WorkoutEvent], cut: Date, seasonStart: Date) -> [WorkoutEvent] {
         let kept = existing.filter { $0.date < cut }.sorted { $0.date < $1.date }
         let ahead = rebuilt.filter { $0.date >= cut }.sorted { $0.date < $1.date }
         let opening = Calendar.current.date(byAdding: .day, value: 14, to: seasonStart)!
-        return kept + capRunGrowthV3(ahead, after: kept, opening: opening)
+        return kept + PlanBreak.keepingDaysOff(capRunGrowthV3(ahead, after: kept, opening: opening), from: existing)
     }
 
     /// A race too close to rebuild around: its day becomes an easy run.

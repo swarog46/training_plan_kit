@@ -34,6 +34,21 @@ public enum PlanBreak {
         return left.indices.filter { !kept.contains($0) }.map { left[$0] }
     }
 
+    /// Rebuilt weeks keep the days the runner already dropped: a day whose runs were all
+    /// dropped in `existing` stays dropped, race days aside.
+    public static func keepingDaysOff(_ rebuilt: [WorkoutEvent], from existing: [WorkoutEvent]) -> [WorkoutEvent] {
+        let cal = Calendar.current
+        let byDay = Dictionary(grouping: existing) { cal.startOfDay(for: $0.date) }
+        let daysOff = Set(byDay.filter { $0.value.allSatisfy(\.isCancelled) }.keys)
+        guard !daysOff.isEmpty else { return rebuilt }
+        return rebuilt.map { event in
+            guard event.workout.type != .race, daysOff.contains(cal.startOfDay(for: event.date)) else { return event }
+            var dropped = event
+            dropped.isCancelled = true
+            return dropped
+        }
+    }
+
     /// Runs a break can drop: not done, not already dropped, not a race.
     private static func droppable(_ events: [WorkoutEvent]) -> [WorkoutEvent] {
         events.filter { !$0.isCompleted && !$0.isCancelled && $0.workout.type != .race }

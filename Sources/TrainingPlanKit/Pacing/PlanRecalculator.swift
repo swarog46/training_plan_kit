@@ -277,6 +277,8 @@ public enum PlanRecalculator {
                 future[i] = carried
             }
         }
+        // A regenerated run landing on a day the runner dropped (time off) stays dropped.
+        future = PlanBreak.keepingDaysOff(future, from: oldFuture)
         let events = (keep + future).sorted { $0.date < $1.date }
 
         return Result(events: events,
