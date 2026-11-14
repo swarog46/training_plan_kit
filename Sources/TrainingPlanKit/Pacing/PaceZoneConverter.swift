@@ -14,6 +14,13 @@ import Foundation
 // same ±15s regardless of absolute pace.
 public enum WorkoutPaceTolerance {
     public static let seconds: Double = 15.0
+
+    /// The same window in the pace unit shown: ±15 s a km is ±24 s a mile.
+    /// Fifteen seconds on a mile pace would be a third narrower a stretch of
+    /// road, and miles runners would hear "too slow" sooner for the same run.
+    public static func seconds(in unit: PaceUnit) -> Double {
+        PaceConversion.convert(seconds, to: unit)
+    }
 }
 
 // MARK: - Pace Progression Configuration

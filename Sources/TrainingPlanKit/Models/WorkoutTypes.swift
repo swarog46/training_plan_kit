@@ -340,8 +340,10 @@ public enum TargetRange: Codable, Equatable {
     public var paceTargetStringIfAvailable: String? {
         switch self {
         case .paceTarget(let basePace, let relative):
-            let secondsPerKm = Int(Double(basePace) * relative)
-            return PaceConversion.formatPaceInUserUnits(secondsPerKm)
+            // On the 5 s tick the watch showed during the run (the app's
+            // `targetPaceTick`), rounded once from the exact pace
+            let exact = PaceConversion.convert(Double(basePace) * relative, to: .current)
+            return PaceConversion.formatPace(Int((exact / 5).rounded()) * 5, unit: .current)
         case .secondsRange(let min, let max):
             let avg = (min + max) / 2
             return "\(Int(avg) / 60)'\(String(format: "%02d", Int(avg) % 60))\""
@@ -437,15 +439,35 @@ public enum PaceUnit: String {
         }
     }
 
-    /// Get the appropriate unit based on user's locale
+    /// The runner's choice in Settings, or the region's while it's left on
+    /// Automatic. The watch keeps the copy the iPhone sends it.
     public static var current: PaceUnit {
-        let measurementSystem = Locale.current.measurementSystem
-        return (measurementSystem == .metric) ? .kilometersPerMinute : .milesPerMinute
+        switch UnitsPreference.stored {
+        case .kilometers: return .kilometersPerMinute
+        case .miles:      return .milesPerMinute
+        case .automatic:
+            return Locale.current.measurementSystem == .metric ? .kilometersPerMinute : .milesPerMinute
+        }
     }
 
     /// Whether this is the metric system
     public var isMetric: Bool {
         return self == .kilometersPerMinute
+    }
+}
+
+// MARK: - Units Preference
+
+/// Kilometres or miles, as picked in Settings. Automatic follows the device
+/// region, as the app did before there was a choice: UK and US mean miles.
+public enum UnitsPreference: String, CaseIterable {
+    case automatic, kilometers, miles
+
+    /// UserDefaults key on the iPhone, and on the watch for its copy.
+    public static let key = "distanceUnits"
+
+    public static var stored: UnitsPreference {
+        UserDefaults.standard.string(forKey: key).flatMap(UnitsPreference.init(rawValue:)) ?? .automatic
     }
 }
 
@@ -457,9 +479,10 @@ public struct PaceConversion {
     /// Conversion factor: 1 mile = 1.609344 kilometers
     public static let kmPerMile: Double = 1.609344
 
-    /// Convert pace from seconds/km to seconds/mile
+    /// Convert pace from seconds/km to seconds/mile, to the nearest second:
+    /// 5:00/km is 8:02.8 a mile and reads 8:03, not a cut-off 8:02
     public static func kmToMile(_ secondsPerKm: Int) -> Int {
-        return Int(Double(secondsPerKm) * kmPerMile)
+        return Int((Double(secondsPerKm) * kmPerMile).rounded())
     }
 
     /// Convert pace from seconds/km to seconds/mile (Double version)
@@ -494,9 +517,9 @@ public struct PaceConversion {
         return "\(minutes):\(String(format: "%02d", seconds))"
     }
 
-    /// Format pace as time string (Double version)
+    /// Format pace as time string (Double version), to the nearest second
     public static func formatTime(_ paceSeconds: Double) -> String {
-        return formatTime(Int(paceSeconds))
+        return formatTime(Int(paceSeconds.rounded()))
     }
 
     /// Format pace with unit label (e.g., "4:30/km")
