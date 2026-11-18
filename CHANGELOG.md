@@ -6,6 +6,8 @@ them, and refactors are verified by diffing rendered plan catalogs.
 
 ## Unreleased
 
+- `ComebackRamp`: a plan rebuilt after weeks away holds its first weeks to
+  the level run before the break, growing 15% a week until the plan is reached.
 - Pace: long runs render 5% faster than easy (Pfitz general-aerobic vs
   long); Pro easy runs stay conversational at goal +18%.
 - Recovery: deloads carry no marathon-pace work in any tier. Competitive
